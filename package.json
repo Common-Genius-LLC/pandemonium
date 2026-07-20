@@ -1,0 +1,28 @@
+{
+  "name": "pandemonium",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pandemonium: a web app for film pre-production. Script, storyboard, and research in one place.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.7.1",
+    "@codemirror/language": "^6.10.8",
+    "@codemirror/state": "^6.5.1",
+    "@codemirror/view": "^6.36.1",
+    "@lit/context": "^1.1.3",
+    "lit": "^3.2.1"
+  },
+  "devDependencies": {
+    "eslint": "^9.17.0",
+    "vite": "^6.0.7",
+    "vitest": "^2.1.8"
+  }
+}

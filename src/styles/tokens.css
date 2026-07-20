@@ -1,0 +1,24 @@
+/* Pandemonium design tokens, derived from the Figma file
+   (figma.com/design/S7i6Jcdhx0gViHlxU7RrCz). These are inherited CSS custom
+   properties, so every shadow root in the app sees them without needing to
+   re-declare or re-import this file. Do not invent new colors here; if a
+   screen needs one not listed, match the closest existing token first. */
+:root{
+  --bg:#ffffff;          /* page */
+  --panel:#eeeeee;       /* inputs, wells, cards */
+  --ph:#d9d9d9;          /* placeholders, empty lanes */
+  --ink:#000000;         /* script text */
+  --ui:#343434;          /* UI text, dark fills */
+  --mut:#868686;         /* labels, secondary */
+  --act:#ffca45;         /* primary action */
+  --board:#c5ef9c;       /* storyboard highlight */
+  --res:#cf159e;         /* research link highlight */
+  --link:#2288de;        /* URLs */
+  --danger:#c21f3c;
+  --ok:#1f8c62;
+  --pend:#dbe6f9;        /* pending selection while linking */
+  --warn:#f9dbdb;        /* needs attention */
+  --r:3px;
+  --sans:'Untitled Sans','Neue Haas Grotesk Text','Helvetica Neue',Helvetica,Arial,sans-serif;
+  --mono:'Courier Prime','Courier New',Courier,monospace;
+}
