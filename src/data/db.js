@@ -1,13 +1,17 @@
-// The persistence seam. Every component that needs to save/open/sample a
-// project calls through here, never through local-file-adapter.js directly.
-// Today this just forwards to the local-file adapter (a downloaded/opened
-// .pandemonium.json, images and attachments embedded as data URLs). A future
-// backend (Firebase or otherwise) is a second adapter module implementing
-// the same three functions, swapped in here -- no component or store code
-// should need to change when that happens.
+// The persistence seam. Every component that needs to save/open/sample/
+// autosave a project calls through here, never through local-file-adapter.js
+// or local-db.js directly. Today this forwards to two local adapters: an
+// IndexedDB slot the project autosaves into continuously (see
+// autosaveProject/loadAutosavedProject), and explicit file save/open (a
+// downloaded/opened .pandemonium.json, images and attachments embedded as
+// data URLs) for portable backups and sharing. A future backend (Firebase
+// or otherwise) is a third adapter implementing the same shape, swapped in
+// here -- no component or store code should need to change when that
+// happens.
 'use strict';
 
 import { saveProjectToFile, parseProjectFileText } from './local-file-adapter.js';
+import { saveCurrentProjectLocally, loadCurrentProjectLocally, clearCurrentProjectLocally } from './local-db.js';
 import { sampleProject } from './sample-project.js';
 import { readFileAsText } from '../utils/files.js';
 
@@ -22,4 +26,16 @@ export async function openProjectFile(file) {
 
 export function loadSample() {
   return sampleProject();
+}
+
+export function autosaveProject(project) {
+  return saveCurrentProjectLocally(project);
+}
+
+export function loadAutosavedProject() {
+  return loadCurrentProjectLocally();
+}
+
+export function clearAutosavedProject() {
+  return clearCurrentProjectLocally();
 }

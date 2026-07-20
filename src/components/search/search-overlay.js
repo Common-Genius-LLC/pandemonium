@@ -102,7 +102,7 @@ export class PandemoniumSearchOverlay extends LitElement {
     store.setUI({ pair: null });
     const g = r.go;
     if (g.k === 'script') {
-      store.setUI({ draftId: g.sid, edit: false, scrollToBlock: g.bi });
+      store.setUI({ draftId: g.sid, scrollToBlock: g.bi });
     } else if (g.k === 'doc') {
       const patch = { openDoc: g.id, readerEdit: false };
       if (store.ui.view === 'single') patch.view = 'split';

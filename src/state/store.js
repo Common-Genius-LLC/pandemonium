@@ -24,7 +24,7 @@ export class PandemoniumStore extends EventTarget {
 
   loadProject(rawProject) {
     const project = Object.assign(
-      { name: 'Untitled', workspace: '', type: '', targetMins: 0, contributors: [], scripts: [], boards: [], research: [], links: [] },
+      { name: 'Untitled', workspace: '', type: '', targetMins: 0, contributors: [], scripts: [], boards: [], research: [], links: [], comments: [] },
       rawProject,
     );
     this.#project = project;
@@ -127,6 +127,23 @@ export class PandemoniumStore extends EventTarget {
     this.#textEmitTimer = setTimeout(() => this.#emit('project'), 250);
   }
 
+  // Like updateScriptTextLive, but also swaps in already-remapped boards/links
+  // arrays in the same synchronous project update. The editor calls this after
+  // an edit so a link/board anchored to text the user just typed inside keeps
+  // pointing at it (its stored quote is re-derived from the edited text) rather
+  // than going "lost" -- see script-editor.js #remapAnchors and hard rule 4.
+  // Pass null for boards/links to leave that branch untouched.
+  applyLiveEdit(id, text, boards, links, comments) {
+    let next = model.updateScriptText(this.#project, id, text);
+    if (boards) next = { ...next, boards };
+    if (links) next = { ...next, links };
+    if (comments) next = { ...next, comments };
+    this.#project = next;
+    this.#ui = { ...this.#ui, dirty: true };
+    clearTimeout(this.#textEmitTimer);
+    this.#textEmitTimer = setTimeout(() => this.#emit('project'), 250);
+  }
+
   duplicateScript(id) {
     const { project, script } = model.duplicateScript(this.#project, id);
     this.#applyProject(project);
@@ -180,6 +197,17 @@ export class PandemoniumStore extends EventTarget {
   reattachLink(id, parts) { this.#applyProject(model.reattachLink(this.#project, id, parts)); }
   deleteLink(id) { this.#applyProject(model.deleteLink(this.#project, id)); }
 
+  // ---- comment actions ----
+
+  addComment(opts) {
+    const { project, comment } = model.addComment(this.#project, opts);
+    this.#applyProject(project);
+    return comment;
+  }
+  updateCommentBody(id, body) { this.#applyProject(model.updateCommentBody(this.#project, id, body)); }
+  reattachComment(id, parts) { this.#applyProject(model.reattachComment(this.#project, id, parts)); }
+  deleteComment(id) { this.#applyProject(model.deleteComment(this.#project, id)); }
+
   // ---- project meta ----
 
   updateProjectMeta(patch) { this.#applyProject(model.updateProjectMeta(this.#project, patch)); }
@@ -192,13 +220,24 @@ function defaultUI(draftId) {
   return {
     view: 'everything', // 'everything' | 'split' | 'single'
     split: 'research', // which panel shares the split view with script: 'boards' | 'research'
+    // Fully-free panel slots (notes.md point e): in 'everything' each of the
+    // three positions independently shows any panel type; in 'single' the one
+    // slot does. Duplicates are allowed on purpose. 'split' ignores these and
+    // uses `split` above plus the Boards/Research toggle instead.
+    slots: ['boards', 'script', 'research'],
+    singleSlot: 'script',
+    // Resizable panel fractions (notes.md point f): dragged via the divider
+    // tracks in panel-layout. eCol/eRow split the Everything grid; sCol splits
+    // the two Split-view panes. Kept in [0.15, 0.85] by the drag handler.
+    eCol: 0.42,
+    eRow: 0.66,
+    sCol: 0.5,
     draftId,
-    edit: false, // Phase 1 only: script panel Preview/Edit toggle, removed in Phase 3
     openDoc: null,
     readerEdit: false,
     linking: null, // {from:'script', parts} | {from:'research', docId, rParts}
     pair: null, // id of the link currently shown with its connector
-    pendingRelink: null, // {type:'new-board'} | {type:'board'|'link', id}
+    pendingRelink: null, // {type:'board'|'link', id} -- reattaching an existing board/link to a new passage
     scrollToBlock: null,
     scrollToParagraph: null,
     highlightBoard: null,

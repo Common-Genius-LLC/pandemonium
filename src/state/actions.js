@@ -16,6 +16,6 @@ export function openPair(store, id) {
   if (nextView === 'split') patch.split = 'research';
   patch.openDoc = item.lk.researchId;
   patch.readerEdit = false;
-  if (store.activeScript().id !== finalState.fsc.id) { patch.draftId = finalState.fsc.id; patch.edit = false; }
+  if (store.activeScript().id !== finalState.fsc.id) { patch.draftId = finalState.fsc.id; }
   store.setUI(patch);
 }

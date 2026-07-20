@@ -1,20 +1,28 @@
 'use strict';
 
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing } from 'lit';
 import { StoreController } from '../../state/store-controller.js';
+import { dispatch } from '../../utils/events.js';
+import { readFileAsDataURL } from '../../utils/files.js';
 import { panelStyles } from '../../styles/shared.js';
 import '../ui/button.js';
+import '../ui/panel-picker.js';
 import './board-card.js';
 
-// "+ Add storyboard image" is the always-visible entry point that used to
-// not exist: previously the only way to attach a board was to already be in
-// the script preview, select text, and find the floating toolbar's "Board"
-// action -- undiscoverable, and impossible while the script was in Edit
-// mode or on a non-final draft. Clicking it now arms ui.pendingRelink as
-// {type:'new-board'} and prompts the user to select a script passage; the
-// script panel (src/components/editor/script-panel.js) checks for that type
-// on the next selection and opens the file picker itself.
+// "+ Add storyboard image" opens the file picker immediately -- no
+// prerequisite step. It used to require selecting a script passage first
+// (arming a "pick a passage" mode and waiting for a selection elsewhere),
+// which was the actual source of "I have no idea how to upload a
+// thumbnail": the button didn't visibly do anything until you went and
+// found more UI in a different panel. Now it just uploads, and the
+// resulting board is created unattached (anchor.parts: []) -- the exact
+// same state a board ends up in when its passage can no longer be found,
+// so it renders as "unlinked" with a "Reattach" button already built for
+// this, and you attach it to a passage whenever you like, from a normal
+// text selection or not at all.
 export class PandemoniumBoardsPanel extends LitElement {
+  static properties = { slotId: {} };
+
   static styles = [panelStyles, css`
     #boardsList{display:flex;flex-direction:column;gap:16px;padding:2px 10px 30px 2px}
   `];
@@ -24,13 +32,31 @@ export class PandemoniumBoardsPanel extends LitElement {
     this._store = new StoreController(this);
   }
 
+  #title() {
+    if (this._store.ui.view === 'split') return html`<span class="lbl">Thumbnails</span>`;
+    return html`<pd-panel-picker current="boards" .slotId=${this.slotId ?? 0}></pd-panel-picker>`;
+  }
+
   #setSplit(which) {
     this._store.store.setUI({ view: 'split', split: which, pair: null });
   }
 
   #addBoard() {
-    const store = this._store.store;
-    store.setUI({ pendingRelink: { type: 'new-board' }, draftId: store.finalScript().id, edit: false, view: store.ui.view === 'single' ? 'everything' : store.ui.view });
+    const input = this.renderRoot.getElementById('fileImg');
+    input.value = '';
+    input.click();
+  }
+
+  #startSlideshow() {
+    dispatch(this, 'pandemonium-open-slideshow', {});
+  }
+
+  async #onFilePicked(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const img = await readFileAsDataURL(file);
+    this._store.store.addBoard({ parts: [], img, caption: '' });
+    dispatch(this, 'pandemonium-toast', { message: 'Board added. Select a script passage anytime to attach it.' });
   }
 
   updated() {
@@ -55,22 +81,25 @@ export class PandemoniumBoardsPanel extends LitElement {
     const arr = state.R.boards.slice().sort((a, b) => a.firstBi - b.firstBi);
     return html`
       <div class="phead">
-        <span class="lbl">Thumbnails</span><span class="sub">for the final draft</span>
+        ${this.#title()}<span class="sub">for the final draft</span>
         <div class="tools">
+          <pd-button variant="pink" title="Play the linked storyboards full-screen" @click=${() => this.#startSlideshow()}>Start slideshow</pd-button>
           <pd-button @click=${() => this.#addBoard()}>+ Add storyboard image</pd-button>
-          <div class="mode">
-            <button class=${ui.split === 'boards' ? 'on' : ''} @click=${() => this.#setSplit('boards')}>Boards</button>
-            <button class=${ui.split === 'research' ? 'on' : ''} @click=${() => this.#setSplit('research')}>Research</button>
-          </div>
+          ${ui.view === 'split' ? html`
+            <div class="mode">
+              <button class=${ui.split === 'boards' ? 'on' : ''} @click=${() => this.#setSplit('boards')}>Boards</button>
+              <button class=${ui.split === 'research' ? 'on' : ''} @click=${() => this.#setSplit('research')}>Research</button>
+            </div>` : nothing}
         </div>
       </div>
       <div class="pbody">
         <div id="boardsList">
           ${arr.length
             ? arr.map((o) => html`<pandemonium-board-card .resolved=${o} .sceneLabel=${o.ok ? state.fscenes[o.sceneIdx].label : ''}></pandemonium-board-card>`)
-            : html`<div class="empty">No boards yet. Click <b>+ Add storyboard image</b>, or select a passage in the script and choose <b>Board</b>.</div>`}
+            : html`<div class="empty">No boards yet. Click <b>+ Add storyboard image</b>, paste an image, or select a passage in the script and choose <b>Board</b>.</div>`}
         </div>
       </div>
+      <input type="file" id="fileImg" accept="image/*" style="display:none" @change=${(e) => this.#onFilePicked(e)}>
     `;
   }
 }

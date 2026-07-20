@@ -8,7 +8,7 @@ import { LitElement, html, css } from 'lit';
 // every button in the app already goes through this one component.
 export class PdButton extends LitElement {
   static properties = {
-    variant: { type: String, reflect: true }, // 'default' | 'dark' | 'act' | 'ghost'
+    variant: { type: String, reflect: true }, // 'default' | 'dark' | 'act' | 'ghost' | 'pink'
     disabled: { type: Boolean, reflect: true },
     title: { type: String },
   };
@@ -40,6 +40,8 @@ export class PdButton extends LitElement {
     :host([variant=act]) button:hover{background:#f0d06d}
     :host([variant=ghost]) button{background:transparent;color:var(--mut)}
     :host([variant=ghost]) button:hover{color:var(--ui);background:var(--panel)}
+    :host([variant=pink]) button{background:var(--res);color:#fff}
+    :host([variant=pink]) button:hover{background:#b01286}
   `;
 
   constructor() {

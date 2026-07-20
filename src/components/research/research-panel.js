@@ -1,14 +1,17 @@
 'use strict';
 
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing } from 'lit';
 import { StoreController } from '../../state/store-controller.js';
 import { panelStyles } from '../../styles/shared.js';
 import { openSourceDialog } from './source-dialog.js';
 import '../ui/button.js';
+import '../ui/panel-picker.js';
 import './research-card.js';
 import './research-reader.js';
 
 export class PandemoniumResearchPanel extends LitElement {
+  static properties = { slotId: {} };
+
   static styles = [panelStyles, css`
     .adds{display:flex;gap:4px}
     #researchList{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:12px;align-content:start;padding:2px 2px 24px}
@@ -17,6 +20,11 @@ export class PandemoniumResearchPanel extends LitElement {
   constructor() {
     super();
     this._store = new StoreController(this);
+  }
+
+  #title() {
+    if (this._store.ui.view === 'split') return html`<span class="lbl">Research</span>`;
+    return html`<pd-panel-picker current="research" .slotId=${this.slotId ?? 2}></pd-panel-picker>`;
   }
 
   #setSplit(which) {
@@ -31,16 +39,17 @@ export class PandemoniumResearchPanel extends LitElement {
 
     return html`
       <div class="phead">
-        <span class="lbl">Research</span>
+        ${this.#title()}
         <div class="tools">
           <div class="adds">
             <pd-button @click=${() => openSourceDialog(this, this._store.store, null, 'note')}>+ Note</pd-button>
             <pd-button @click=${() => openSourceDialog(this, this._store.store, null, 'link')}>+ Link</pd-button>
           </div>
-          <div class="mode">
-            <button class=${ui.split === 'boards' ? 'on' : ''} @click=${() => this.#setSplit('boards')}>Boards</button>
-            <button class=${ui.split === 'research' ? 'on' : ''} @click=${() => this.#setSplit('research')}>Research</button>
-          </div>
+          ${ui.view === 'split' ? html`
+            <div class="mode">
+              <button class=${ui.split === 'boards' ? 'on' : ''} @click=${() => this.#setSplit('boards')}>Boards</button>
+              <button class=${ui.split === 'research' ? 'on' : ''} @click=${() => this.#setSplit('research')}>Research</button>
+            </div>` : nothing}
         </div>
       </div>
       <div class="pbody">

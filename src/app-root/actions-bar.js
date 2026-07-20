@@ -25,15 +25,6 @@ export class PandemoniumActionsBar extends LitElement {
     this._store = new StoreController(this);
   }
 
-  #addScript() {
-    const store = this._store.store;
-    const script = store.createScript({});
-    store.setUI({ draftId: script.id, edit: true });
-    this.updateComplete.then(() => {
-      dispatch(this, 'pandemonium-toast', { message: 'New draft created. Start writing in Fountain.' });
-    });
-  }
-
   #save() {
     saveProject(this._store.project);
     this._store.store.markSaved();
@@ -60,7 +51,7 @@ export class PandemoniumActionsBar extends LitElement {
     const text = await readFileAsText(file);
     const name = file.name.replace(/\.[^.]+$/, '');
     const script = this._store.store.importFountain(name, text);
-    this._store.store.setUI({ draftId: script.id, edit: false });
+    this._store.store.setUI({ draftId: script.id });
     dispatch(this, 'pandemonium-toast', { message: 'Imported "' + script.name + '" as a new draft.' });
   }
 
@@ -99,12 +90,11 @@ export class PandemoniumActionsBar extends LitElement {
   }
 
   #newProject() {
-    if (this._store.ui.dirty && !confirm('Start a new project? Unsaved changes will be lost.')) return;
-    this._store.store.closeProject();
-  }
-
-  #startSlideshow() {
-    dispatch(this, 'pandemonium-open-slideshow', {});
+    if (!confirm('Start a new project? Your work here autosaves locally, but this browser will forget it once you start a new project unless you export a copy first (Export > Project file).')) return;
+    // pandemonium-app owns the autosave timer and must cancel any pending
+    // write before clearing the slot, or a write already in flight for the
+    // project being replaced can land after the clear and resurrect it.
+    dispatch(this, 'pandemonium-new-project', {});
   }
 
   render() {
@@ -112,14 +102,12 @@ export class PandemoniumActionsBar extends LitElement {
     if (!project) return html``;
     const ui = this._store.ui;
     return html`
-      <pd-button variant="act" @click=${() => this.#startSlideshow()}>Start Slideshow</pd-button>
-      <pd-button @click=${() => this.#addScript()}>Add new script</pd-button>
       <div id="draftChips">
         ${project.scripts.map((s) => html`<pandemonium-draft-chip .script=${s}></pandemonium-draft-chip>`)}
       </div>
       <div class="right">
-        <span id="saveDot" class=${ui.dirty ? 'on' : ''} title="Unsaved changes"></span>
-        <pd-button @click=${() => this.#save()}>Save</pd-button>
+        <span id="saveDot" class=${ui.dirty ? 'on' : ''} title="Autosaved locally. Not yet exported as a file."></span>
+        <pd-button @click=${() => this.#save()} title="Download a portable .pandemonium.json backup">Save</pd-button>
         <pd-button @click=${() => this.renderRoot.querySelector('#fileOpen').click()}>Open</pd-button>
         <pd-button @click=${(e) => this.#openExportMenu(e)}>Export</pd-button>
       </div>

@@ -121,6 +121,29 @@ export function deleteLink(project, id) {
   return { ...project, links: project.links.filter((l) => l.id !== id) };
 }
 
+// ---- comments (inline editorial notes anchored to a script section) ----
+// Unlike a research link, a comment has no second (research) end and no
+// connector: it lives entirely inside the script, shown as an inline marker
+// and edited in a small box right there (notes.md points i and j). Anchored
+// like every other highlight, so it survives edits via resolve.js.
+
+export function addComment(project, { parts, body }) {
+  const comment = { id: uid(), anchor: { parts: parts || [] }, body: body || '' };
+  return { project: { ...project, comments: [...(project.comments || []), comment] }, comment };
+}
+
+export function updateCommentBody(project, id, body) {
+  return { ...project, comments: (project.comments || []).map((c) => (c.id === id ? { ...c, body } : c)) };
+}
+
+export function reattachComment(project, id, parts) {
+  return { ...project, comments: (project.comments || []).map((c) => (c.id === id ? { ...c, anchor: { parts } } : c)) };
+}
+
+export function deleteComment(project, id) {
+  return { ...project, comments: (project.comments || []).filter((c) => c.id !== id) };
+}
+
 // ---- project meta ----
 
 export function updateProjectMeta(project, { name, type, workspace, targetMins }) {

@@ -62,7 +62,6 @@ export class PandemoniumStartScreen extends LitElement {
       contributors: this._contribs.slice(),
     });
     this._store.store.loadProject(project);
-    this._store.store.setUI({ edit: true });
   }
 
   async #openFile(e) {

@@ -39,10 +39,21 @@ export function computeResolved(parsed, scenes, project, ui) {
     res.forEach((r) => add(r, 'hr', lk.id, 'r'));
     return { lk, res, ok, firstBi: ok ? firstBi : Infinity, sceneIdx: ok ? sceneIndexOf(scenes, firstBi) : -1 };
   });
+  // Comments resolve like any other anchor and paint an inline marker ('hc'),
+  // but they carry no research end and never feed coverage/timeline math --
+  // they're editorial notes, not evidence that a beat is boarded or sourced.
+  const comments = (project.comments || []).map((cm) => {
+    const res = ((cm.anchor && cm.anchor.parts) || []).map((pt) => resolvePart(plains, pt));
+    const ok = res.some(Boolean);
+    let firstBi = Infinity;
+    res.forEach((r) => { if (r && r.bi < firstBi) firstBi = r.bi; });
+    res.forEach((r) => add(r, 'hc', cm.id, 'c'));
+    return { cm, res, ok, firstBi: ok ? firstBi : Infinity };
+  });
   if (ui.linking && ui.linking.from === 'script' && ui.linking.parts) {
     ui.linking.parts.forEach((pt) => { const r = resolvePart(plains, pt); add(r, 'hp', 'pending', 'p'); });
   }
-  return { boards, links, biMap, plains };
+  return { boards, links, comments, biMap, plains };
 }
 
 // Mutates the freshly-created `scenes` array in place with per-scene

@@ -80,7 +80,7 @@ export class PandemoniumResearchReader extends LitElement {
   #reattachLost(lostArr) {
     const store = this._store.store;
     const id = lostArr[0].lk.id;
-    store.setUI({ pendingRelink: { type: 'link', id }, draftId: store.finalScript().id, edit: false });
+    store.setUI({ pendingRelink: { type: 'link', id }, draftId: store.finalScript().id });
   }
 
   #onMouseUp() {

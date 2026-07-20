@@ -4,6 +4,15 @@
 // CodeMirror decoration layer (src/components/editor) must drive off this
 // same output rather than a second grammar, so the two never disagree about
 // what the document means.
+//
+// Every block also carries position metadata (.line, .textOffset, and each
+// run's .map, folded into .plainToRaw by parseFountain below) purely
+// additive to the original output. This is what lets the CodeMirror layer
+// translate a highlight anchor -- which is always expressed in terms of
+// `.plain` (markup-delimiter-stripped text, so anchors survive `**bold**`
+// being added/removed around them) -- back into an actual offset in the raw
+// source text CodeMirror is editing, and vice versa for capturing a new
+// selection as an anchor.
 'use strict';
 
 export const TITLE_KEYS = ['title', 'credit', 'author', 'authors', 'source', 'draft date', 'date', 'contact', 'copyright', 'notes'];
@@ -12,8 +21,8 @@ export const CONTENT_TYPES = { action: 1, dialogue: 1, paren: 1, centered: 1, ly
 
 export function inlineRuns(text) {
   const runs = [];
-  let b = false, it = false, u = false, note = false, buf = '';
-  const flush = () => { if (buf) { runs.push({ t: buf, b, i: it, u, n: note }); buf = ''; } };
+  let b = false, it = false, u = false, note = false, buf = '', bufMap = [];
+  const flush = () => { if (buf) { runs.push({ t: buf, b, i: it, u, n: note, map: bufMap }); buf = ''; bufMap = []; } };
   let k = 0;
   while (k < text.length) {
     if (text.startsWith('[[', k)) { flush(); note = true; k += 2; continue; }
@@ -22,11 +31,11 @@ export function inlineRuns(text) {
     if (text.startsWith('**', k)) { flush(); b = !b; k += 2; continue; }
     if (text[k] === '*') { flush(); it = !it; k++; continue; }
     if (text[k] === '_') { flush(); u = !u; k++; continue; }
-    if (text[k] === '\\' && k + 1 < text.length) { buf += text[k + 1]; k += 2; continue; }
-    buf += text[k]; k++;
+    if (text[k] === '\\' && k + 1 < text.length) { buf += text[k + 1]; bufMap.push(k + 1); k += 2; continue; }
+    buf += text[k]; bufMap.push(k); k++;
   }
   flush();
-  if (!runs.length) runs.push({ t: '', b: false, i: false, u: false, n: false });
+  if (!runs.length) runs.push({ t: '', b: false, i: false, u: false, n: false, map: [] });
   return runs;
 }
 
@@ -48,7 +57,16 @@ export function parseFountain(src) {
   }
   let scene = 0;
   let lastBlank = true;
-  const push = (b) => { b.scene = scene; b.i = blocks.length; blocks.push(b); };
+  // `b.text` is always a contiguous substring of `lines[i]` (every branch
+  // below only trims a prefix and/or suffix off the raw line, never
+  // reconstructs text from non-adjacent parts), so indexOf reliably finds
+  // where it starts -- this is `.textOffset`, the raw-line offset of the
+  // first character of `.text`.
+  const push = (b) => {
+    b.scene = scene; b.i = blocks.length; b.line = i;
+    b.textOffset = b.text ? Math.max(0, lines[i].indexOf(b.text)) : 0;
+    blocks.push(b);
+  };
   while (i < lines.length) {
     const t = lines[i].trim();
     if (t === '') { lastBlank = true; i++; continue; }
@@ -88,6 +106,14 @@ export function parseFountain(src) {
     b.runs = inlineRuns(b.text);
     b.plain = b.runs.map((r) => r.t).join('');
     b.words = b.plain.split(/\s+/).filter(Boolean).length;
+    // plainToRaw[p] = offset within b.text of the character at b.plain[p].
+    // Combined with b.line + b.textOffset, this maps any {s,e} range in
+    // `.plain` (the shape every highlight anchor is stored in) to an actual
+    // [from, to) range in the raw document CodeMirror edits.
+    const plainToRaw = new Array(b.plain.length);
+    let pos = 0;
+    for (const r of b.runs) { for (const rawIdx of r.map) { plainToRaw[pos] = rawIdx; pos++; } }
+    b.plainToRaw = plainToRaw;
   }
   return { title, blocks };
 }

@@ -31,7 +31,7 @@ export class PandemoniumSelectionToolbar extends LitElement {
     button.b::before,button.r::before,button.n::before{content:"";width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:6px}
     button.b::before{background:var(--board)}
     button.r::before{background:var(--res)}
-    button.n::before{background:var(--pend)}
+    button.n::before{background:var(--act)}
   `;
 
   constructor() {
@@ -64,6 +64,7 @@ export class PandemoniumSelectionToolbar extends LitElement {
     this._kind = kind;
     this._parts = parts;
     this._scriptId = scriptId || null;
+    this._anchorRect = anchorRect || null;
     this._open = true;
     this.updateComplete.then(() => this.#position(anchorRect));
   }
@@ -102,12 +103,13 @@ export class PandemoniumSelectionToolbar extends LitElement {
       input.click();
       return;
     }
-    if (act === 'note') {
-      openSourceDialog(this, store, parts, 'note');
+    if (act === 'comment') {
+      const c = store.addComment({ parts });
+      dispatch(this, 'pandemonium-show-comment', { commentId: c.id, anchorRect: this._anchorRect });
       return;
     }
     if (act === 'source') {
-      if (!store.project.research.length) { openSourceDialog(this, store, parts, 'note'); return; }
+      if (!store.project.research.length) { openSourceDialog(this, store, parts, 'link'); return; }
       store.setUI({
         linking: { from: 'script', parts },
         view: store.ui.view === 'single' ? 'split' : store.ui.view,
@@ -132,7 +134,7 @@ export class PandemoniumSelectionToolbar extends LitElement {
       buttons = html`
         <button class="b" @click=${() => this.#act('board')}>Board</button>
         <button class="r" @click=${() => this.#act('source')}>Source</button>
-        <button class="n" @click=${() => this.#act('note')}>Note</button>
+        <button class="n" @click=${() => this.#act('comment')}>Comment</button>
       `;
     }
     return html`

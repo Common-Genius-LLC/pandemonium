@@ -5,9 +5,11 @@ import { ContextProvider } from '@lit/context';
 import { storeContext } from '../state/context.js';
 import { PandemoniumStore } from '../state/store.js';
 import { dispatch } from '../utils/events.js';
-import { saveProject } from '../data/db.js';
+import { saveProject, autosaveProject, loadAutosavedProject, clearAutosavedProject } from '../data/db.js';
 import { formStyles, chipStyles } from '../styles/shared.js';
-import { CHIPCOLORS } from '../utils/format.js';
+import { CHIPCOLORS, debounce } from '../utils/format.js';
+import { imageFromClipboard } from '../utils/clipboard.js';
+import { readFileAsDataURL } from '../utils/files.js';
 
 import './start-screen.js';
 import './topbar.js';
@@ -20,7 +22,7 @@ import '../components/ui/menu.js';
 import '../components/linking/selection-toolbar.js';
 import '../components/linking/linkbar.js';
 import '../components/linking/highlight-popover.js';
-import '../components/linking/connector.js';
+import '../components/linking/comment-popover.js';
 import '../components/search/search-overlay.js';
 import '../components/slideshow/slideshow.js';
 
@@ -43,6 +45,8 @@ export class PandemoniumApp extends LitElement {
     #toastHost,#dialogHost{position:fixed;inset:0;pointer-events:none;z-index:90}
   `];
 
+  #debouncedAutosave;
+
   constructor() {
     super();
     this.store = new PandemoniumStore();
@@ -51,6 +55,18 @@ export class PandemoniumApp extends LitElement {
     // and @lit/context deliberately won't satisfy a context-request from a
     // provider's own host (see store-controller.js). Listen directly.
     this.store.addEventListener('change', () => this.requestUpdate());
+    // Autosave: every project change writes to IndexedDB (see data/db.js),
+    // debounced so continuous typing doesn't trigger a multi-megabyte write
+    // (embedded board images) on every keystroke. This is what replaced
+    // "you must remember to click Save or lose your work" -- explicit
+    // Save/Open still exist for portable file backups, this is just
+    // continuity across reloads.
+    this.#debouncedAutosave = debounce((project) => {
+      autosaveProject(project).catch((err) => console.warn('Autosave failed:', err));
+    }, 1500);
+    this.store.addEventListener('change', () => {
+      if (this.store.project) this.#debouncedAutosave(this.store.project);
+    });
   }
 
   connectedCallback() {
@@ -60,14 +76,30 @@ export class PandemoniumApp extends LitElement {
     this.addEventListener('pandemonium-open-menu', (e) => this.renderRoot.getElementById('menu').open(e.detail));
     this.addEventListener('pandemonium-show-selection-toolbar', (e) => this.renderRoot.getElementById('selToolbar').open(e.detail));
     this.addEventListener('pandemonium-show-board-popover', (e) => this.renderRoot.getElementById('boardPopover').open(e.detail));
+    this.addEventListener('pandemonium-show-comment', (e) => this.renderRoot.getElementById('commentPopover').open(e.detail));
     this.addEventListener('pandemonium-open-slideshow', () => this.renderRoot.getElementById('slideshow').open());
     this.addEventListener('pandemonium-open-project-settings', () => this.#openProjectSettings());
+    this.addEventListener('pandemonium-new-project', () => this.#newProject());
     document.addEventListener('keydown', this.#onKeydown);
+    document.addEventListener('paste', this.#onPaste);
+    loadAutosavedProject().then((project) => {
+      if (project && !this.store.project) this.store.loadProject(project);
+    }).catch((err) => console.warn('Could not read autosaved project:', err));
   }
 
   disconnectedCallback() {
     document.removeEventListener('keydown', this.#onKeydown);
+    document.removeEventListener('paste', this.#onPaste);
     super.disconnectedCallback();
+  }
+
+  #newProject() {
+    // Cancel first: a debounced write already scheduled for the project
+    // being replaced must not land after clearAutosavedProject() runs, or
+    // it silently resurrects the "closed" project on next load.
+    this.#debouncedAutosave.cancel();
+    this.store.closeProject();
+    clearAutosavedProject().catch((err) => console.warn('Could not clear autosaved project:', err));
   }
 
   #onKeydown = (e) => {
@@ -88,6 +120,21 @@ export class PandemoniumApp extends LitElement {
       if (ui.linking || ui.pendingRelink) { store.setUI({ linking: null, pendingRelink: null }); return; }
       if (ui.pair) { store.setUI({ pair: null }); return; }
     }
+  };
+
+  // Fallback for pasting an image anywhere that isn't the script editor
+  // (which handles its own paste and calls stopPropagation() when it does,
+  // so this never double-adds a board). Always creates an unattached board;
+  // attach it to a passage later via its card's "Reattach" button.
+  #onPaste = async (e) => {
+    const store = this.store;
+    if (!store.project) return;
+    const file = imageFromClipboard(e.clipboardData);
+    if (!file) return;
+    e.preventDefault();
+    const img = await readFileAsDataURL(file);
+    store.addBoard({ parts: [], img, caption: '' });
+    dispatch(this, 'pandemonium-toast', { message: 'Board added. Select a script passage anytime to attach it.' });
   };
 
   #openProjectSettings() {
@@ -159,7 +206,7 @@ export class PandemoniumApp extends LitElement {
       <pandemonium-selection-toolbar id="selToolbar"></pandemonium-selection-toolbar>
       <pandemonium-linkbar></pandemonium-linkbar>
       <pandemonium-highlight-popover id="boardPopover"></pandemonium-highlight-popover>
-      <pandemonium-connector></pandemonium-connector>
+      <pandemonium-comment-popover id="commentPopover"></pandemonium-comment-popover>
       <pandemonium-search-overlay></pandemonium-search-overlay>
       <pandemonium-slideshow id="slideshow"></pandemonium-slideshow>
     `;

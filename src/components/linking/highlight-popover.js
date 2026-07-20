@@ -76,10 +76,11 @@ export class PandemoniumHighlightPopover extends LitElement {
   render() {
     if (!this._open) return html``;
     const bd = this._board;
+    const q = ((bd.anchor && bd.anchor.parts[0] && bd.anchor.parts[0].q) || '').slice(0, 80);
     return html`
       <div class="pop" style="left:${this._x || 0}px;top:${this._y || 0}px">
         <div class="img">${bd.img ? html`<img alt="" src=${bd.img}>` : ''}</div>
-        <div class="meta"><span class="cap">${bd.caption || 'Storyboard panel'}</span><button @click=${() => this.#openInBoards()}>Boards</button></div>
+        <div class="meta"><span class="cap">${bd.caption || q || 'Storyboard panel'}</span><button @click=${() => this.#openInBoards()}>Boards</button></div>
       </div>
     `;
   }

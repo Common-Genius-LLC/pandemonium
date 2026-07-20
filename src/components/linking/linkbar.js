@@ -46,7 +46,6 @@ export class PandemoniumLinkbar extends LitElement {
     if (!ui) return html``;
     if (ui.pendingRelink) {
       const messages = {
-        'new-board': 'Select a passage in the script to attach a new storyboard image.',
         board: 'Select the passage in the script to reattach this board.',
         link: 'Select the passage in the script to reattach this source link.',
       };

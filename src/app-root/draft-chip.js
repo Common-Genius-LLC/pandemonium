@@ -28,7 +28,7 @@ export class PandemoniumDraftChip extends LitElement {
   #click(e) {
     const store = this._store.store;
     if (!this.active) {
-      store.setUI({ draftId: this.script.id, edit: false, pair: null });
+      store.setUI({ draftId: this.script.id, pair: null });
       return;
     }
     const s = this.script;
