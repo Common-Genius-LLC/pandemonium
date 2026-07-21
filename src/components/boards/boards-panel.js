@@ -9,7 +9,7 @@ import '../ui/button.js';
 import '../ui/panel-picker.js';
 import './board-card.js';
 
-// "+ Add storyboard image" opens the file picker immediately -- no
+// "Add Image" opens the file picker immediately -- no
 // prerequisite step. It used to require selecting a script passage first
 // (arming a "pick a passage" mode and waiting for a selection elsewhere),
 // which was the actual source of "I have no idea how to upload a
@@ -24,7 +24,19 @@ export class PandemoniumBoardsPanel extends LitElement {
   static properties = { leafId: {} };
 
   static styles = [panelStyles, css`
-    #boardsList{display:flex;flex-direction:column;gap:16px;padding:2px 10px 30px 2px}
+    .pbody.over{outline:2px solid var(--res);outline-offset:-2px}
+    #boardsList{display:flex;flex-direction:column;gap:16px;padding:10px 10px 30px}
+    /* Figma "Frame 4" (node 19:330): the illustration over the pane's own
+       pink, with the drop invitation beneath it, centered in the empty pane. */
+    .noboards{
+      height:100%;min-height:200px;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+    }
+    .noboards img{width:440px;max-width:78%;height:auto;display:block;pointer-events:none}
+    .noboards p{
+      width:250px;max-width:70%;margin:0;text-align:center;
+      font-size:14px;line-height:18px;color:var(--pane-board-ink);
+    }
   `];
 
   constructor() {
@@ -47,11 +59,40 @@ export class PandemoniumBoardsPanel extends LitElement {
   }
 
   async #onFilePicked(e) {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    const img = await readFileAsDataURL(file);
-    this._store.store.addBoard({ parts: [], img, caption: '' });
-    dispatch(this, 'pandemonium-toast', { message: 'Board added. Select a script passage anytime to attach it.' });
+    await this.#addImages(e.target.files || []);
+  }
+
+  // The empty pane invites a drop, so the pane has to accept one. Same
+  // unattached board a picked file produces, one per image dropped.
+  async #addImages(files) {
+    const images = [...files].filter((f) => f.type.startsWith('image/'));
+    if (!images.length) return;
+    for (const file of images) {
+      const img = await readFileAsDataURL(file);
+      this._store.store.addBoard({ parts: [], img, caption: '' });
+    }
+    dispatch(this, 'pandemonium-toast', {
+      message: images.length === 1
+        ? 'Board added. Select a script passage anytime to attach it.'
+        : images.length + ' boards added. Select a script passage anytime to attach them.',
+    });
+  }
+
+  #onDragOver(e) {
+    if (![...e.dataTransfer.types].includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    e.currentTarget.classList.add('over');
+  }
+
+  #onDragLeave(e) {
+    e.currentTarget.classList.remove('over');
+  }
+
+  async #onDrop(e) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('over');
+    await this.#addImages(e.dataTransfer.files || []);
   }
 
   updated() {
@@ -75,21 +116,29 @@ export class PandemoniumBoardsPanel extends LitElement {
     const state = this._store.store.getFinalState();
     const arr = state.R.boards.slice().sort((a, b) => a.firstBi - b.firstBi);
     return html`
-      <div class="phead">
-        ${this.#title()}<span class="sub">for the final draft</span>
-        <div class="tools">
-          <pd-button variant="pink" title="Play the linked storyboards full-screen" @click=${() => this.#startSlideshow()}>Start slideshow</pd-button>
-          <pd-button @click=${() => this.#addBoard()}>+ Add storyboard image</pd-button>
+      <div class="shell" style="--pane-bg:var(--pane-board)">
+        <div class="chrome">
+          ${this.#title()}
+          <div class="tools">
+            <pd-button variant="pink" title="Play the linked storyboards full-screen" @click=${() => this.#startSlideshow()}>Start slideshow</pd-button>
+            <pd-button @click=${() => this.#addBoard()}>Add Image</pd-button>
+          </div>
         </div>
-      </div>
-      <div class="pbody">
-        <div id="boardsList">
+        <div class="pbody"
+          @dragover=${(e) => this.#onDragOver(e)}
+          @dragleave=${(e) => this.#onDragLeave(e)}
+          @drop=${(e) => this.#onDrop(e)}>
           ${arr.length
-            ? arr.map((o) => html`<pandemonium-board-card .resolved=${o} .sceneLabel=${o.ok ? state.fscenes[o.sceneIdx].label : ''}></pandemonium-board-card>`)
-            : html`<div class="empty">No boards yet. Click <b>+ Add storyboard image</b>, paste an image, or select a passage in the script and choose <b>Board</b>.</div>`}
+            ? html`<div id="boardsList">
+                ${arr.map((o) => html`<pandemonium-board-card .resolved=${o} .sceneLabel=${o.ok ? state.fscenes[o.sceneIdx].label : ''}></pandemonium-board-card>`)}
+              </div>`
+            : html`<div class="noboards">
+                <img src="/boards-empty.png" alt="">
+                <p>drop images here to use as storyboard panels</p>
+              </div>`}
         </div>
       </div>
-      <input type="file" id="fileImg" accept="image/*" style="display:none" @change=${(e) => this.#onFilePicked(e)}>
+      <input type="file" id="fileImg" accept="image/*" multiple style="display:none" @change=${(e) => this.#onFilePicked(e)}>
     `;
   }
 }

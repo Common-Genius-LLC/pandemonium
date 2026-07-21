@@ -17,7 +17,7 @@
 import { ViewPlugin, Decoration } from '@codemirror/view';
 import { parseFountain, isCharacterCueText } from '../../fountain/parse.js';
 import { plainRangeToRaw, inlineDelimRanges } from '../../fountain/doc-map.js';
-import { activeElementField } from './cm-autoformat.js';
+import { activeElementField, pinOverridesParser } from './cm-autoformat.js';
 
 const LINE_CLASS = {
   scene: 'cmf-scene', action: 'cmf-action', character: 'cmf-character', paren: 'cmf-paren',
@@ -128,7 +128,11 @@ export function buildDecorations(state, parsed, highlights) {
     // While the caret is on a line with a pinned element (Tab / picker), show
     // that element's formatting even if the parser doesn't agree yet -- so a
     // character cue centers while you type it, before its dialogue exists.
-    const pinned = active && isActive && b.line === pinLine && LINE_CLASS[active.el];
+    // Only for the elements the parser genuinely cannot judge from the line
+    // alone (pinOverridesParser); otherwise the parser wins on a line that has
+    // text, so nothing is styled as an element the file does not contain and
+    // then silently reflows the moment the caret leaves.
+    const pinned = active && isActive && b.line === pinLine && pinOverridesParser(active.el) && LINE_CLASS[active.el];
     const pendingCue = !pinned && isPendingCharacterCue(doc, b, activeLines);
     const cls = pinned || (pendingCue ? LINE_CLASS.character : LINE_CLASS[b.type]);
     if (cls) decos.push(Decoration.line({ class: cls }).range(line.from));

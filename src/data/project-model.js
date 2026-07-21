@@ -13,12 +13,50 @@ import { defaultFountain } from './schema.js';
 
 // ---- scripts ----
 
+// The final draft is always called this, and is the one script that cannot be
+// renamed or deleted: it is what storyboard and research links attach to (hard
+// rule 4), so it has to exist and has to be identifiable at a glance. Every
+// other draft is "Draft N", numbered from 1 among the non-final drafts.
+export const FINAL_DRAFT_NAME = 'Final Draft';
+
+function nextDraftName(project) {
+  let max = 0;
+  for (const s of project.scripts) {
+    const m = /^Draft (\d+)$/.exec(s.name || '');
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  return 'Draft ' + (max + 1);
+}
+
+// A project restored from an autosave or opened from a file can carry a final
+// draft named something else ("Draft 1", from before the name was fixed), and
+// could even have an ordinary draft squatting on the reserved name. Both are
+// corrected on load, so the tab bar always tells the truth about which draft
+// owns the links.
+export function normalizeDraftNames(project) {
+  const used = new Set(project.scripts.filter((s) => !s.final).map((s) => s.name));
+  let n = 0;
+  const nextFree = () => {
+    do { n++; } while (used.has('Draft ' + n));
+    used.add('Draft ' + n);
+    return 'Draft ' + n;
+  };
+  return {
+    ...project,
+    scripts: project.scripts.map((s) => {
+      if (s.final) return s.name === FINAL_DRAFT_NAME ? s : { ...s, name: FINAL_DRAFT_NAME };
+      return s.name === FINAL_DRAFT_NAME ? { ...s, name: nextFree() } : s;
+    }),
+  };
+}
+
 export function createScript(project, { name, text, final } = {}) {
+  const isFinal = final != null ? final : project.scripts.length === 0;
   const script = {
     id: uid(),
-    name: name || ('Draft ' + (project.scripts.length + 1)),
+    name: name || (isFinal ? FINAL_DRAFT_NAME : nextDraftName(project)),
     text: text != null ? text : defaultFountain(project),
-    final: final != null ? final : project.scripts.length === 0,
+    final: isFinal,
   };
   return { project: { ...project, scripts: [...project.scripts, script] }, script };
 }
@@ -26,28 +64,38 @@ export function createScript(project, { name, text, final } = {}) {
 export function renameScript(project, id, name) {
   const trimmed = (name || '').trim();
   if (!trimmed) return project;
-  return { ...project, scripts: project.scripts.map((s) => (s.id === id ? { ...s, name: trimmed } : s)) };
+  const s = project.scripts.find((x) => x.id === id);
+  if (!s || s.final) return project;
+  return { ...project, scripts: project.scripts.map((x) => (x.id === id ? { ...x, name: trimmed } : x)) };
 }
 
 export function duplicateScript(project, id) {
   const s = project.scripts.find((x) => x.id === id);
   if (!s) return { project, script: null };
-  const copy = { id: uid(), name: s.name + ' copy', text: s.text, final: false };
+  // A copy is never the final draft, so it cannot carry the final name.
+  const copy = { id: uid(), name: s.final ? nextDraftName(project) : s.name + ' copy', text: s.text, final: false };
   return { project: { ...project, scripts: [...project.scripts, copy] }, script: copy };
 }
 
 export function deleteScript(project, id) {
   const s = project.scripts.find((x) => x.id === id);
-  if (!s) return project;
-  let scripts = project.scripts.filter((x) => x.id !== id);
-  if (s.final && scripts.length && !scripts.some((x) => x.final)) {
-    scripts = scripts.map((x, ix) => (ix === 0 ? { ...x, final: true } : x));
-  }
-  return { ...project, scripts };
+  if (!s || s.final) return project;
+  return { ...project, scripts: project.scripts.filter((x) => x.id !== id) };
 }
 
+// Promoting a draft moves the name with the status, so the stored names stay
+// honest: exactly one script is ever called "Final Draft".
 export function makeFinal(project, id) {
-  return { ...project, scripts: project.scripts.map((s) => (s.final === (s.id === id) ? s : { ...s, final: s.id === id })) };
+  if (!project.scripts.some((s) => s.id === id)) return project;
+  const demoted = nextDraftName(project);
+  return {
+    ...project,
+    scripts: project.scripts.map((s) => {
+      if (s.id === id) return { ...s, final: true, name: FINAL_DRAFT_NAME };
+      if (s.final) return { ...s, final: false, name: demoted };
+      return s;
+    }),
+  };
 }
 
 export function updateScriptText(project, id, text) {

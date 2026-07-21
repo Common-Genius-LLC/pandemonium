@@ -2,66 +2,71 @@
 
 import { LitElement, html, css } from 'lit';
 import { StoreController } from '../state/store-controller.js';
-import { formStyles, chipStyles } from '../styles/shared.js';
-import { CHIPCOLORS } from '../utils/format.js';
 import { emptyProject } from '../data/schema.js';
 import { openProjectFile } from '../data/db.js';
-import { sampleProject } from '../data/sample-project.js';
 import '../components/ui/logo.js';
 import '../components/ui/button.js';
+import '../components/ui/project-card.js';
 
-// Phase 1: the original's plain vertical form, unchanged in layout. Phase 2
-// replaces this with the Figma-matched illustrated card (gradient
-// background, clapperboard art, inline-editable project-detail card) without
-// touching how a project actually gets created underneath.
+// Figma "Create New Project" (node 7:88, frame 1280x832). The frame's fixed y
+// positions become a centered column with the measured gaps between blocks and
+// a footer pinned to the bottom, which reproduces the frame at 832px tall and
+// degrades sensibly at other viewport heights. The clapperboard card itself is
+// <pd-project-card>, shared with the project settings dialog.
 export class PandemoniumStartScreen extends LitElement {
-  static styles = [formStyles, chipStyles, css`
-    :host{position:fixed;inset:0;background:var(--bg);z-index:60;display:flex;flex-direction:column;align-items:center;overflow:auto}
-    .wrap{width:300px;margin:auto;padding:48px 0;display:flex;flex-direction:column;gap:22px}
-    pd-logo{font-size:15px;color:var(--ink)}
-    .tag{color:var(--mut);line-height:1.6;margin-top:-14px}
-    .row2{display:flex;gap:10px}
-    .row2>div{flex:1}
-    .actions{display:flex;flex-direction:column;gap:8px}
-    .actions pd-button{width:100%}
-    .actions pd-button::part(button){width:100%;height:28px;justify-content:center}
-    .foot{margin-top:26px;color:var(--mut);font-size:10px;letter-spacing:.06em}
-  `];
+  static styles = css`
+    :host{
+      position:fixed;inset:0;z-index:60;
+      background:linear-gradient(180deg,#ffffff 0%,#d8d8d8 100%);
+      font-family:var(--sans);
+      display:flex;flex-direction:column;align-items:center;
+      overflow:auto;
+    }
+    /* flex:none is load-bearing. As a shrinkable flex item the stage was
+       squashed below its content height on a short viewport, which is what
+       drove the clapperboard down into the buttons instead of scrolling. */
+    .stage{
+      box-sizing:border-box;
+      flex:none;min-height:100%;width:100%;
+      padding:41.21px 0 26px;
+      display:flex;flex-direction:column;align-items:center;
+    }
 
-  static properties = { _contribs: { state: true } };
+    /* Wordmark. 356.33 x 27.61 in Figma; the logo svg is height-driven. */
+    pd-logo{font-size:27.612px;color:var(--res)}
+
+    .tagline{
+      margin-top:15.18px;
+      font-size:14.277px;line-height:17.434px;
+      text-align:center;color:#000;
+    }
+
+    pd-project-card{margin-top:134px;flex:none}
+
+    /* "Open" is not on the Figma frame, but opening a saved project is the
+       only other way into the app, so it sits beside the primary action in
+       the same Button-Standard treatment. */
+    .actions{margin-top:22px;flex:none;display:flex;align-items:center;gap:8px}
+
+    .foot{
+      margin-top:auto;padding-top:40px;flex:none;
+      font-size:13.277px;line-height:17.434px;color:#000;text-align:center;
+    }
+    .foot i{font-style:italic}
+  `;
 
   constructor() {
     super();
     this._store = new StoreController(this);
-    this._contribs = [];
   }
 
-  #field(id) {
-    return this.renderRoot.getElementById(id);
-  }
-
-  #addContrib(e) {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    const v = e.target.value.trim();
-    if (!v) return;
-    this._contribs = [...this._contribs, { n: v, color: CHIPCOLORS[this._contribs.length % CHIPCOLORS.length] }];
-    e.target.value = '';
-  }
-
-  #removeContrib(ix) {
-    this._contribs = this._contribs.filter((_, i) => i !== ix);
+  #card() {
+    return this.renderRoot.querySelector('pd-project-card');
   }
 
   #create() {
-    const project = emptyProject({
-      name: this.#field('npName').value.trim() || 'Untitled Project',
-      workspace: this.#field('npWs').value.trim(),
-      type: this.#field('npType').value.trim(),
-      targetMins: parseInt(this.#field('npDur').value, 10) || 0,
-      contributors: this._contribs.slice(),
-    });
-    this._store.store.loadProject(project);
+    const v = this.#card().read();
+    this._store.store.loadProject(emptyProject({ ...v, name: v.name || 'Untitled Project' }));
   }
 
   async #openFile(e) {
@@ -76,36 +81,23 @@ export class PandemoniumStartScreen extends LitElement {
     }
   }
 
-  #loadSample() {
-    this._store.store.loadProject(sampleProject());
-  }
-
   render() {
     return html`
-      <div class="wrap">
+      <div class="stage">
         <pd-logo></pd-logo>
-        <div class="tag">A tool for creators &amp; filmmakers to manage and streamline their pre-production.</div>
-        <div class="field"><label class="lbl" for="npName">Project name</label><input id="npName" type="text" placeholder="Cognitive Biases"></div>
-        <div class="row2">
-          <div class="field"><label class="lbl" for="npType">Type</label><input id="npType" type="text" placeholder="Animated Short"></div>
-          <div class="field"><label class="lbl" for="npWs">Workspace</label><input id="npWs" type="text" placeholder="Curidosity"></div>
+        <div class="tagline">
+          A tool for creators &amp; filmmakers to<br>
+          manage and streamline pre-production
         </div>
-        <div class="field"><label class="lbl" for="npDur">Target duration, minutes</label><input id="npDur" type="number" min="0" step="1" placeholder="22"></div>
-        <div class="field">
-          <label class="lbl" for="npContrib">Contributors</label>
-          <input id="npContrib" type="text" placeholder="Type a name, press Enter" @keydown=${(e) => this.#addContrib(e)}>
-          <div class="chips">
-            ${this._contribs.map((c, ix) => html`
-              <span class="chip" style="background:${c.color}"><b>${c.n}</b><span class="x" @click=${() => this.#removeContrib(ix)}>×</span></span>
-            `)}
-          </div>
-        </div>
+
+        <pd-project-card></pd-project-card>
+
         <div class="actions">
-          <pd-button variant="act" @click=${() => this.#create()}>Create project</pd-button>
-          <pd-button @click=${() => this.renderRoot.getElementById('fileOpen').click()}>Open a project file</pd-button>
-          <pd-button variant="ghost" @click=${() => this.#loadSample()}>Try the sample project</pd-button>
+          <pd-button @click=${() => this.#create()}>Create Project</pd-button>
+          <pd-button @click=${() => this.renderRoot.getElementById('fileOpen').click()}>Open</pd-button>
         </div>
-        <div class="foot">A Project by Common Genius</div>
+
+        <div class="foot">A Project by <i>Common Genius</i></div>
       </div>
       <input type="file" id="fileOpen" accept=".json,application/json" style="display:none" @change=${(e) => this.#openFile(e)}>
     `;

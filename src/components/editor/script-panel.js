@@ -7,7 +7,8 @@ import { getParsed } from '../../fountain/cache.js';
 import { CONTENT_TYPES, scenesOf } from '../../fountain/blocks.js';
 import { fmtT } from '../../utils/format.js';
 import { ELEMENT_LABELS, ELEMENT_MENU } from '../../fountain/element-ops.js';
-import { panelStyles } from '../../styles/shared.js';
+import { panelStyles, tabStyles } from '../../styles/shared.js';
+import { dropdownStyles, dropdownCaret } from '../ui/dropdown.js';
 import '../ui/button.js';
 import '../ui/panel-picker.js';
 import '../../app-root/draft-chip.js';
@@ -20,18 +21,28 @@ import './script-editor.js';
 export class PandemoniumScriptPanel extends LitElement {
   static properties = { leafId: {}, _elt: { state: true } };
 
-  static styles = [panelStyles, css`
+  static styles = [panelStyles, dropdownStyles, tabStyles, css`
+    /* The working area is the final draft's blue only while the final draft is
+       the one open, matching the design's two variants: the draft that owns
+       the storyboard and research links is the one that looks different. */
+    .pbody{position:relative;display:flex;flex-direction:column}
+    /* The one panel that keeps the chrome grey: its tabs are cut out of it. */
+    .chrome{background:var(--chrome-panel)}
     #draftBanner{
-      flex:none;background:var(--warn);color:var(--ink);padding:7px 12px;border-radius:var(--r);
-      margin-bottom:8px;display:flex;align-items:center;gap:10px;font-size:11px;
+      flex:none;background:var(--warn);color:var(--ink);padding:7px 12px;
+      display:flex;align-items:center;gap:10px;font-size:11px;
+    }
+    /* The element picker floats at the working area's top right, where the
+       design puts it: inside the page, near the line it describes. */
+    .eltbar{
+      position:absolute;top:5px;right:6px;z-index:2;
+      display:flex;align-items:center;gap:8px;
     }
     .wc{color:var(--mut);font-size:10px;white-space:nowrap}
-    .eltpick{height:22px;padding:0 8px;font-size:11px;color:var(--ui);background:var(--panel);border:0;border-radius:var(--r);cursor:pointer;font-family:var(--sans);display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
-    .eltpick:hover{background:var(--ph)}
-    /* Draft tabs (notes.md point 3): the drafts live here now, not in the top bar. */
-    .tabs{flex:none;display:flex;align-items:center;gap:2px;border-bottom:1px solid var(--panel);margin-bottom:8px;overflow-x:auto;scrollbar-width:none}
-    .tabs::-webkit-scrollbar{display:none}
-    .addtab{height:28px;width:26px;flex:none;font-size:15px;color:var(--mut);background:transparent;border:0;border-radius:0;cursor:pointer;font-family:var(--sans)}
+    .addtab{
+      flex:none;height:30px;width:26px;font-size:15px;color:var(--mut);
+      background:transparent;border:0;border-radius:0;cursor:pointer;font-family:var(--sans);
+    }
     .addtab:hover{color:var(--ui)}
     pandemonium-script-editor{flex:1;min-height:0}
   `];
@@ -58,7 +69,8 @@ export class PandemoniumScriptPanel extends LitElement {
   #elementMenu(e) {
     const cur = this._elt;
     const items = ELEMENT_MENU.map((k) => ({
-      label: ELEMENT_LABELS[k] + (k === cur ? '  ✓' : ''),
+      label: ELEMENT_LABELS[k],
+      selected: k === cur,
       fn: () => { const ed = this.renderRoot.querySelector('pandemonium-script-editor'); if (ed) ed.setLineElement(k); },
     }));
     dispatch(this, 'pandemonium-open-menu', { anchor: e.currentTarget, items });
@@ -88,24 +100,29 @@ export class PandemoniumScriptPanel extends LitElement {
     const wc = words ? words.toLocaleString() + ' w · est ' + fmtT(secs) : '';
 
     return html`
-      <div class="phead">
-        ${this.#title()}<span class="sub">${sc.final ? 'final draft' : 'draft'}</span>
-        <div class="tools">
-          <span class="wc">${wc}</span>
-          <button class="eltpick" title="Set the current line's screenplay element" @click=${(e) => this.#elementMenu(e)}>${ELEMENT_LABELS[this._elt] || 'Action'} ▾</button>
+      <div class="shell" style="--pane-bg:${sc.final ? 'var(--pane-script)' : '#fff'}">
+        <div class="chrome">
+          ${this.#title()}
+          <div class="tabs">
+            ${project.scripts.map((s) => html`<pandemonium-draft-chip .script=${s}></pandemonium-draft-chip>`)}
+            <button class="addtab" title="Add a new draft" @click=${() => this.#addScript()}>+</button>
+          </div>
+        </div>
+        <div class="pbody">
+          <div class="eltbar">
+            <span class="wc">${wc}</span>
+            <button class="pd-dropdown" title="Set the current line's screenplay element" @click=${(e) => this.#elementMenu(e)}
+              >${ELEMENT_LABELS[this._elt] || 'Action'}${dropdownCaret}</button>
+          </div>
+          ${!sc.final ? html`
+            <div id="draftBanner">
+              <span>Boards &amp; sources attach to the final draft, <b>${finalScript.name}</b>.</span>
+              <pd-button @click=${() => store.makeFinal(sc.id)}>Make this final</pd-button>
+              <pd-button @click=${() => store.setUI({ draftId: finalScript.id })}>View final</pd-button>
+            </div>` : nothing}
+          <pandemonium-script-editor></pandemonium-script-editor>
         </div>
       </div>
-      <div class="tabs">
-        ${project.scripts.map((s) => html`<pandemonium-draft-chip .script=${s}></pandemonium-draft-chip>`)}
-        <button class="addtab" title="Add a new draft" @click=${() => this.#addScript()}>+</button>
-      </div>
-      ${!sc.final ? html`
-        <div id="draftBanner">
-          <span>Boards &amp; sources attach to the final draft, <b>${finalScript.name}</b>.</span>
-          <pd-button @click=${() => store.makeFinal(sc.id)}>Make this final</pd-button>
-          <pd-button @click=${() => store.setUI({ draftId: finalScript.id })}>View final</pd-button>
-        </div>` : nothing}
-      <pandemonium-script-editor></pandemonium-script-editor>
     `;
   }
 }

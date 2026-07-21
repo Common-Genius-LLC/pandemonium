@@ -20,8 +20,13 @@ export class PandemoniumPanelLayout extends LitElement {
     .split{display:flex;flex:1;min-width:0;min-height:0}
     .split.row{flex-direction:row}
     .split.col{flex-direction:column}
-    .pane{display:flex;min-width:0;min-height:0;overflow:hidden}
-    .leaf{position:relative;flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
+    /* Not overflow:hidden. The panel shell does its own clipping (see
+       styles/shared.js), and hiding overflow here cropped the shell's drop
+       shadow flush against its rounded corners, so the panels read as square
+       blocks butted together. min-width/min-height:0 is what actually keeps a
+       pane from being pushed wider by its content. */
+    .pane{display:flex;min-width:0;min-height:0}
+    .leaf{position:relative;flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
     pandemonium-boards-panel,pandemonium-research-panel,pandemonium-script-panel{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column}
 
     .divider{flex:none;position:relative;z-index:3}
@@ -30,7 +35,11 @@ export class PandemoniumPanelLayout extends LitElement {
     .divider.v::after{inset:0 7px}
     .divider.h{height:16px;cursor:row-resize}
     .divider.h::after{inset:7px 0}
-    .divider:hover::after,.divider.dragging::after{background:var(--ph)}
+    .divider:hover::after{background:var(--ph)}
+    /* The dragging class is set on the one divider the pointer went down on,
+       so only the border actually being resized goes pink, not every border
+       in the layout. */
+    .divider.dragging::after{background:var(--res)}
 
     .regionctl{position:absolute;bottom:8px;right:8px;z-index:9;display:flex;gap:2px;opacity:0;transition:opacity .12s;pointer-events:none}
     .leaf:hover .regionctl{opacity:1;pointer-events:auto}
