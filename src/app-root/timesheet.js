@@ -12,14 +12,14 @@ import { fmtT } from '../utils/format.js';
 // so the header reads "unknown," never a fabricated "0:00".
 export class PandemoniumTimesheet extends LitElement {
   static styles = css`
-    :host{flex:none;padding:10px 22px 14px;display:block}
-    #tsHead{display:flex;align-items:baseline;gap:14px;margin-bottom:8px}
+    :host{flex:none;padding:6px 22px 8px;display:block}
+    #tsHead{display:flex;align-items:baseline;gap:14px;margin-bottom:5px}
     .lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut)}
     #tsStats{color:var(--mut);font-size:11px}
     #tsStats b{color:var(--ui);font-weight:500}
     #tsStats .sb{color:#7fae53;font-weight:500}
     #tsStats .sr{color:var(--res);font-weight:500}
-    #tsStrip{display:flex;gap:6px;height:56px}
+    #tsStrip{display:flex;gap:6px;height:34px}
     .seg{
       position:relative;display:flex;flex-direction:column;gap:2px;min-width:10px;
       cursor:pointer;border-radius:2px;overflow:hidden;flex-basis:12px;

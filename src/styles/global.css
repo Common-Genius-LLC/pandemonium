@@ -33,7 +33,7 @@ body{
   #printRoot.mode-script .p-character{margin:12pt 0 0 2.1in;text-transform:uppercase;page-break-after:avoid}
   #printRoot.mode-script .p-paren{margin:0 0 0 1.6in;width:2.2in}
   #printRoot.mode-script .p-dialogue{margin:0 0 0 1in;width:3.4in}
-  #printRoot.mode-script .p-transition{text-align:right;margin:12pt 0;text-transform:uppercase}
+  #printRoot.mode-script .p-transition{text-align:right;margin:12pt 0;text-transform:uppercase;font-style:italic}
   #printRoot.mode-script .p-centered{text-align:center;margin:12pt 0}
   #printRoot.mode-script .p-lyric{font-style:italic;margin:2pt 0 2pt 1.2in}
   #printRoot.mode-script .p-page{page-break-after:always;height:0}

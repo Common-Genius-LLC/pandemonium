@@ -19,6 +19,18 @@ export const TITLE_KEYS = ['title', 'credit', 'author', 'authors', 'source', 'dr
 
 export const CONTENT_TYPES = { action: 1, dialogue: 1, paren: 1, centered: 1, lyric: 1, character: 1 };
 
+// A character cue is an all-caps (or `@`-forced) line. Shared with the live
+// decoration layer (cm-fountain-plugin.js) so its "the dialogue line is still
+// blank" preview uses the exact same rule the parser will apply the instant
+// that line gets real text, instead of a second, driftable heuristic.
+export function isCharacterCueText(t) {
+  const forcedChar = t[0] === '@';
+  const core = (forcedChar ? t.slice(1) : t).replace(/\s*\^\s*$/, '');
+  const strippedName = core.replace(/\([^)]*\)/g, '').trim();
+  const isUpper = strippedName.length > 0 && strippedName === strippedName.toUpperCase() && /[A-Z]/.test(strippedName) && !/^\d+[.,!?]*$/.test(strippedName);
+  return forcedChar || isUpper;
+}
+
 export function inlineRuns(text) {
   const runs = [];
   let b = false, it = false, u = false, note = false, buf = '', bufMap = [];
@@ -85,10 +97,8 @@ export function parseFountain(src) {
     if (t[0] === '!') { push({ type: 'action', text: t.slice(1) }); lastBlank = false; i++; continue; }
     const forcedChar = t[0] === '@';
     const core = (forcedChar ? t.slice(1) : t).replace(/\s*\^\s*$/, '');
-    const strippedName = core.replace(/\([^)]*\)/g, '').trim();
-    const isUpper = strippedName.length > 0 && strippedName === strippedName.toUpperCase() && /[A-Z]/.test(strippedName) && !/^\d+[.,!?]*$/.test(strippedName);
     const nextNB = i + 1 < lines.length && lines[i + 1].trim() !== '';
-    if (lastBlank && nextNB && (forcedChar || isUpper)) {
+    if (lastBlank && nextNB && isCharacterCueText(t)) {
       push({ type: 'character', text: core });
       i++;
       while (i < lines.length && lines[i].trim() !== '') {

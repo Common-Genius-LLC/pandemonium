@@ -15,7 +15,7 @@
 'use strict';
 
 import { ViewPlugin, Decoration } from '@codemirror/view';
-import { parseFountain } from '../../fountain/parse.js';
+import { parseFountain, isCharacterCueText } from '../../fountain/parse.js';
 import { plainRangeToRaw, inlineDelimRanges } from '../../fountain/doc-map.js';
 import { activeElementField } from './cm-autoformat.js';
 
@@ -70,6 +70,24 @@ function activeLineSet(state) {
   return set;
 }
 
+function rawLineBlank(doc, n) { return n < 1 || n > doc.lines || doc.line(n).text.trim() === ''; }
+
+// Real Fountain only recognises a character cue once a non-blank line
+// follows it (parseFountain.js), which is correct for a saved file but means
+// the instant you press Enter after typing one, the still-empty line you
+// land on makes the parser re-read the cue as plain action -- both lines
+// flash to action formatting until you type the first word of dialogue. This
+// keeps the cue (and its still-blank dialogue line) previewing correctly for
+// as long as the caret sits on that blank line, regardless of whether the
+// element was set by typing caps directly or via Tab/the element picker.
+function isPendingCharacterCue(doc, b, activeLines) {
+  if (b.type !== 'action') return false;
+  const nextLineNo = b.line + 2; // 1-based number of the raw line right after b
+  if (!rawLineBlank(doc, nextLineNo) || !activeLines.has(nextLineNo - 1)) return false;
+  if (!rawLineBlank(doc, b.line)) return false; // b.line (1-based) is the line before b's own
+  return isCharacterCueText(b.text);
+}
+
 // Pure builder (takes an EditorState, not a view) so it's unit-testable without
 // spinning up an editor. `parsed` is parseFountain(doc); `highlights` is the
 // biMap of board/research/comment anchors.
@@ -92,8 +110,11 @@ export function buildDecorations(state, parsed, highlights) {
     // While the caret is on a line with a pinned element (Tab / picker), show
     // that element's formatting even if the parser doesn't agree yet -- so a
     // character cue centers while you type it, before its dialogue exists.
-    const cls = (active && isActive && b.line === pinLine && LINE_CLASS[active.el]) ? LINE_CLASS[active.el] : LINE_CLASS[b.type];
+    const pinned = active && isActive && b.line === pinLine && LINE_CLASS[active.el];
+    const pendingCue = !pinned && isPendingCharacterCue(doc, b, activeLines);
+    const cls = pinned || (pendingCue ? LINE_CLASS.character : LINE_CLASS[b.type]);
     if (cls) decos.push(Decoration.line({ class: cls }).range(line.from));
+    if (pendingCue) decos.push(Decoration.line({ class: LINE_CLASS.dialogue }).range(doc.line(b.line + 2).from));
 
     // Element markers: leading (`.`/`@`/`#`/`= `/`> ` ...) and, for a centered
     // line, the trailing ` <`.
