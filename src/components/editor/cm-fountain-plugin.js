@@ -103,6 +103,24 @@ export function buildDecorations(state, parsed, highlights) {
     decos.push((isActive ? Decoration.mark({ class: 'cmf-syntax' }) : Decoration.replace({})).range(from, to));
   };
 
+  // Blank lines never carry a parsed block (parseFountain skips them), so any
+  // preview class for a still-empty line -- a Tab/picker pin, or a character
+  // cue's not-yet-typed dialogue line (isPendingCharacterCue) -- is recorded
+  // here instead of decorated immediately. CodeMirror concatenates the class
+  // strings of every Decoration.line that targets the same line, so pushing
+  // from two sources independently can silently stack two element classes
+  // (e.g. cmf-scene + cmf-dialogue) onto one line, and whichever is declared
+  // later in cm-theme.js wins the cascade on any property they both set --
+  // that's how a scene heading picked up centered dialogue text-align in the
+  // past. Collecting candidates in a map first guarantees exactly one class
+  // per blank line: a real pin (an explicit, current user action) always
+  // wins over the inferred cue preview.
+  const blankLineClass = new Map();
+  if (active && pinLine >= 0 && activeLines.has(pinLine) && LINE_CLASS[active.el]) {
+    const l = doc.line(pinLine + 1);
+    if (l.length === 0) blankLineClass.set(l.from, LINE_CLASS[active.el]);
+  }
+
   for (const b of parsed.blocks) {
     if (b.type === 'page' || b.line == null || b.line + 1 > doc.lines) continue;
     const line = doc.line(b.line + 1);
@@ -114,7 +132,10 @@ export function buildDecorations(state, parsed, highlights) {
     const pendingCue = !pinned && isPendingCharacterCue(doc, b, activeLines);
     const cls = pinned || (pendingCue ? LINE_CLASS.character : LINE_CLASS[b.type]);
     if (cls) decos.push(Decoration.line({ class: cls }).range(line.from));
-    if (pendingCue) decos.push(Decoration.line({ class: LINE_CLASS.dialogue }).range(doc.line(b.line + 2).from));
+    if (pendingCue) {
+      const nextLine = doc.line(b.line + 2);
+      if (!blankLineClass.has(nextLine.from)) blankLineClass.set(nextLine.from, LINE_CLASS.dialogue);
+    }
 
     // Element markers: leading (`.`/`@`/`#`/`= `/`> ` ...) and, for a centered
     // line, the trailing ` <`.
@@ -140,13 +161,7 @@ export function buildDecorations(state, parsed, highlights) {
     }
   }
 
-  // A pinned but empty line (Tab on a blank line) has no block to carry the
-  // class above, so reflect the pinned element here -- the caret then sits
-  // where the element will (e.g. centered for a Character cue).
-  if (active && pinLine >= 0 && activeLines.has(pinLine)) {
-    const l = doc.line(pinLine + 1);
-    if (l.length === 0 && LINE_CLASS[active.el]) decos.push(Decoration.line({ class: LINE_CLASS[active.el] }).range(l.from));
-  }
+  for (const [from, cls] of blankLineClass) decos.push(Decoration.line({ class: cls }).range(from));
 
   return Decoration.set(decos, true);
 }

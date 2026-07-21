@@ -18,13 +18,16 @@ export class PandemoniumSlideshow extends LitElement {
     .noimg{width:min(58%,640px);aspect-ratio:16/9;background:var(--ph);display:flex;align-items:center;justify-content:center;color:var(--mut);font-size:12px;letter-spacing:.08em;text-transform:uppercase;border-radius:2px}
     .x{position:absolute;top:14px;right:16px;color:#fff;background:rgba(255,255,255,.14);width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;border:0;border-radius:50%;cursor:pointer}
     .x:hover{background:rgba(255,255,255,.28)}
-    .bottom{flex:none;height:20%;min-height:118px;background:var(--bg);display:flex;flex-direction:column}
+    .bottom{flex:none;height:30%;min-height:200px;background:var(--bg);display:flex;flex-direction:column}
     .prog{height:3px;background:var(--panel)}
     .prog i{display:block;height:100%;background:var(--act)}
-    .txt{flex:1;min-height:0;display:flex;gap:24px;align-items:flex-start;padding:12px 26px;overflow:hidden}
-    .txt .left{flex:1;min-width:0;height:100%;overflow:auto;scrollbar-width:thin}
-    .scene{margin-bottom:4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut)}
-    .lines{font-family:var(--mono);font-size:13px;color:var(--ink);white-space:pre-wrap;line-height:1.6}
+    .txt{flex:1;min-height:0;display:flex;gap:24px;align-items:flex-start;padding:16px 26px;overflow:hidden}
+    .txt .left{flex:1;min-width:0;height:100%;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin}
+    .scene{margin-bottom:6px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut)}
+    .lines{
+      font-family:var(--mono);font-size:34px;line-height:1.35;color:var(--ink);
+      white-space:pre-wrap;overflow-wrap:break-word;word-break:break-word;
+    }
     .rightcol{flex:none;text-align:right;color:var(--mut);font-size:11px;display:flex;flex-direction:column;gap:4px}
     .rightcol .n{color:var(--ui);font-weight:500;font-size:12px}
   `;
