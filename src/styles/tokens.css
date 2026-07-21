@@ -18,6 +18,23 @@
   --ok:#1f8c62;
   --pend:#dbe6f9;        /* pending selection while linking */
   --warn:#f9dbdb;        /* needs attention */
+  /* Chrome, from the Figma "Button-Standard-Component" (21:69),
+     "panel-dropdown" (31:188) and "Title bar" (39:72) components. */
+  --btn-line:#b8b8b8;    /* button border, at rest */
+  --btn-line-on:#9c9c9c; /* button border, pressed */
+  --btn-hi:#f6f6f6;      /* button fill, hover */
+  --menu-bg:#eaeaea;     /* panel dropdown fill, open */
+  --chrome-a:#b7b7b7;    /* title bar gradient, top */
+  --chrome-b:#d3d3d3;    /* title bar gradient, bottom */
+  /* Panel working areas. Separate tokens from --warn/--pend even where the
+     hex matches: these say "this is the boards pane", not "this needs
+     attention", and the two are free to diverge later. */
+  --pane-board:#f9dbdb;
+  --pane-script:#dbe6f9;
+  --pane-research:#f5f5f5;
+  --pane-board-ink:#852a2a; /* copy on the boards pane */
+  --chrome-panel:#f0f0f0;   /* panel shell and its tab strip */
+  --tab-final-ink:#075495;  /* the final draft's tab label */
   --r:3px;
   --sans:'Untitled Sans','Neue Haas Grotesk Text','Helvetica Neue',Helvetica,Arial,sans-serif;
   --mono:'Courier Prime','Courier New',Courier,monospace;

@@ -11,11 +11,12 @@ import { getParsed } from '../fountain/cache.js';
 import { formStyles, chipStyles } from '../styles/shared.js';
 import '../components/ui/logo.js';
 import '../components/ui/button.js';
+import '../components/search/search-field.js';
 
-// Phase 1: search is still the click-to-open command-palette button from the
-// original. Phase 2 replaces it with a real inline field per the Figma
-// re-skin decision (see project notes) without touching any other part of
-// the topbar.
+// Figma "Title bar" (node 39:72): the grey gradient chrome, the white wordmark
+// at x21, and the search field as a real 418x28 white box rather than the grey
+// command-palette pill it used to be. The frame carries no buttons, so
+// New/Save/Open/Export and the unsaved dot keep their place on the right.
 //
 // Save/Open/Export/New live here (rather than a separate row below) so the
 // whole app chrome fits in one header line, leaving more vertical room for
@@ -24,23 +25,29 @@ export class PandemoniumTopbar extends LitElement {
   static properties = {};
 
   static styles = [formStyles, chipStyles, css`
-    :host{height:48px;flex:none;display:flex;align-items:center;gap:16px;padding:0 22px}
-    #brand{display:flex;align-items:baseline;gap:10px;min-width:0}
-    pd-logo{font-size:15px;color:var(--ink)}
+    /* Grid rather than flex so the search field centers on the page, where the
+       frame puts it, instead of centering in whatever space the brand and the
+       actions happen to leave. */
+    :host{
+      /* minmax(0,418px) rather than auto: the search field gives way on a
+         narrow window instead of pushing the wordmark under itself. */
+      height:48px;flex:none;display:grid;grid-template-columns:1fr minmax(0,418px) 1fr;
+      align-items:center;gap:16px;padding:0 21px;
+      background:linear-gradient(180deg,var(--chrome-a) 0%,var(--chrome-b) 100%);
+    }
+    #brand{justify-self:start;display:flex;align-items:center;gap:12px;min-width:0}
+    pd-logo{font-size:19.824px;color:#fff}
     #projName{
-      font-size:12px;color:var(--mut);background:none;border:0;padding:2px 4px;
+      font-size:14px;color:rgba(255,255,255,.88);background:none;border:0;padding:3px 6px;
       max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-      border-radius:var(--r);cursor:pointer;font-family:var(--sans);
+      border-radius:var(--r);cursor:pointer;font-family:var(--sans);font-weight:500;
     }
-    #projName:hover{background:var(--panel)}
-    #searchBox{flex:1;display:flex;justify-content:center}
-    #searchBtn{
-      width:min(320px,100%);height:28px;background:var(--panel);color:var(--mut);
-      display:flex;align-items:center;gap:8px;padding:0 10px;font-size:12px;
-      border:0;border-radius:var(--r);cursor:pointer;font-family:var(--sans);
-    }
-    #searchBtn .k{margin-left:auto;font-size:10px;color:var(--mut)}
-    #actions{display:flex;align-items:center;gap:6px}
+    #projName:hover{background:rgba(255,255,255,.28)}
+    /* The frame's 418px is a maximum, not a fixed width: the field gives way
+       on a narrow window rather than pushing the wordmark under itself. */
+    #searchBox{justify-self:stretch;min-width:0;display:flex;justify-content:center}
+    pandemonium-search-field{width:100%;max-width:418px}
+    #actions{justify-self:end;display:flex;align-items:center;gap:6px}
     #saveDot{width:7px;height:7px;border-radius:50%;background:var(--act);display:none;flex:none;margin-right:2px}
     #saveDot.on{display:inline-block}
     @media (max-width:900px){:host{gap:8px;padding:0 14px}#projName{display:none}}
@@ -53,10 +60,6 @@ export class PandemoniumTopbar extends LitElement {
 
   #openSettings() {
     dispatch(this, 'pandemonium-open-project-settings', {});
-  }
-
-  #openSearch() {
-    this._store.store.setUI({ searchOpen: true });
   }
 
   #newProject() {
@@ -141,10 +144,7 @@ export class PandemoniumTopbar extends LitElement {
         <button id="projName" title="Project settings" @click=${() => this.#openSettings()}>${project.name || 'Untitled'}</button>
       </div>
       <div id="searchBox">
-        <button id="searchBtn" @click=${() => this.#openSearch()}>
-          <span>Search</span><span style="opacity:.55">Everything</span>
-          <span class="k">${isMac ? '⌘K' : 'Ctrl K'}</span>
-        </button>
+        <pandemonium-search-field title=${'Search everything (' + (isMac ? '⌘K' : 'Ctrl K') + ')'}></pandemonium-search-field>
       </div>
       <div id="actions">
         <span id="saveDot" class=${ui.dirty ? 'on' : ''} title="Autosaved locally. Not yet exported as a file."></span>

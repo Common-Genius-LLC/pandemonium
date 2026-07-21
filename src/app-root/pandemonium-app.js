@@ -7,7 +7,7 @@ import { PandemoniumStore } from '../state/store.js';
 import { dispatch } from '../utils/events.js';
 import { saveProject, autosaveProject, loadAutosavedProject, clearAutosavedProject } from '../data/db.js';
 import { formStyles, chipStyles } from '../styles/shared.js';
-import { CHIPCOLORS, debounce } from '../utils/format.js';
+import { debounce } from '../utils/format.js';
 import { imageFromClipboard } from '../utils/clipboard.js';
 import { readFileAsDataURL } from '../utils/files.js';
 
@@ -18,11 +18,11 @@ import './panel-layout.js';
 import '../components/ui/toast.js';
 import '../components/ui/dialog.js';
 import '../components/ui/menu.js';
+import '../components/ui/project-card.js';
 import '../components/linking/selection-toolbar.js';
 import '../components/linking/linkbar.js';
 import '../components/linking/highlight-popover.js';
 import '../components/linking/comment-popover.js';
-import '../components/search/search-overlay.js';
 import '../components/slideshow/slideshow.js';
 
 // The root shell. Owns the one PandemoniumStore instance for the whole app
@@ -105,7 +105,15 @@ export class PandemoniumApp extends LitElement {
     const store = this.store;
     if (!store.project) return;
     const mod = e.metaKey || e.ctrlKey;
-    if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); store.setUI({ searchOpen: true }); return; }
+    // Cmd/Ctrl-K puts the caret in the title bar's search field. There is no
+    // separate search surface to open any more.
+    if (mod && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      const bar = this.renderRoot.querySelector('pandemonium-topbar');
+      const field = bar && bar.renderRoot.querySelector('pandemonium-search-field');
+      if (field) field.focusField();
+      return;
+    }
     if (mod && e.key.toLowerCase() === 's') {
       e.preventDefault();
       saveProject(store.project);
@@ -115,7 +123,6 @@ export class PandemoniumApp extends LitElement {
     }
     if (e.key === 'Escape') {
       const ui = store.ui;
-      if (ui.searchOpen) { store.setUI({ searchOpen: false }); return; }
       if (ui.linking || ui.pendingRelink) { store.setUI({ linking: null, pendingRelink: null }); return; }
       if (ui.pair) { store.setUI({ pair: null }); return; }
     }
@@ -136,55 +143,38 @@ export class PandemoniumApp extends LitElement {
     dispatch(this, 'pandemonium-toast', { message: 'Board added. Select a script passage anytime to attach it.' });
   };
 
+  // Clicking the project name opens the same clapperboard card the project
+  // was created on, rather than a second, plainer form of the same fields.
+  // It writes through on every keystroke, so dismissing it is not a decision:
+  // there is nothing pending to keep or discard.
   #openProjectSettings() {
     const project = this.store.project;
-    let contribs = project.contributors.slice();
-    const renderChips = (root) => {
-      const holder = root.getElementById('f_chips');
-      holder.innerHTML = contribs.map((c, ix) => `<span class="chip" style="background:${c.color}"><b></b><span class="x" data-ix="${ix}">×</span></span>`).join('');
-      holder.querySelectorAll('b').forEach((b, ix) => { b.textContent = contribs[ix].n; });
-      holder.querySelectorAll('.x').forEach((x) => {
-        x.onclick = () => { contribs = contribs.filter((_, i) => i !== parseInt(x.dataset.ix, 10)); renderChips(root); };
+    const commit = (v) => {
+      this.store.updateProjectMeta({
+        name: v.name || project.name,
+        type: v.type,
+        workspace: v.workspace,
+        targetMins: v.targetMins,
       });
+      this.store.setContributors(v.contributors);
     };
     dispatch(this, 'pandemonium-open-dialog', {
-      title: 'Project',
-      okLabel: 'Save',
-      body: html`
-        <div class="field"><label class="lbl">Name</label><input type="text" id="f_pn" .value=${project.name}></div>
-        <div class="row">
-          <div class="field"><label class="lbl">Type</label><input type="text" id="f_pt" .value=${project.type || ''}></div>
-          <div class="field"><label class="lbl">Workspace</label><input type="text" id="f_pw" .value=${project.workspace || ''}></div>
-        </div>
-        <div class="field"><label class="lbl">Target duration, minutes</label><input type="number" min="0" id="f_pd" .value=${project.targetMins || ''}></div>
-        <div class="field">
-          <label class="lbl">Contributors</label>
-          <input type="text" id="f_pc" placeholder="Type a name, press Enter"
-            @keydown=${(e) => {
-              if (e.key !== 'Enter') return;
-              e.preventDefault();
-              const v = e.target.value.trim();
-              if (!v) return;
-              contribs.push({ n: v, color: CHIPCOLORS[contribs.length % CHIPCOLORS.length] });
-              e.target.value = '';
-              renderChips(e.target.getRootNode());
-            }}>
-          <div class="chips" id="f_chips" style="margin-top:6px"></div>
-        </div>
-      `,
+      bare: true,
+      body: html`<pd-project-card
+        elevated
+        .projectName=${project.name || ''}
+        .type=${project.type || ''}
+        .workspace=${project.workspace || ''}
+        .mins=${project.targetMins || 0}
+        .contributors=${project.contributors}
+        @pd-project-change=${(e) => commit(e.detail)}
+      ></pd-project-card>`,
+      // Belt and braces: catches a value the change event could not, such as
+      // a duration still mid-edit when the card is dismissed.
       onOk: (root) => {
-        this.store.updateProjectMeta({
-          name: root.querySelector('#f_pn').value,
-          type: root.querySelector('#f_pt').value,
-          workspace: root.querySelector('#f_pw').value,
-          targetMins: root.querySelector('#f_pd').value,
-        });
-        this.store.setContributors(contribs);
+        const card = root.querySelector('pd-project-card');
+        if (card) commit(card.read());
       },
-    });
-    this.updateComplete.then(() => {
-      const root = this.renderRoot.getElementById('dialog').renderRoot;
-      renderChips(root);
     });
   }
 
@@ -205,7 +195,6 @@ export class PandemoniumApp extends LitElement {
       <pandemonium-linkbar></pandemonium-linkbar>
       <pandemonium-highlight-popover id="boardPopover"></pandemonium-highlight-popover>
       <pandemonium-comment-popover id="commentPopover"></pandemonium-comment-popover>
-      <pandemonium-search-overlay></pandemonium-search-overlay>
       <pandemonium-slideshow id="slideshow"></pandemonium-slideshow>
     `;
   }

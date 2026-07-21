@@ -31,6 +31,10 @@ export class PandemoniumTimesheet extends LitElement {
     .seg .num{position:absolute;top:3px;left:5px;font-size:9px;font-weight:500;color:var(--ui);opacity:.7;pointer-events:none;z-index:1}
     .seg:hover .lane{background:#cfcfcf}
     .seg.flash .lane{background:var(--act)}
+    /* An empty final draft has nothing to divide into scenes. One flat lane
+       reads as "nothing yet"; the per-scene segments would otherwise collapse
+       into a couple of 12px stubs that look like a rendering fault. */
+    #tsStrip .none{flex:1;background:var(--ph);border-radius:2px;opacity:.45}
   `;
 
   constructor() {
@@ -73,7 +77,7 @@ export class PandemoniumTimesheet extends LitElement {
         </span>
       </div>
       <div id="tsStrip">
-        ${scenes.map((sc) => html`
+        ${!stats.hasContent ? html`<div class="none"></div>` : scenes.map((sc) => html`
           <div class="seg" style="flex-grow:${Math.max(0.001, sc.secs)}"
             title="${(sc.pre ? 'Opening' : 'Sc ' + sc.label)} · ${sc.name} · ~${fmtT(sc.secs)} · ${sc.nb} board${sc.nb === 1 ? '' : 's'} · ${sc.nr} source${sc.nr === 1 ? '' : 's'}"
             @click=${(e) => this.#jump(sc, e.currentTarget)}

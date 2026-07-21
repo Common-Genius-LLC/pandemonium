@@ -4,7 +4,7 @@ import { LitElement, html, css } from 'lit';
 import { clamp } from '../../utils/format.js';
 
 // One instance at app-root, opened via a bubbling `pandemonium-open-menu`
-// event carrying {anchor: HTMLElement, items: [{label, danger, fn}]}.
+// event carrying {anchor: HTMLElement, items: [{label, selected, danger, fn}]}.
 // Positioned off the anchor's own getBoundingClientRect() -- a public DOM
 // method, safe to call across shadow-root boundaries -- so callers never
 // need to pre-compute coordinates for a simple popover like this one.
@@ -23,6 +23,9 @@ export class PdMenu extends LitElement {
       white-space:nowrap;text-align:left;background:none;border:0;border-radius:2px;cursor:pointer;
     }
     button:hover{background:rgba(255,255,255,.16)}
+    /* The current choice is carried by a pink fill rather than a trailing
+       check, so the labels stay a clean column. */
+    button.on,button.on:hover{background:var(--res);color:#fff}
     button.danger{color:#ffb3c1}
   `;
 
@@ -81,7 +84,9 @@ export class PdMenu extends LitElement {
     if (!this._open) return html``;
     return html`
       <div class="pop" style="left:${this._x || 0}px;top:${this._y || 0}px">
-        ${this._items.map((it) => html`<button class=${it.danger ? 'danger' : ''} @click=${() => this.#pick(it)}>${it.label}</button>`)}
+        ${this._items.map((it) => html`<button
+          class="${it.danger ? 'danger' : ''} ${it.selected ? 'on' : ''}"
+          @click=${() => this.#pick(it)}>${it.label}</button>`)}
       </div>
     `;
   }

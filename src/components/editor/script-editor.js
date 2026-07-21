@@ -2,7 +2,7 @@
 
 import { LitElement, html, css } from 'lit';
 import { EditorState } from '@codemirror/state';
-import { EditorView, keymap } from '@codemirror/view';
+import { EditorView, keymap, placeholder } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { StoreController } from '../../state/store-controller.js';
 import { dispatch } from '../../utils/events.js';
@@ -14,8 +14,9 @@ import { openSourceDialog } from '../research/source-dialog.js';
 import { parseFountain } from '../../fountain/parse.js';
 import { resolvePart } from '../../fountain/resolve.js';
 import { plainPosToRaw, rawOffsetToPlainPos, blockRawRange } from '../../fountain/doc-map.js';
-import { applyElement, elementOfBlock } from '../../fountain/element-ops.js';
-import { activeElementField, autoUppercase, setActiveElement, pinsUpperCase, elementKeymap } from './cm-autoformat.js';
+import { elementOfBlock } from '../../fountain/element-ops.js';
+import { activeElementField, autoUppercase, applyElementAtCaret, elementKeymap } from './cm-autoformat.js';
+import { elementMenu } from './element-menu.js';
 import { readFileAsDataURL } from '../../utils/files.js';
 import { imageFromClipboard } from '../../utils/clipboard.js';
 import { openPair } from '../../state/actions.js';
@@ -63,8 +64,15 @@ export class PandemoniumScriptEditor extends LitElement {
       doc: script.text,
       extensions: [
         history(),
+        // Before the element keymap: while the element menu is open it owns
+        // Enter and the letter keys (element-menu.js sets its own precedence).
+        elementMenu({ onPick: (view, key) => applyElementAtCaret(view, key) }),
         elementKeymap({ getParsed: (v) => v.plugin(this.#plugin)?.parsed || parseFountain(v.state.doc.toString()) }),
         keymap.of([...defaultKeymap, ...historyKeymap]),
+        // Shown only while the document is empty, so it appears on a new
+        // draft, goes on the first keystroke, and comes back if the writer
+        // clears everything out again. CodeMirror owns that toggle.
+        placeholder('Start writing your script'),
         EditorView.lineWrapping,
         fountainTheme,
         this.#plugin,
@@ -244,8 +252,14 @@ export class PandemoniumScriptEditor extends LitElement {
   // the script panel's picker calls setLineElement().
   #caretElementKey() {
     if (!this.#view) return 'action';
-    const head = this.#view.state.selection.main.head;
-    const line0 = this.#view.state.doc.lineAt(head).number - 1;
+    const state = this.#view.state;
+    const doc = state.doc;
+    const line0 = doc.lineAt(state.selection.main.head).number - 1;
+    // A pin (Tab, the picker, or the element Enter just moved you into) is
+    // what the next keystroke will produce on this line, so the picker shows
+    // that; without one, the parser's own verdict.
+    const active = state.field(activeElementField, false);
+    if (active && doc.lineAt(Math.min(active.pos, doc.length)).number - 1 === line0) return active.el;
     const parsed = this.#view.plugin(this.#plugin)?.parsed;
     const b = parsed && parsed.blocks.find((x) => x.line === line0);
     return elementOfBlock(b);
@@ -260,16 +274,7 @@ export class PandemoniumScriptEditor extends LitElement {
 
   setLineElement(key) {
     if (!this.#view) return;
-    const line = this.#view.state.doc.lineAt(this.#view.state.selection.main.head);
-    const next = applyElement(line.text, key);
-    // Pin the choice to this line so it keeps auto-upper-casing as you type on
-    // (e.g. a lower-cased character name), then clears when the caret leaves.
-    const effects = setActiveElement.of(pinsUpperCase(key) ? { el: key, pos: line.from } : null);
-    this.#view.dispatch({
-      changes: next !== line.text ? { from: line.from, to: line.to, insert: next } : undefined,
-      selection: { anchor: line.from + next.length },
-      effects,
-    });
+    applyElementAtCaret(this.#view, key);
     this.#view.focus();
   }
 

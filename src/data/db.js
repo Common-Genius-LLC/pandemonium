@@ -1,5 +1,5 @@
-// The persistence seam. Every component that needs to save/open/sample/
-// autosave a project calls through here, never through local-file-adapter.js
+// The persistence seam. Every component that needs to save/open/autosave a
+// project calls through here, never through local-file-adapter.js
 // or local-db.js directly. Today this forwards to two local adapters: an
 // IndexedDB slot the project autosaves into continuously (see
 // autosaveProject/loadAutosavedProject), and explicit file save/open (a
@@ -12,7 +12,6 @@
 
 import { saveProjectToFile, parseProjectFileText } from './local-file-adapter.js';
 import { saveCurrentProjectLocally, loadCurrentProjectLocally, clearCurrentProjectLocally } from './local-db.js';
-import { sampleProject } from './sample-project.js';
 import { readFileAsText } from '../utils/files.js';
 
 export function saveProject(project) {
@@ -22,10 +21,6 @@ export function saveProject(project) {
 export async function openProjectFile(file) {
   const text = await readFileAsText(file);
   return parseProjectFileText(text);
-}
-
-export function loadSample() {
-  return sampleProject();
 }
 
 export function autosaveProject(project) {

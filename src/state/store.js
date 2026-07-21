@@ -36,6 +36,7 @@ export class PandemoniumStore extends EventTarget {
     if (!this.#project.scripts.some((s) => s.final)) {
       this.#project = { ...this.#project, scripts: this.#project.scripts.map((s, ix) => (ix === 0 ? { ...s, final: true } : s)) };
     }
+    this.#project = model.normalizeDraftNames(this.#project);
     this.#ui = defaultUI(this.#project.scripts.find((s) => s.final).id);
     this.#emit();
   }
@@ -233,7 +234,6 @@ function defaultUI(draftId) {
     scrollToBlock: null,
     scrollToParagraph: null,
     highlightBoard: null,
-    searchOpen: false,
     dirty: false,
   };
 }

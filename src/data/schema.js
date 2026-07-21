@@ -20,11 +20,11 @@ export function emptyProject(overrides) {
   }, overrides);
 }
 
-export function defaultFountain(project) {
-  const today = new Date().toISOString().slice(0, 10);
-  const author = (project && project.contributors[0] && project.contributors[0].n) || '';
-  return 'Title: ' + ((project && project.name) || 'Untitled') +
-    '\nCredit: written by\nAuthor: ' + author +
-    '\nDraft date: ' + today +
-    '\n\nINT. FIRST SCENE - DAY\n\nType your first action line here.\n';
+// A new draft starts empty. It used to open with a stub title page and a
+// first scene, which read as content the writer had to delete before they
+// could start. The editor shows a "Start writing your script" placeholder
+// over the empty document instead (see cm-theme.js), so the invitation costs
+// nothing to dismiss.
+export function defaultFountain() {
+  return '';
 }

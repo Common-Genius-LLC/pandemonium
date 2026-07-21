@@ -14,7 +14,7 @@ export class PandemoniumResearchPanel extends LitElement {
 
   static styles = [panelStyles, css`
     .adds{display:flex;gap:4px}
-    #researchList{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:12px;align-content:start;padding:2px 2px 24px}
+    #researchList{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:12px;align-content:start;padding:10px 10px 24px}
   `];
 
   constructor() {
@@ -33,19 +33,21 @@ export class PandemoniumResearchPanel extends LitElement {
     const openDoc = project.research.find((d) => d.id === ui.openDoc);
 
     return html`
-      <div class="phead">
-        ${this.#title()}
-        <div class="tools">
-          <div class="adds">
-            <pd-button @click=${() => openSourceDialog(this, this._store.store, null, 'note')}>+ Note</pd-button>
-            <pd-button @click=${() => openSourceDialog(this, this._store.store, null, 'link')}>+ Link</pd-button>
+      <div class="shell" style="--pane-bg:var(--pane-research)">
+        <div class="chrome">
+          ${this.#title()}
+          <div class="tools">
+            <div class="adds">
+              <pd-button @click=${() => openSourceDialog(this, this._store.store, null, 'note')}>+ Note</pd-button>
+              <pd-button @click=${() => openSourceDialog(this, this._store.store, null, 'link')}>+ Link</pd-button>
+            </div>
           </div>
         </div>
-      </div>
-      <div class="pbody">
-        ${openDoc
-          ? html`<pandemonium-research-reader .doc=${openDoc}></pandemonium-research-reader>`
-          : this.#renderGrid(project)}
+        <div class="pbody">
+          ${openDoc
+            ? html`<pandemonium-research-reader .doc=${openDoc}></pandemonium-research-reader>`
+            : this.#renderGrid(project)}
+        </div>
       </div>
     `;
   }
