@@ -65,11 +65,9 @@ export class PandemoniumHighlightPopover extends LitElement {
   }
 
   #openInBoards() {
-    const store = this._store.store;
-    const patch = { highlightBoard: this._board.id };
-    if (store.ui.view === 'single') { patch.view = 'split'; patch.split = 'boards'; }
-    else if (store.ui.view === 'split' && store.ui.split !== 'boards') { patch.split = 'boards'; }
-    store.setUI(patch);
+    // Reveals the board wherever a Thumbnails pane is visible (window-division
+    // layout has no single/split modes to switch into).
+    this._store.store.setUI({ highlightBoard: this._board.id });
     this.close();
   }
 

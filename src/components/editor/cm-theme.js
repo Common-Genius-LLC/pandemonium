@@ -19,11 +19,11 @@ export const fountainTheme = EditorView.theme({
     color: 'var(--ink)',
     backgroundColor: 'var(--bg)',
     height: '100%',
-    fontSize: '13px',
+    fontSize: '16px',
   },
   '.cm-scroller': {
-    fontFamily: 'var(--mono)',
-    lineHeight: '1.65',
+    fontFamily: 'var(--script)',
+    lineHeight: '1.6',
     overflow: 'auto',
   },
   '.cm-content': {
@@ -36,18 +36,30 @@ export const fountainTheme = EditorView.theme({
   '&.cm-focused .cm-cursor': { borderLeftColor: 'var(--ink)' },
   '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'var(--pend) !important' },
 
+  // Standard screenplay formatting, applied live (cm-fountain-plugin.js).
+  // Character cues and section titles are bold; scene headings / characters /
+  // transitions are upper-cased; the dialogue block is a centred column so it
+  // reads like a page without depending on a fixed panel width. Only
+  // horizontal margins here; vertical spacing stays as padding (see the module
+  // note on why margins on .cm-line are avoided).
   '.cmf-scene': { fontWeight: '700', textTransform: 'uppercase', letterSpacing: '.02em', paddingTop: '18px' },
-  '.cmf-character': { textAlign: 'center', textTransform: 'uppercase', paddingTop: '10px' },
+  '.cmf-character': { textAlign: 'center', textTransform: 'uppercase', fontWeight: '700', paddingTop: '10px' },
   '.cmf-paren': { textAlign: 'center', color: 'var(--ui)' },
   '.cmf-dialogue': { maxWidth: '62%', margin: '0 auto', textAlign: 'left' },
   '.cmf-transition': { textAlign: 'right', textTransform: 'uppercase' },
   '.cmf-centered': { textAlign: 'center' },
   '.cmf-lyric': { fontStyle: 'italic', paddingLeft: '1.5em' },
-  '.cmf-section': {
-    fontFamily: 'var(--sans)', fontSize: '11px', fontWeight: '500',
-    letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--mut)', paddingTop: '14px',
-  },
-  '.cmf-synopsis': { fontFamily: 'var(--sans)', fontSize: '11px', color: 'var(--mut)', fontStyle: 'italic' },
+  '.cmf-section': { fontWeight: '700', fontSize: '17px', letterSpacing: '.01em', color: 'var(--ink)', paddingTop: '16px' },
+  '.cmf-synopsis': { fontFamily: 'var(--sans)', fontSize: '13px', color: 'var(--mut)', fontStyle: 'italic' },
+
+  // Inline emphasis + Obsidian-style concealed syntax. Markers are hidden
+  // (Decoration.replace) on lines the caret isn't on, and dimmed (.cmf-syntax)
+  // on the line being edited, so a line reads as formatted until you enter it.
+  '.cmf-b': { fontWeight: '700' },
+  '.cmf-i': { fontStyle: 'italic' },
+  '.cmf-u': { textDecoration: 'underline' },
+  '.cmf-note': { color: 'var(--mut)', fontStyle: 'italic' },
+  '.cmf-syntax': { opacity: '0.45' },
 
   '.hb': { background: 'var(--board)', cursor: 'pointer', borderRadius: '1px' },
   '.hr': { background: 'var(--res)', color: '#fff', cursor: 'pointer', borderRadius: '1px' },

@@ -10,12 +10,9 @@ export function openPair(store, id) {
   const finalState = store.getFinalState();
   const item = finalState.R.links.find((o) => o.lk.id === id);
   if (!item) return;
-  const patch = { pair: id };
-  const nextView = store.ui.view === 'single' ? 'split' : store.ui.view;
-  patch.view = nextView;
-  if (nextView === 'split') patch.split = 'research';
-  patch.openDoc = item.lk.researchId;
-  patch.readerEdit = false;
-  if (store.activeScript().id !== finalState.fsc.id) { patch.draftId = finalState.fsc.id; }
+  // With the window-division layout, revealing a pair just opens the linked
+  // doc and marks the pair; it shows wherever a Research pane is visible.
+  const patch = { pair: id, openDoc: item.lk.researchId, readerEdit: false };
+  if (store.activeScript().id !== finalState.fsc.id) patch.draftId = finalState.fsc.id;
   store.setUI(patch);
 }

@@ -1,6 +1,28 @@
-/* Untitled Sans, self-hosted from /fonts. Courier Prime is not vendored;
-   the mono stack falls back to Courier New / system monospace, same as
-   the original single-file build. */
+/* Courier Prime Sans, self-hosted from /fonts. The screenplay editor uses
+   this (see --script in tokens.css). Filenames contain spaces, so the URLs
+   are percent-encoded. */
+@font-face{
+  font-family:'Courier Prime Sans';
+  src:url('/fonts/Courier%20Prime%20Sans.woff2') format('woff2');
+  font-weight:400;font-style:normal;font-display:swap;
+}
+@font-face{
+  font-family:'Courier Prime Sans';
+  src:url('/fonts/Courier%20Prime%20Sans%20Italic.woff2') format('woff2');
+  font-weight:400;font-style:italic;font-display:swap;
+}
+@font-face{
+  font-family:'Courier Prime Sans';
+  src:url('/fonts/Courier%20Prime%20Sans%20Bold.woff2') format('woff2');
+  font-weight:700;font-style:normal;font-display:swap;
+}
+@font-face{
+  font-family:'Courier Prime Sans';
+  src:url('/fonts/Courier%20Prime%20Sans%20Bold%20Italic.woff2') format('woff2');
+  font-weight:700;font-style:italic;font-display:swap;
+}
+
+/* Untitled Sans, self-hosted from /fonts. */
 @font-face{
   font-family:'Untitled Sans';
   src:url('/fonts/UntitledSans-Regular.woff2') format('woff2');

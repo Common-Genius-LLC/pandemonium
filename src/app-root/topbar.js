@@ -3,6 +3,7 @@
 import { LitElement, html, css } from 'lit';
 import { StoreController } from '../state/store-controller.js';
 import { dispatch } from '../utils/events.js';
+import { defaultLayout } from '../data/layout-tree.js';
 import { formStyles, chipStyles } from '../styles/shared.js';
 import '../components/ui/logo.js';
 import '../components/ui/button.js';
@@ -46,8 +47,8 @@ export class PandemoniumTopbar extends LitElement {
     this._store = new StoreController(this);
   }
 
-  #setView(view) {
-    this._store.store.setUI({ view, pair: null });
+  #resetLayout() {
+    this._store.store.setUI({ layout: defaultLayout(), pair: null });
   }
 
   #openSettings() {
@@ -75,9 +76,7 @@ export class PandemoniumTopbar extends LitElement {
         </button>
       </div>
       <div id="viewTabs">
-        <button class=${ui.view === 'split' ? 'on' : ''} @click=${() => this.#setView('split')}>Split View</button>
-        <button class=${ui.view === 'everything' ? 'on' : ''} @click=${() => this.#setView('everything')}>Everything</button>
-        <button class=${ui.view === 'single' ? 'on' : ''} @click=${() => this.#setView('single')}>Single View</button>
+        <button @click=${() => this.#resetLayout()} title="Reset the panes to the default arrangement">Reset layout</button>
       </div>
     `;
   }

@@ -1,6 +1,6 @@
 'use strict';
 
-import { LitElement, html, css, nothing } from 'lit';
+import { LitElement, html, css } from 'lit';
 import { StoreController } from '../../state/store-controller.js';
 import { dispatch } from '../../utils/events.js';
 import { readFileAsDataURL } from '../../utils/files.js';
@@ -21,7 +21,7 @@ import './board-card.js';
 // this, and you attach it to a passage whenever you like, from a normal
 // text selection or not at all.
 export class PandemoniumBoardsPanel extends LitElement {
-  static properties = { slotId: {} };
+  static properties = { leafId: {} };
 
   static styles = [panelStyles, css`
     #boardsList{display:flex;flex-direction:column;gap:16px;padding:2px 10px 30px 2px}
@@ -33,12 +33,7 @@ export class PandemoniumBoardsPanel extends LitElement {
   }
 
   #title() {
-    if (this._store.ui.view === 'split') return html`<span class="lbl">Thumbnails</span>`;
-    return html`<pd-panel-picker current="boards" .slotId=${this.slotId ?? 0}></pd-panel-picker>`;
-  }
-
-  #setSplit(which) {
-    this._store.store.setUI({ view: 'split', split: which, pair: null });
+    return html`<pd-panel-picker current="boards" .leafId=${this.leafId}></pd-panel-picker>`;
   }
 
   #addBoard() {
@@ -85,11 +80,6 @@ export class PandemoniumBoardsPanel extends LitElement {
         <div class="tools">
           <pd-button variant="pink" title="Play the linked storyboards full-screen" @click=${() => this.#startSlideshow()}>Start slideshow</pd-button>
           <pd-button @click=${() => this.#addBoard()}>+ Add storyboard image</pd-button>
-          ${ui.view === 'split' ? html`
-            <div class="mode">
-              <button class=${ui.split === 'boards' ? 'on' : ''} @click=${() => this.#setSplit('boards')}>Boards</button>
-              <button class=${ui.split === 'research' ? 'on' : ''} @click=${() => this.#setSplit('research')}>Research</button>
-            </div>` : nothing}
         </div>
       </div>
       <div class="pbody">

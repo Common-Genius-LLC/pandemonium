@@ -3,114 +3,120 @@
 import { LitElement, html, css } from 'lit';
 import { StoreController } from '../state/store-controller.js';
 import { clamp } from '../utils/format.js';
+import { defaultLayout, setRatio, splitLeaf, closeLeaf, leafCount } from '../data/layout-tree.js';
 import '../components/boards/boards-panel.js';
 import '../components/research/research-panel.js';
 import '../components/editor/script-panel.js';
 
-// Grid layout for the panels.
-//  - 'everything'/'single' render fully-free slots (notes.md point e): each
-//    slot shows whatever panel type ui.slots / ui.singleSlot names, chosen
-//    from its header dropdown, duplicates allowed.
-//  - 'split' keeps the original script + (boards|research) pairing driven by
-//    the Boards/Research toggle.
-// The gaps between panels are real grid tracks (the ".div" cells), so they
-// double as drag handles that resize the panels (notes.md point f) -- the
-// column/row fractions live in ui (eCol/eRow/sCol) and are applied as inline
-// grid templates in #applyTemplates(), which beats the CSS defaults below.
+// Blender-style window division (see data/layout-tree.js). The panels are laid
+// out by recursively rendering a binary split tree from ui.layout: each split
+// is a flex row/column of two panes with a draggable border between them; each
+// leaf hosts a panel whose header dropdown switches its content, plus hover
+// controls to split it left/right or top/bottom, or close it. This replaces the
+// old everything/split/single view modes entirely.
 export class PandemoniumPanelLayout extends LitElement {
-  static properties = {
-    view: { type: String, reflect: true }, // 'everything' | 'split' | 'single'
-    split: { type: String, reflect: true }, // 'boards' | 'research'
-  };
-
   static styles = css`
-    :host{flex:1;min-height:0;display:grid;padding:0 22px 18px;position:relative}
-    .slot{display:flex;flex-direction:column;min-height:0;min-width:0}
+    :host{flex:1;min-height:0;display:flex;padding:0 22px 18px}
+    .split{display:flex;flex:1;min-width:0;min-height:0}
+    .split.row{flex-direction:row}
+    .split.col{flex-direction:column}
+    .pane{display:flex;min-width:0;min-height:0;overflow:hidden}
+    .leaf{position:relative;flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
+    pandemonium-boards-panel,pandemonium-research-panel,pandemonium-script-panel{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column}
 
-    /* Divider tracks: the visual gap plus a grab handle. */
-    .div{position:relative;z-index:2}
-    .div::after{content:"";position:absolute;background:transparent;border-radius:3px;transition:background .12s}
-    .div:hover::after,.div.dragging::after{background:var(--ph)}
-    .div.v{cursor:col-resize}
-    .div.v::after{inset:0 9px}
-    .div.h{cursor:row-resize}
-    .div.h::after{inset:9px 0}
+    .divider{flex:none;position:relative;z-index:3}
+    .divider::after{content:"";position:absolute;background:transparent;border-radius:3px;transition:background .12s}
+    .divider.v{width:16px;cursor:col-resize}
+    .divider.v::after{inset:0 7px}
+    .divider.h{height:16px;cursor:row-resize}
+    .divider.h::after{inset:7px 0}
+    .divider:hover::after,.divider.dragging::after{background:var(--ph)}
 
-    :host([view=everything]){grid-template-columns:5fr 24px 7fr;grid-template-rows:1fr 24px 236px;
-      grid-template-areas:"s0 vdiv s1" "hdiv hdiv hdiv" "s2 s2 s2"}
-    :host([view=everything]) .s0{grid-area:s0}
-    :host([view=everything]) .s1{grid-area:s1}
-    :host([view=everything]) .s2{grid-area:s2}
-    :host([view=everything]) .vdiv{grid-area:vdiv}
-    :host([view=everything]) .hdiv{grid-area:hdiv}
-
-    :host([view=split]){grid-template-columns:1fr 24px 1fr;grid-template-areas:"side vdiv script"}
-    :host([view=split]) .side{grid-area:side}
-    :host([view=split]) .script{grid-area:script}
-    :host([view=split]) .vdiv{grid-area:vdiv}
-
-    :host([view=single]){grid-template-columns:1fr;grid-template-areas:"s0"}
-    :host([view=single]) .s0{grid-area:s0}
+    .regionctl{position:absolute;bottom:8px;right:8px;z-index:9;display:flex;gap:2px;opacity:0;transition:opacity .12s;pointer-events:none}
+    .leaf:hover .regionctl{opacity:1;pointer-events:auto}
+    .regionctl button{
+      width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;line-height:1;
+      color:var(--ui);background:var(--panel);border:0;border-radius:var(--r);cursor:pointer;font-family:var(--sans);
+    }
+    .regionctl button:hover{background:var(--ph)}
+    .regionctl button.close:hover{background:var(--danger);color:#fff}
 
     @media (max-width:900px){
-      :host([view=everything]),:host([view=split]){
-        grid-template-columns:1fr!important;grid-template-rows:auto!important;display:flex;flex-direction:column;overflow:auto;gap:16px;
-      }
-      .div{display:none}
-      .slot{min-height:280px;flex:none}
+      :host{display:block;overflow:auto;padding:0 14px 14px}
+      .split,.split.row,.split.col{display:flex;flex-direction:column}
+      .pane{flex:none!important;min-height:320px}
+      .divider{display:none}
     }
   `;
-
-  #narrow = () => matchMedia('(max-width:900px)').matches;
 
   constructor() {
     super();
     this._store = new StoreController(this);
-    this._onResize = () => this.#applyTemplates();
   }
 
-  connectedCallback() { super.connectedCallback(); addEventListener('resize', this._onResize); }
-  disconnectedCallback() { removeEventListener('resize', this._onResize); this.#endDrag(); super.disconnectedCallback(); }
+  disconnectedCallback() { this.#endDrag(); super.disconnectedCallback(); }
 
-  updated() { this.#applyTemplates(); }
+  #layout() { return this._store.ui.layout || defaultLayout(); }
 
-  #applyTemplates() {
-    const ui = this._store.ui;
-    if (!ui || this.#narrow()) { this.style.gridTemplateColumns = ''; this.style.gridTemplateRows = ''; return; }
-    if (this.view === 'everything') {
-      this.style.gridTemplateColumns = `${ui.eCol}fr 24px ${1 - ui.eCol}fr`;
-      this.style.gridTemplateRows = `${ui.eRow}fr 24px ${1 - ui.eRow}fr`;
-    } else if (this.view === 'split') {
-      this.style.gridTemplateColumns = `${ui.sCol}fr 24px ${1 - ui.sCol}fr`;
-      this.style.gridTemplateRows = '';
-    } else {
-      this.style.gridTemplateColumns = '';
-      this.style.gridTemplateRows = '';
-    }
+  #node(node) {
+    if (node.type === 'leaf') return this.#leaf(node);
+    const isRow = node.dir === 'row';
+    return html`
+      <div class="split ${isRow ? 'row' : 'col'}">
+        <div class="pane" style="flex:${node.ratio} 1 0">${this.#node(node.a)}</div>
+        <div class="divider ${isRow ? 'v' : 'h'}" @pointerdown=${(e) => this.#startDrag(e, node.id, isRow ? 'x' : 'y')}></div>
+        <div class="pane" style="flex:${1 - node.ratio} 1 0">${this.#node(node.b)}</div>
+      </div>`;
   }
 
-  // Drag a divider. `key` is which ui fraction it controls; `axis` is 'x'|'y'.
-  // The live drag writes the grid template straight onto this element (no
-  // store churn / no editor re-render per pixel); the final value is committed
-  // to ui once on release, where #applyTemplates() picks it back up.
-  #startDrag(e, key, axis) {
+  #leaf(node) {
+    const canClose = leafCount(this.#layout()) > 1;
+    return html`
+      <div class="leaf" data-leaf=${node.id}>
+        ${this.#panelFor(node)}
+        <div class="regionctl">
+          <button title="Split this pane left / right" @click=${() => this.#split(node.id, 'row')}>▯▯</button>
+          <button title="Split this pane top / bottom" @click=${() => this.#split(node.id, 'col')}>▤</button>
+          ${canClose ? html`<button class="close" title="Close this pane" @click=${() => this.#close(node.id)}>✕</button>` : ''}
+        </div>
+      </div>`;
+  }
+
+  #panelFor(node) {
+    if (node.content === 'boards') return html`<pandemonium-boards-panel .leafId=${node.id}></pandemonium-boards-panel>`;
+    if (node.content === 'research') return html`<pandemonium-research-panel .leafId=${node.id}></pandemonium-research-panel>`;
+    return html`<pandemonium-script-panel .leafId=${node.id}></pandemonium-script-panel>`;
+  }
+
+  #split(id, dir) { this._store.store.setUI({ layout: splitLeaf(this.#layout(), id, dir) }); }
+
+  #close(id) {
+    const l = this.#layout();
+    if (leafCount(l) > 1) this._store.store.setUI({ layout: closeLeaf(l, id) });
+  }
+
+  // Live-resize a split by dragging its border: write flex directly onto the
+  // two panes during the drag (no store churn / editor re-render per pixel),
+  // commit the ratio to ui on release.
+  #startDrag(e, nodeId, axis) {
     e.preventDefault();
-    const track = e.currentTarget;
-    track.classList.add('dragging');
-    const rect = this.getBoundingClientRect();
+    const divider = e.currentTarget;
+    const container = divider.parentElement; // .split
+    divider.classList.add('dragging');
+    const rect = container.getBoundingClientRect();
+    const paneA = divider.previousElementSibling;
+    const paneB = divider.nextElementSibling;
     const move = (ev) => {
-      const f = axis === 'x'
-        ? (ev.clientX - rect.left - 22) / (rect.width - 44 - 24)
-        : (ev.clientY - rect.top) / (rect.height - 18 - 24);
-      const val = clamp(f, 0.15, 0.85);
+      const f = axis === 'x' ? (ev.clientX - rect.left) / rect.width : (ev.clientY - rect.top) / rect.height;
+      const val = clamp(f, 0.12, 0.88);
       this._dragVal = val;
-      if (axis === 'x') this.style.gridTemplateColumns = `${val}fr 24px ${1 - val}fr`;
-      else this.style.gridTemplateRows = `${val}fr 24px ${1 - val}fr`;
+      paneA.style.flex = `${val} 1 0`;
+      paneB.style.flex = `${1 - val} 1 0`;
     };
     const up = () => {
       this.#endDrag();
-      track.classList.remove('dragging');
-      if (this._dragVal != null) this._store.store.setUI({ [key]: this._dragVal });
+      divider.classList.remove('dragging');
+      if (this._dragVal != null) this._store.store.setUI({ layout: setRatio(this.#layout(), nodeId, this._dragVal) });
       this._dragVal = null;
     };
     this._dragMove = move; this._dragUp = up;
@@ -124,37 +130,10 @@ export class PandemoniumPanelLayout extends LitElement {
     this._dragMove = this._dragUp = null;
   }
 
-  #panel(type, slotId) {
-    if (type === 'boards') return html`<pandemonium-boards-panel .slotId=${slotId}></pandemonium-boards-panel>`;
-    if (type === 'research') return html`<pandemonium-research-panel .slotId=${slotId}></pandemonium-research-panel>`;
-    return html`<pandemonium-script-panel .slotId=${slotId}></pandemonium-script-panel>`;
-  }
-
   render() {
     const ui = this._store.ui;
     if (!ui) return html``;
-
-    if (this.view === 'single') {
-      return html`<div class="slot s0">${this.#panel(ui.singleSlot || 'script', 'single')}</div>`;
-    }
-    if (this.view === 'split') {
-      const side = ui.split === 'research'
-        ? html`<pandemonium-research-panel></pandemonium-research-panel>`
-        : html`<pandemonium-boards-panel></pandemonium-boards-panel>`;
-      return html`
-        <div class="slot side">${side}</div>
-        <div class="div v vdiv" @pointerdown=${(e) => this.#startDrag(e, 'sCol', 'x')}></div>
-        <div class="slot script"><pandemonium-script-panel></pandemonium-script-panel></div>
-      `;
-    }
-    const slots = ui.slots || ['boards', 'script', 'research'];
-    return html`
-      <div class="slot s0">${this.#panel(slots[0], 0)}</div>
-      <div class="div v vdiv" @pointerdown=${(e) => this.#startDrag(e, 'eCol', 'x')}></div>
-      <div class="slot s1">${this.#panel(slots[1], 1)}</div>
-      <div class="div h hdiv" @pointerdown=${(e) => this.#startDrag(e, 'eRow', 'y')}></div>
-      <div class="slot s2">${this.#panel(slots[2], 2)}</div>
-    `;
+    return this.#node(this.#layout());
   }
 }
 

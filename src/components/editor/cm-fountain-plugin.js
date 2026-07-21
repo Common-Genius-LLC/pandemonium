@@ -1,16 +1,23 @@
 // The CodeMirror ViewPlugin that makes the raw Fountain text LOOK like a
 // formatted screenplay while it's being edited, and that renders board/
-// research highlight marks -- both computed purely from parseFountain()'s
-// output plus the doc-map position metadata, never a second grammar. This
-// is a pure overlay: it never touches the document text itself, so Fountain
-// round-trip fidelity is never at risk (CodeMirror is always editing the
-// real, unmodified source).
+// research/comment highlight marks -- all computed purely from parseFountain()
+// plus the doc-map position metadata, never a second grammar. Pure overlay: it
+// never touches the document text, so Fountain round-trip fidelity is never at
+// risk.
+//
+// It also does the Obsidian-style live preview: the Fountain syntax that marks
+// an element (`.`/`@`/`>`/`#`/`=`/`~`, `> <` centering, `**`/`*`/`_` emphasis,
+// `[[ ]]` notes) is HIDDEN on lines the caret isn't on -- so `### Title` reads
+// as a formatted "Title" -- and merely DIMMED (`.cmf-syntax`) on the line being
+// edited, so entering a line reveals its source. Whether a line is "being
+// edited" is just whether any selection range touches it, so this recomputes on
+// every selection change, not only edits.
 'use strict';
 
 import { ViewPlugin, Decoration } from '@codemirror/view';
-import { RangeSetBuilder } from '@codemirror/state';
 import { parseFountain } from '../../fountain/parse.js';
-import { plainRangeToRaw } from '../../fountain/doc-map.js';
+import { plainRangeToRaw, inlineDelimRanges } from '../../fountain/doc-map.js';
+import { activeElementField } from './cm-autoformat.js';
 
 const LINE_CLASS = {
   scene: 'cmf-scene', action: 'cmf-action', character: 'cmf-character', paren: 'cmf-paren',
@@ -18,12 +25,17 @@ const LINE_CLASS = {
   lyric: 'cmf-lyric', section: 'cmf-section', synopsis: 'cmf-synopsis',
 };
 
-// Merges overlapping highlight entries the same way blockHTML() does (a
-// board+research overlap gets both classes and both ids on one span), just
-// without the bold/italic run bookkeeping blockHTML also carries -- inline
-// emphasis is intentionally left as plain visible text for now (see the
-// module doc in decorated editor for why: hiding delimiter characters is
-// the riskier, not-yet-attempted feature).
+function runStyle(r) {
+  let c = '';
+  if (r.b) c += ' cmf-b';
+  if (r.i) c += ' cmf-i';
+  if (r.u) c += ' cmf-u';
+  if (r.n) c += ' cmf-note';
+  return c.trim();
+}
+
+// Same overlap coalescing blockHTML() does: a board+research overlap gets both
+// classes and both ids on one span.
 function coalesceHighlights(n, hls) {
   if (!hls || !hls.length) return [];
   const idsArr = new Array(n).fill(null);
@@ -46,39 +58,90 @@ function coalesceHighlights(n, hls) {
   return out;
 }
 
-// `getHighlights(parsed)` returns {[blockIndex]: [{s,e,cls,id,kind}]}, the
-// same shape as store.getFinalState().R.biMap. Returns the ViewPlugin
-// extension; pass the SAME reference to `view.plugin(ref)` later to read
-// back the plugin's current `.parsed` (e.g. for selection capture) without
-// re-parsing.
+// Set of 0-based line numbers any selection range touches -- the lines shown in
+// "source" (dimmed-syntax) mode rather than preview.
+function activeLineSet(state) {
+  const set = new Set();
+  const doc = state.doc;
+  for (const r of state.selection.ranges) {
+    const a = doc.lineAt(r.from).number, b = doc.lineAt(r.to).number;
+    for (let n = a; n <= b; n++) set.add(n - 1);
+  }
+  return set;
+}
+
+// Pure builder (takes an EditorState, not a view) so it's unit-testable without
+// spinning up an editor. `parsed` is parseFountain(doc); `highlights` is the
+// biMap of board/research/comment anchors.
+export function buildDecorations(state, parsed, highlights) {
+  const doc = state.doc;
+  highlights = highlights || {};
+  const activeLines = activeLineSet(state);
+  const active = state.field(activeElementField, false);
+  const pinLine = active ? doc.lineAt(Math.min(active.pos, doc.length)).number - 1 : -1;
+  const decos = [];
+  const conceal = (from, to, isActive) => {
+    if (to <= from) return;
+    decos.push((isActive ? Decoration.mark({ class: 'cmf-syntax' }) : Decoration.replace({})).range(from, to));
+  };
+
+  for (const b of parsed.blocks) {
+    if (b.type === 'page' || b.line == null || b.line + 1 > doc.lines) continue;
+    const line = doc.line(b.line + 1);
+    const isActive = activeLines.has(b.line);
+    // While the caret is on a line with a pinned element (Tab / picker), show
+    // that element's formatting even if the parser doesn't agree yet -- so a
+    // character cue centers while you type it, before its dialogue exists.
+    const cls = (active && isActive && b.line === pinLine && LINE_CLASS[active.el]) ? LINE_CLASS[active.el] : LINE_CLASS[b.type];
+    if (cls) decos.push(Decoration.line({ class: cls }).range(line.from));
+
+    // Element markers: leading (`.`/`@`/`#`/`= `/`> ` ...) and, for a centered
+    // line, the trailing ` <`.
+    if (b.textOffset > 0) conceal(line.from, line.from + b.textOffset, isActive);
+    if (b.type === 'centered') conceal(line.from + b.textOffset + b.text.length, line.to, isActive);
+
+    // Inline emphasis: style the plain runs, hide/dim their delimiters.
+    const base = line.from + b.textOffset;
+    for (const r of b.runs) {
+      const sc = runStyle(r);
+      if (sc && r.map.length) {
+        const from = base + r.map[0], to = base + r.map[r.map.length - 1] + 1;
+        if (to > from) decos.push(Decoration.mark({ class: sc }).range(from, to));
+      }
+    }
+    for (const [ds, de] of inlineDelimRanges(b)) conceal(base + ds, base + de, isActive);
+
+    // Board / research / comment highlights.
+    const marks = coalesceHighlights(b.plain.length, highlights[b.i]);
+    for (const m of marks) {
+      const { from, to } = plainRangeToRaw(b, line.from, m.s, m.e);
+      if (to > from) decos.push(Decoration.mark({ class: m.cls, attributes: { 'data-hl': m.idAttr } }).range(from, to));
+    }
+  }
+
+  // A pinned but empty line (Tab on a blank line) has no block to carry the
+  // class above, so reflect the pinned element here -- the caret then sits
+  // where the element will (e.g. centered for a Character cue).
+  if (active && pinLine >= 0 && activeLines.has(pinLine)) {
+    const l = doc.line(pinLine + 1);
+    if (l.length === 0 && LINE_CLASS[active.el]) decos.push(Decoration.line({ class: LINE_CLASS[active.el] }).range(l.from));
+  }
+
+  return Decoration.set(decos, true);
+}
+
 export function fountainDecorations(getHighlights) {
   return ViewPlugin.fromClass(class {
     constructor(view) {
       this.parsed = parseFountain(view.state.doc.toString());
-      this.decorations = this.build(view);
+      this.decorations = buildDecorations(view.state, this.parsed, getHighlights(this.parsed));
     }
 
     update(update) {
       if (update.docChanged) this.parsed = parseFountain(update.state.doc.toString());
-      this.decorations = this.build(update.view);
-    }
-
-    build(view) {
-      const builder = new RangeSetBuilder();
-      const doc = view.state.doc;
-      const highlights = getHighlights(this.parsed) || {};
-      for (const b of this.parsed.blocks) {
-        if (b.type === 'page' || b.line == null || b.line + 1 > doc.lines) continue;
-        const line = doc.line(b.line + 1);
-        const cls = LINE_CLASS[b.type];
-        if (cls) builder.add(line.from, line.from, Decoration.line({ class: cls }));
-        const marks = coalesceHighlights(b.plain.length, highlights[b.i]);
-        for (const m of marks) {
-          const { from, to } = plainRangeToRaw(b, line.from, m.s, m.e);
-          if (to > from) builder.add(from, to, Decoration.mark({ class: m.cls, attributes: { 'data-hl': m.idAttr } }));
-        }
-      }
-      return builder.finish();
+      // Rebuild on selection changes too: the conceal/reveal depends on which
+      // line the caret is on, not just on the text.
+      this.decorations = buildDecorations(update.view.state, this.parsed, getHighlights(this.parsed));
     }
   }, { decorations: (v) => v.decorations });
 }

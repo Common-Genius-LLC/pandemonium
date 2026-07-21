@@ -14,6 +14,8 @@ import { openSourceDialog } from '../research/source-dialog.js';
 import { parseFountain } from '../../fountain/parse.js';
 import { resolvePart } from '../../fountain/resolve.js';
 import { plainPosToRaw, rawOffsetToPlainPos, blockRawRange } from '../../fountain/doc-map.js';
+import { applyElement, elementOfBlock } from '../../fountain/element-ops.js';
+import { activeElementField, autoUppercase, setActiveElement, pinsUpperCase, elementKeymap } from './cm-autoformat.js';
 import { readFileAsDataURL } from '../../utils/files.js';
 import { imageFromClipboard } from '../../utils/clipboard.js';
 import { openPair } from '../../state/actions.js';
@@ -45,6 +47,7 @@ export class PandemoniumScriptEditor extends LitElement {
   #lastPulsed = null;
   #pendingBoardParts = null;
   #reconciling = false;
+  #lastEmittedElement = null;
 
   constructor() {
     super();
@@ -60,10 +63,13 @@ export class PandemoniumScriptEditor extends LitElement {
       doc: script.text,
       extensions: [
         history(),
+        elementKeymap({ getParsed: (v) => v.plugin(this.#plugin)?.parsed || parseFountain(v.state.doc.toString()) }),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         EditorView.lineWrapping,
         fountainTheme,
         this.#plugin,
+        activeElementField,
+        autoUppercase,
         hoverSectionField,
         sectionAffordances({
           getParsed: (v) => v.plugin(this.#plugin)?.parsed || parseFountain(v.state.doc.toString()),
@@ -94,9 +100,15 @@ export class PandemoniumScriptEditor extends LitElement {
             this._store.store.updateScriptTextLive(this.#loadedScriptId, text);
           }
         }),
+        EditorView.updateListener.of((update) => {
+          // Report the element under the caret so the panel's element picker
+          // (notes.md point 2) can show/track it as you move around.
+          if (update.selectionSet || update.docChanged) this.#emitCaretElement();
+        }),
       ],
     });
     this.#view = new EditorView({ state, parent: host, root: this.renderRoot });
+    this.#emitCaretElement();
   }
 
   disconnectedCallback() {
@@ -157,16 +169,27 @@ export class PandemoniumScriptEditor extends LitElement {
     dispatch(this, 'pandemonium-show-selection-toolbar', { kind: 'script', parts, anchorRect });
   }
 
+  // Paste handler. MUST stay synchronous and return a boolean: CodeMirror
+  // treats any truthy return from a domEventHandler as "I handled it, suppress
+  // the default." An async function returns a Promise (always truthy), which
+  // is exactly what was silently eating every TEXT paste. So: only claim the
+  // event (return true) when there is actually an image to consume; otherwise
+  // return false and let CodeMirror paste the text normally.
+  #onPaste(e) {
+    const file = imageFromClipboard(e.clipboardData);
+    if (!file) return false;
+    e.preventDefault();
+    e.stopPropagation(); // claim it: pandemonium-app's document-level paste fallback skips this
+    this.#pasteImage(file);
+    return true;
+  }
+
   // Pasting an image adds it as a storyboard image: attached to the current
   // selection if there is one (same result as picking "Board" from the
   // toolbar), otherwise added unattached (shows as "unlinked" in the Boards
   // panel, same as any board whose passage can't be found -- reattach it
   // to a passage whenever you like via that card's "Reattach" button).
-  async #onPaste(e) {
-    const file = imageFromClipboard(e.clipboardData);
-    if (!file) return;
-    e.preventDefault();
-    e.stopPropagation(); // claim it: pandemonium-app's document-level paste fallback skips this
+  async #pasteImage(file) {
     const store = this._store.store;
     const script = store.activeScript();
     if (!script.final) {
@@ -199,12 +222,7 @@ export class PandemoniumScriptEditor extends LitElement {
     }
     if (act === 'source') {
       if (!store.project.research.length) { openSourceDialog(this, store, sec.parts, 'link'); return; }
-      store.setUI({
-        linking: { from: 'script', parts: sec.parts },
-        view: store.ui.view === 'single' ? 'split' : store.ui.view,
-        split: 'research',
-        openDoc: null,
-      });
+      store.setUI({ linking: { from: 'script', parts: sec.parts }, openDoc: null });
       return;
     }
     if (act === 'comment') {
@@ -218,6 +236,41 @@ export class PandemoniumScriptEditor extends LitElement {
     if (sec.firstLine + 1 > doc.lines) return null;
     const c = this.#view.coordsAtPos(doc.line(sec.firstLine + 1).from);
     return c ? { left: c.left, right: c.right, top: c.top, bottom: c.bottom, width: 0, height: 0 } : null;
+  }
+
+  // Element picker (notes.md point 2). The current element is read straight
+  // from the parser's block type at the caret; setting one rewrites the caret
+  // line with the right Fountain forcing/markup (see element-ops.js). Public:
+  // the script panel's picker calls setLineElement().
+  #caretElementKey() {
+    if (!this.#view) return 'action';
+    const head = this.#view.state.selection.main.head;
+    const line0 = this.#view.state.doc.lineAt(head).number - 1;
+    const parsed = this.#view.plugin(this.#plugin)?.parsed;
+    const b = parsed && parsed.blocks.find((x) => x.line === line0);
+    return elementOfBlock(b);
+  }
+
+  #emitCaretElement() {
+    const key = this.#caretElementKey();
+    if (key === this.#lastEmittedElement) return;
+    this.#lastEmittedElement = key;
+    dispatch(this, 'pandemonium-caret-element', { key });
+  }
+
+  setLineElement(key) {
+    if (!this.#view) return;
+    const line = this.#view.state.doc.lineAt(this.#view.state.selection.main.head);
+    const next = applyElement(line.text, key);
+    // Pin the choice to this line so it keeps auto-upper-casing as you type on
+    // (e.g. a lower-cased character name), then clears when the caret leaves.
+    const effects = setActiveElement.of(pinsUpperCase(key) ? { el: key, pos: line.from } : null);
+    this.#view.dispatch({
+      changes: next !== line.text ? { from: line.from, to: line.to, insert: next } : undefined,
+      selection: { anchor: line.from + next.length },
+      effects,
+    });
+    this.#view.focus();
   }
 
   async #onSectionImage(e) {

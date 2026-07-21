@@ -110,12 +110,7 @@ export class PandemoniumSelectionToolbar extends LitElement {
     }
     if (act === 'source') {
       if (!store.project.research.length) { openSourceDialog(this, store, parts, 'link'); return; }
-      store.setUI({
-        linking: { from: 'script', parts },
-        view: store.ui.view === 'single' ? 'split' : store.ui.view,
-        split: 'research',
-        openDoc: null,
-      });
+      store.setUI({ linking: { from: 'script', parts }, openDoc: null });
       return;
     }
     if (act === 'tolink') {

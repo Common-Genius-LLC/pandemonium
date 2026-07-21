@@ -10,6 +10,7 @@ import * as model from '../data/project-model.js';
 import { getParsed } from '../fountain/cache.js';
 import { scenesOf } from '../fountain/blocks.js';
 import { computeResolved, coverage, labelScenes } from './selectors.js';
+import { defaultLayout } from '../data/layout-tree.js';
 
 export class PandemoniumStore extends EventTarget {
   #project = null;
@@ -218,20 +219,11 @@ export class PandemoniumStore extends EventTarget {
 
 function defaultUI(draftId) {
   return {
-    view: 'everything', // 'everything' | 'split' | 'single'
-    split: 'research', // which panel shares the split view with script: 'boards' | 'research'
-    // Fully-free panel slots (notes.md point e): in 'everything' each of the
-    // three positions independently shows any panel type; in 'single' the one
-    // slot does. Duplicates are allowed on purpose. 'split' ignores these and
-    // uses `split` above plus the Boards/Research toggle instead.
-    slots: ['boards', 'script', 'research'],
-    singleSlot: 'script',
-    // Resizable panel fractions (notes.md point f): dragged via the divider
-    // tracks in panel-layout. eCol/eRow split the Everything grid; sCol splits
-    // the two Split-view panes. Kept in [0.15, 0.85] by the drag handler.
-    eCol: 0.42,
-    eRow: 0.66,
-    sCol: 0.5,
+    // Blender-style window division (see data/layout-tree.js): a binary split
+    // tree of resizable panes, each showing any panel type, replaces the old
+    // everything/split/single view modes. Transient ui state, like the modes
+    // it replaced (resets on reload).
+    layout: defaultLayout(),
     draftId,
     openDoc: null,
     readerEdit: false,

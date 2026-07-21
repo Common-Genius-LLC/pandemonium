@@ -21,4 +21,5 @@
   --r:3px;
   --sans:'Untitled Sans','Neue Haas Grotesk Text','Helvetica Neue',Helvetica,Arial,sans-serif;
   --mono:'Courier Prime','Courier New',Courier,monospace;
+  --script:'Courier Prime Sans','Courier Prime','Courier New',monospace; /* screenplay editor */
 }

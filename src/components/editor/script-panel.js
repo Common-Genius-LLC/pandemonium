@@ -6,9 +6,11 @@ import { dispatch } from '../../utils/events.js';
 import { getParsed } from '../../fountain/cache.js';
 import { CONTENT_TYPES, scenesOf } from '../../fountain/blocks.js';
 import { fmtT } from '../../utils/format.js';
+import { ELEMENT_LABELS, ELEMENT_MENU } from '../../fountain/element-ops.js';
 import { panelStyles } from '../../styles/shared.js';
 import '../ui/button.js';
 import '../ui/panel-picker.js';
+import '../../app-root/draft-chip.js';
 import './script-editor.js';
 
 // Panel chrome only: header, word count, the non-final-draft banner. All
@@ -16,7 +18,7 @@ import './script-editor.js';
 // (see script-editor.js) -- there is no Preview/Edit mode here anymore, so
 // there is nothing for a user to be "stuck in" that has no linking support.
 export class PandemoniumScriptPanel extends LitElement {
-  static properties = { slotId: {} };
+  static properties = { leafId: {}, _elt: { state: true } };
 
   static styles = [panelStyles, css`
     #draftBanner{
@@ -24,17 +26,46 @@ export class PandemoniumScriptPanel extends LitElement {
       margin-bottom:8px;display:flex;align-items:center;gap:10px;font-size:11px;
     }
     .wc{color:var(--mut);font-size:10px;white-space:nowrap}
+    .eltpick{height:22px;padding:0 8px;font-size:11px;color:var(--ui);background:var(--panel);border:0;border-radius:var(--r);cursor:pointer;font-family:var(--sans);display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+    .eltpick:hover{background:var(--ph)}
+    /* Draft tabs (notes.md point 3): the drafts live here now, not in the top bar. */
+    .tabs{flex:none;display:flex;align-items:center;gap:2px;border-bottom:1px solid var(--panel);margin-bottom:8px;overflow-x:auto;scrollbar-width:none}
+    .tabs::-webkit-scrollbar{display:none}
+    .addtab{height:28px;width:26px;flex:none;font-size:15px;color:var(--mut);background:transparent;border:0;border-radius:0;cursor:pointer;font-family:var(--sans)}
+    .addtab:hover{color:var(--ui)}
     pandemonium-script-editor{flex:1;min-height:0}
   `];
 
   constructor() {
     super();
     this._store = new StoreController(this);
+    this._elt = 'action';
+  }
+
+  // The editor reports the element under its caret; the picker shows/tracks it.
+  #onCaretElement = (e) => { this._elt = e.detail.key; };
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.addEventListener('pandemonium-caret-element', this.#onCaretElement);
+  }
+
+  disconnectedCallback() {
+    this.removeEventListener('pandemonium-caret-element', this.#onCaretElement);
+    super.disconnectedCallback();
+  }
+
+  #elementMenu(e) {
+    const cur = this._elt;
+    const items = ELEMENT_MENU.map((k) => ({
+      label: ELEMENT_LABELS[k] + (k === cur ? '  ✓' : ''),
+      fn: () => { const ed = this.renderRoot.querySelector('pandemonium-script-editor'); if (ed) ed.setLineElement(k); },
+    }));
+    dispatch(this, 'pandemonium-open-menu', { anchor: e.currentTarget, items });
   }
 
   #title() {
-    if (this._store.ui.view === 'split') return html`<span class="lbl">Script</span>`;
-    return html`<pd-panel-picker current="script" .slotId=${this.slotId ?? 1}></pd-panel-picker>`;
+    return html`<pd-panel-picker current="script" .leafId=${this.leafId}></pd-panel-picker>`;
   }
 
   #addScript() {
@@ -42,38 +73,6 @@ export class PandemoniumScriptPanel extends LitElement {
     const script = store.createScript({});
     store.setUI({ draftId: script.id });
     dispatch(this, 'pandemonium-toast', { message: 'New draft created. Start writing in Fountain.' });
-  }
-
-  // Draft management now lives with the script it acts on (notes.md point g).
-  // The Delete item here is what makes deleting a draft discoverable (point 2):
-  // it used to be reachable only by clicking the already-active draft chip.
-  #draftMenu(e) {
-    const store = this._store.store;
-    const sc = store.activeScript();
-    const project = this._store.project;
-    const items = [
-      { label: 'Rename draft', fn: () => this.#rename(sc) },
-      { label: 'Duplicate draft', fn: () => store.duplicateScript(sc.id) },
-    ];
-    if (!sc.final) items.push({ label: 'Make final draft', fn: () => store.makeFinal(sc.id) });
-    if (project.scripts.length > 1) items.push({ label: 'Delete draft', danger: true, fn: () => this.#delete(sc) });
-    dispatch(this, 'pandemonium-open-menu', { anchor: e.currentTarget, items });
-  }
-
-  #rename(sc) {
-    dispatch(this, 'pandemonium-open-dialog', {
-      title: 'Rename draft',
-      okLabel: 'Rename',
-      body: html`<div class="field"><label class="lbl">Name</label><input type="text" id="f_name" .value=${sc.name}></div>`,
-      onOk: (root) => { const v = root.querySelector('#f_name').value.trim(); if (v) this._store.store.renameScript(sc.id, v); },
-    });
-  }
-
-  #delete(sc) {
-    const extra = sc.final ? ' It is the final draft, so another draft will become final.' : '';
-    if (!confirm('Delete draft "' + sc.name + '"?' + extra)) return;
-    this._store.store.deleteScript(sc.id);
-    dispatch(this, 'pandemonium-toast', { message: 'Draft deleted.' });
   }
 
   render() {
@@ -90,12 +89,15 @@ export class PandemoniumScriptPanel extends LitElement {
 
     return html`
       <div class="phead">
-        ${this.#title()}<span class="sub">${sc.name}${sc.final ? ' · final draft' : ''}</span>
+        ${this.#title()}<span class="sub">${sc.final ? 'final draft' : 'draft'}</span>
         <div class="tools">
           <span class="wc">${wc}</span>
-          <pd-button @click=${() => this.#addScript()} title="Create a new draft">+ Add script</pd-button>
-          <pd-button variant="ghost" @click=${(e) => this.#draftMenu(e)} title="Rename, duplicate, make final, or delete this draft">Draft ▾</pd-button>
+          <button class="eltpick" title="Set the current line's screenplay element" @click=${(e) => this.#elementMenu(e)}>${ELEMENT_LABELS[this._elt] || 'Action'} ▾</button>
         </div>
+      </div>
+      <div class="tabs">
+        ${project.scripts.map((s) => html`<pandemonium-draft-chip .script=${s}></pandemonium-draft-chip>`)}
+        <button class="addtab" title="Add a new draft" @click=${() => this.#addScript()}>+</button>
       </div>
       ${!sc.final ? html`
         <div id="draftBanner">

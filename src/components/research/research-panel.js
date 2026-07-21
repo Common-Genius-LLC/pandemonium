@@ -1,6 +1,6 @@
 'use strict';
 
-import { LitElement, html, css, nothing } from 'lit';
+import { LitElement, html, css } from 'lit';
 import { StoreController } from '../../state/store-controller.js';
 import { panelStyles } from '../../styles/shared.js';
 import { openSourceDialog } from './source-dialog.js';
@@ -10,7 +10,7 @@ import './research-card.js';
 import './research-reader.js';
 
 export class PandemoniumResearchPanel extends LitElement {
-  static properties = { slotId: {} };
+  static properties = { leafId: {} };
 
   static styles = [panelStyles, css`
     .adds{display:flex;gap:4px}
@@ -23,12 +23,7 @@ export class PandemoniumResearchPanel extends LitElement {
   }
 
   #title() {
-    if (this._store.ui.view === 'split') return html`<span class="lbl">Research</span>`;
-    return html`<pd-panel-picker current="research" .slotId=${this.slotId ?? 2}></pd-panel-picker>`;
-  }
-
-  #setSplit(which) {
-    this._store.store.setUI({ view: 'split', split: which, pair: null });
+    return html`<pd-panel-picker current="research" .leafId=${this.leafId}></pd-panel-picker>`;
   }
 
   render() {
@@ -45,11 +40,6 @@ export class PandemoniumResearchPanel extends LitElement {
             <pd-button @click=${() => openSourceDialog(this, this._store.store, null, 'note')}>+ Note</pd-button>
             <pd-button @click=${() => openSourceDialog(this, this._store.store, null, 'link')}>+ Link</pd-button>
           </div>
-          ${ui.view === 'split' ? html`
-            <div class="mode">
-              <button class=${ui.split === 'boards' ? 'on' : ''} @click=${() => this.#setSplit('boards')}>Boards</button>
-              <button class=${ui.split === 'research' ? 'on' : ''} @click=${() => this.#setSplit('research')}>Research</button>
-            </div>` : nothing}
         </div>
       </div>
       <div class="pbody">

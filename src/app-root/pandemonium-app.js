@@ -197,7 +197,7 @@ export class PandemoniumApp extends LitElement {
           <pandemonium-topbar></pandemonium-topbar>
           <pandemonium-actions-bar></pandemonium-actions-bar>
           <pandemonium-timesheet></pandemonium-timesheet>
-          <pandemonium-panel-layout view=${this.store.ui.view} split=${this.store.ui.split}></pandemonium-panel-layout>
+          <pandemonium-panel-layout></pandemonium-panel-layout>
         </div>
       `}
       <pd-toast id="toast"></pd-toast>

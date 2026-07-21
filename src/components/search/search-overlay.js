@@ -105,15 +105,10 @@ export class PandemoniumSearchOverlay extends LitElement {
       store.setUI({ draftId: g.sid, scrollToBlock: g.bi });
     } else if (g.k === 'doc') {
       const patch = { openDoc: g.id, readerEdit: false };
-      if (store.ui.view === 'single') patch.view = 'split';
-      if ((patch.view || store.ui.view) === 'split') patch.split = 'research';
       if (typeof g.pi === 'number') patch.scrollToParagraph = g.pi;
       store.setUI(patch);
     } else if (g.k === 'board') {
-      const patch = { highlightBoard: g.id };
-      if (store.ui.view === 'single') { patch.view = 'split'; patch.split = 'boards'; }
-      else if (store.ui.view === 'split') patch.split = 'boards';
-      store.setUI(patch);
+      store.setUI({ highlightBoard: g.id });
     }
   }
 

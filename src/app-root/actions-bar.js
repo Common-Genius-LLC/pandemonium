@@ -9,12 +9,10 @@ import { slug } from '../utils/format.js';
 import { printScript, printBoards } from '../components/print/print.js';
 import { getParsed } from '../fountain/cache.js';
 import '../components/ui/button.js';
-import './draft-chip.js';
 
 export class PandemoniumActionsBar extends LitElement {
   static styles = css`
     :host{flex:none;display:flex;align-items:center;gap:8px;padding:8px 22px 4px}
-    #draftChips{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:8px;min-width:0}
     .right{margin-left:auto;display:flex;align-items:center;gap:6px}
     #saveDot{width:7px;height:7px;border-radius:50%;background:var(--act);display:none;flex:none}
     #saveDot.on{display:inline-block}
@@ -102,9 +100,6 @@ export class PandemoniumActionsBar extends LitElement {
     if (!project) return html``;
     const ui = this._store.ui;
     return html`
-      <div id="draftChips">
-        ${project.scripts.map((s) => html`<pandemonium-draft-chip .script=${s}></pandemonium-draft-chip>`)}
-      </div>
       <div class="right">
         <span id="saveDot" class=${ui.dirty ? 'on' : ''} title="Autosaved locally. Not yet exported as a file."></span>
         <pd-button @click=${() => this.#save()} title="Download a portable .pandemonium.json backup">Save</pd-button>

@@ -47,3 +47,21 @@ export function blockRawRange(block, lineFrom) {
   const from = lineFrom + block.textOffset;
   return { from, to: from + block.text.length };
 }
+
+// Ranges (relative to the start of block.text) of the inline syntax that the
+// parser stripped -- the `**`/`*`/`_` emphasis delimiters, `[[ ]]` note
+// brackets, escape backslashes: every raw offset in block.text that is NOT a
+// plain character (plainToRaw lists the ones that are). Used by the live
+// preview to conceal/dim those delimiters. Pure.
+export function inlineDelimRanges(block) {
+  const kept = new Set(block.plainToRaw);
+  const ranges = [];
+  const n = block.text.length;
+  let start = -1;
+  for (let r = 0; r < n; r++) {
+    if (!kept.has(r)) { if (start < 0) start = r; }
+    else if (start >= 0) { ranges.push([start, r]); start = -1; }
+  }
+  if (start >= 0) ranges.push([start, n]);
+  return ranges;
+}

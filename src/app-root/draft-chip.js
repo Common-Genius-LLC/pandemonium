@@ -13,10 +13,12 @@ export class PandemoniumDraftChip extends LitElement {
   static styles = css`
     :host{display:inline-flex}
     button{
-      height:24px;padding:0 10px;font-size:11px;font-weight:500;background:var(--panel);color:var(--ui);
-      display:inline-flex;align-items:center;gap:6px;border:0;border-radius:var(--r);cursor:pointer;font-family:var(--sans);
+      height:28px;padding:0 12px;font-size:11px;font-weight:500;background:transparent;color:var(--mut);
+      display:inline-flex;align-items:center;gap:6px;border:0;border-bottom:2px solid transparent;border-radius:0;
+      cursor:pointer;font-family:var(--sans);white-space:nowrap;
     }
-    :host([active]) button{background:var(--ui);color:#fff}
+    button:hover{color:var(--ui)}
+    :host([active]) button{color:var(--ink);border-bottom-color:var(--res)}
     .fin{width:7px;height:7px;border-radius:50%;background:var(--act);flex:none}
   `;
 
@@ -67,7 +69,8 @@ export class PandemoniumDraftChip extends LitElement {
     const ui = this._store.ui;
     if (!ui) return html``;
     this.active = ui.draftId === s.id;
-    return html`<button title=${s.final ? 'Final draft' : 'Draft'} @click=${(e) => this.#click(e)}>
+    const title = this.active ? 'Draft options: rename, duplicate, make final, delete' : 'Switch to this draft';
+    return html`<button title=${title} @click=${(e) => this.#click(e)}>
       ${s.final ? html`<span class="fin"></span>` : ''}${s.name}
     </button>`;
   }
