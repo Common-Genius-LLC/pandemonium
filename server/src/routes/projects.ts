@@ -5,7 +5,7 @@
 // routes come in Phase B, per docs/BACKEND_ARCHITECTURE.md.
 
 import { Hono } from 'hono';
-import { sql, now } from '../db';
+import { db, now } from '../db';
 import { HttpError } from '../errors';
 import { requireAuth } from '../auth/middleware';
 import { validateProject } from '../domain/validate';
@@ -17,7 +17,7 @@ const projects = new Hono<AppEnv>();
 projects.use('*', requireAuth);
 
 async function ownedRow(id: string, userId: string): Promise<ProjectRow> {
-  const [row] = await sql`SELECT * FROM projects WHERE id = ${id}`;
+  const [row] = await db.query('SELECT * FROM projects WHERE id = ?', [id]);
   if (!row || row.owner_id !== userId) throw new HttpError(404, 'project not found');
   return row as ProjectRow;
 }
@@ -33,8 +33,10 @@ function toResponse(row: ProjectRow) {
 
 // List: metadata only, newest first. The full tree is fetched per project.
 projects.get('/', async (c) => {
-  const rows = await sql`SELECT id, name, updated_at FROM projects
-                         WHERE owner_id = ${c.get('userId')} ORDER BY updated_at DESC`;
+  const rows = await db.query(
+    'SELECT id, name, updated_at FROM projects WHERE owner_id = ? ORDER BY updated_at DESC',
+    [c.get('userId')],
+  );
   return c.json(rows.map((r: any) => ({ id: r.id, name: r.name, updatedAt: isoOf(r.updated_at) })));
 });
 
@@ -43,9 +45,10 @@ projects.post('/', async (c) => {
   const project = validateProject(body.project);
   const id = crypto.randomUUID();
   const ts = now();
-  await sql`INSERT INTO projects (id, owner_id, name, data, schema_ver, created_at, updated_at)
-            VALUES (${id}, ${c.get('userId')}, ${project.name || 'Untitled'},
-                    ${JSON.stringify(project)}::jsonb, 1, ${ts}, ${ts})`;
+  await db.query(
+    'INSERT INTO projects (id, owner_id, name, data, schema_ver, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)',
+    [id, c.get('userId'), project.name || 'Untitled', JSON.stringify(project), ts, ts],
+  );
   return c.json({ id, project, updatedAt: ts }, 201);
 });
 
@@ -68,14 +71,16 @@ projects.put('/:id', async (c) => {
   }
   const project = validateProject(body.project);
   const ts = now();
-  await sql`UPDATE projects SET name = ${project.name || 'Untitled'},
-            data = ${JSON.stringify(project)}::jsonb, updated_at = ${ts} WHERE id = ${existing.id}`;
+  await db.query(
+    'UPDATE projects SET name = ?, data = ?, updated_at = ? WHERE id = ?',
+    [project.name || 'Untitled', JSON.stringify(project), ts, existing.id],
+  );
   return c.json({ id: existing.id, project, updatedAt: ts });
 });
 
 projects.delete('/:id', async (c) => {
   const existing = await ownedRow(c.req.param('id'), c.get('userId'));
-  await sql`DELETE FROM projects WHERE id = ${existing.id}`;
+  await db.query('DELETE FROM projects WHERE id = ?', [existing.id]);
   return c.body(null, 204);
 });
 

@@ -6,7 +6,7 @@
 import { Hono } from 'hono';
 import { setCookie, getCookie, deleteCookie } from 'hono/cookie';
 import type { Context } from 'hono';
-import { sql, now } from '../db';
+import { db, now } from '../db';
 import { config } from '../config';
 import { HttpError } from '../errors';
 import { requireAuth } from './middleware';
@@ -44,7 +44,7 @@ auth.post('/register', async (c) => {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(cleanEmail)) throw new HttpError(400, 'a valid email is required');
   if (!password || password.length < 8) throw new HttpError(400, 'password must be at least 8 characters');
 
-  const [exists] = await sql`SELECT 1 FROM users WHERE email = ${cleanEmail}`;
+  const [exists] = await db.query('SELECT 1 AS one FROM users WHERE email = ?', [cleanEmail]);
   if (exists) throw new HttpError(409, 'an account with that email already exists');
 
   const user: UserRow = {
@@ -54,8 +54,10 @@ auth.post('/register', async (c) => {
     password_hash: await Bun.password.hash(password),
     created_at: now(),
   };
-  await sql`INSERT INTO users (id, email, password_hash, display_name, created_at)
-            VALUES (${user.id}, ${user.email}, ${user.password_hash}, ${user.display_name}, ${user.created_at})`;
+  await db.query(
+    'INSERT INTO users (id, email, password_hash, display_name, created_at) VALUES (?, ?, ?, ?, ?)',
+    [user.id, user.email, user.password_hash, user.display_name, user.created_at],
+  );
 
   return c.json(await issueSession(c, user), 201);
 });
@@ -63,7 +65,7 @@ auth.post('/register', async (c) => {
 auth.post('/login', async (c) => {
   const { email, password } = await c.req.json().catch(() => ({}));
   const cleanEmail = (email || '').trim().toLowerCase();
-  const [row] = await sql`SELECT * FROM users WHERE email = ${cleanEmail}`;
+  const [row] = await db.query('SELECT * FROM users WHERE email = ?', [cleanEmail]);
   // Verify against the stored hash. When the account does not exist, still run a
   // hash so the response time does not reveal which emails are registered.
   let ok = false;
@@ -79,7 +81,7 @@ auth.post('/refresh', async (c) => {
   if (!userId) throw new HttpError(401, 'no valid refresh token');
   // Rotate: the presented token is single use.
   await revokeRefreshToken(raw);
-  const [row] = await sql`SELECT * FROM users WHERE id = ${userId}`;
+  const [row] = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
   if (!row) throw new HttpError(401, 'no valid refresh token');
   const accessToken = await signAccessToken(row as UserRow);
   setRefreshCookie(c, await issueRefreshToken(row.id));
@@ -93,7 +95,7 @@ auth.post('/logout', async (c) => {
 });
 
 auth.get('/me', requireAuth, async (c) => {
-  const [row] = await sql`SELECT * FROM users WHERE id = ${c.get('userId')}`;
+  const [row] = await db.query('SELECT * FROM users WHERE id = ?', [c.get('userId')]);
   if (!row) throw new HttpError(404, 'user not found');
   return c.json({ user: publicUser(row as UserRow) });
 });

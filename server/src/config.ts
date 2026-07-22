@@ -8,8 +8,9 @@ export const config = {
   port: num(process.env.PORT, 8787),
   jwtSecret: process.env.JWT_SECRET || 'dev-insecure-change-me-0123456789abcdef',
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
-  databaseUrl:
-    process.env.DATABASE_URL || 'postgres://pandemonium:devpassword@localhost:5432/pandemonium',
+  // SQLite by default for zero-infra dev (sqlite://path, file:path, :memory:, or
+  // a bare path). Set a postgres:// URL for prod. See db.ts for driver selection.
+  databaseUrl: process.env.DATABASE_URL || 'sqlite://./pandemonium.dev.sqlite',
   cookieSecure: process.env.COOKIE_SECURE === 'true',
   // Access token: short lived, verified on every request. Refresh token: long
   // lived, rotated on use, stored hashed in the db.

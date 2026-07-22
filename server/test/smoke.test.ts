@@ -1,24 +1,25 @@
-// Smoke tests over the real app. The health test always runs (it touches no
-// database). The full auth + project-sync flow needs Postgres, so it is gated on
-// RUN_DB_TESTS=1 with DATABASE_URL pointing at a disposable database:
-//
-//   docker compose up -d db
-//   RUN_DB_TESTS=1 bun test
-//
-// Run with `bun test` (Bun's native runner; the server has no Vitest).
+// Smoke tests over the real app, running against an in-memory SQLite database so
+// they need no external infrastructure. The same code paths run on Postgres in
+// prod (see src/db.ts); only the DATABASE_URL differs. Run with `bun test`.
 
 import { describe, it, expect, beforeAll } from 'bun:test';
 
-const runDb = process.env.RUN_DB_TESTS === '1';
+// Select the in-memory SQLite driver before anything imports config/db.
+process.env.DATABASE_URL = 'sqlite://:memory:';
+process.env.JWT_SECRET = 'test-secret-0123456789abcdef0123456789';
 
-describe('health', () => {
-  it('responds without a database', async () => {
-    const { default: app } = await import('../src/app');
-    const res = await app.request('/health');
-    expect(res.status).toBe(200);
-    expect((await res.json()).ok).toBe(true);
+const { default: app } = await import('../src/app');
+const { migrate } = await import('../src/db');
+
+const json = (path: string, method: string, body?: unknown, token?: string) =>
+  app.request(path, {
+    method,
+    headers: {
+      'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
   });
-});
 
 const sampleProject = {
   name: 'The Shape of Memories',
@@ -28,29 +29,20 @@ const sampleProject = {
   ],
 };
 
-describe.skipIf(!runDb)('auth + project sync (needs Postgres)', () => {
-  let app: { request: typeof fetch | any };
-  const uniqueEmail = `writer_${Date.now()}@example.com`;
+beforeAll(async () => {
+  await migrate();
+});
 
-  const json = (path: string, method: string, body?: unknown, token?: string) =>
-    app.request(path, {
-      method,
-      headers: {
-        'content-type': 'application/json',
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-
-  beforeAll(async () => {
-    const { migrate } = await import('../src/db');
-    await migrate();
-    app = (await import('../src/app')).default;
+describe('pandemonium-api', () => {
+  it('health check responds', async () => {
+    const res = await app.request('/health');
+    expect(res.status).toBe(200);
+    expect((await res.json()).ok).toBe(true);
   });
 
   it('runs register -> create -> read -> update with optimistic concurrency', async () => {
     const reg = await json('/v1/auth/register', 'POST', {
-      email: uniqueEmail, password: 'supersecret', displayName: 'Writer',
+      email: 'writer@example.com', password: 'supersecret', displayName: 'Writer',
     });
     expect(reg.status).toBe(201);
     const { accessToken } = await reg.json();
@@ -59,20 +51,39 @@ describe.skipIf(!runDb)('auth + project sync (needs Postgres)', () => {
     const created = await json('/v1/projects', 'POST', { project: sampleProject }, accessToken);
     expect(created.status).toBe(201);
     const { id, updatedAt } = await created.json();
+    expect(id).toBeTruthy();
 
     const got = await json(`/v1/projects/${id}`, 'GET', undefined, accessToken);
     expect(got.status).toBe(200);
-    expect((await got.json()).project.scripts.length).toBe(2);
+    const fetched = await got.json();
+    expect(fetched.project.scripts.length).toBe(2);
 
+    // A stale baseUpdatedAt is rejected with 409.
     const stale = await json(`/v1/projects/${id}`, 'PUT', {
       project: sampleProject, baseUpdatedAt: '1999-01-01T00:00:00.000Z',
     }, accessToken);
     expect(stale.status).toBe(409);
 
+    // The correct baseUpdatedAt succeeds.
     const ok = await json(`/v1/projects/${id}`, 'PUT', {
       project: sampleProject, baseUpdatedAt: updatedAt,
     }, accessToken);
     expect(ok.status).toBe(200);
+  });
+
+  it('logs in an existing user', async () => {
+    const res = await json('/v1/auth/login', 'POST', {
+      email: 'writer@example.com', password: 'supersecret',
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()).user.email).toBe('writer@example.com');
+  });
+
+  it('rejects a wrong password', async () => {
+    const res = await json('/v1/auth/login', 'POST', {
+      email: 'writer@example.com', password: 'wrongpassword',
+    });
+    expect(res.status).toBe(401);
   });
 
   it('rejects unauthenticated project access', async () => {
@@ -80,9 +91,19 @@ describe.skipIf(!runDb)('auth + project sync (needs Postgres)', () => {
     expect(res.status).toBe(401);
   });
 
+  it('scopes projects to their owner', async () => {
+    const reg = await json('/v1/auth/register', 'POST', {
+      email: 'other@example.com', password: 'supersecret',
+    });
+    const { accessToken: otherToken } = await reg.json();
+    // The other user sees none of writer's projects.
+    const list = await json('/v1/projects', 'GET', undefined, otherToken);
+    expect((await list.json()).length).toBe(0);
+  });
+
   it('rejects a project with two final drafts (hard rule 4)', async () => {
     const reg = await json('/v1/auth/register', 'POST', {
-      email: `two_${Date.now()}@example.com`, password: 'supersecret',
+      email: 'two@example.com', password: 'supersecret',
     });
     const { accessToken } = await reg.json();
     const bad = {

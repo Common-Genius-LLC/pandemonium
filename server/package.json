@@ -8,6 +8,8 @@
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
     "migrate": "bun src/migrate.ts",
+    "db:show": "bun scripts/db-show.ts",
+    "db:sql": "bun scripts/db-sql.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },

@@ -48,9 +48,9 @@ collapse into Bun built-ins, cutting the third-party dependency count to one.
 | Language | TypeScript (backend only) | Types on the server's own code; the frontend stays plain JS per CLAUDE.md. Bun executes `.ts` natively. |
 | HTTP framework | Hono 4 | Tiny, runs natively on Bun, ships JWT, CORS, and cookie helpers so auth needs no extra packages. |
 | API style | REST (resource-oriented) | The domain is a bounded set of nouns (project, script, board, research, link, comment, asset). GraphQL solves a problem this app does not have yet. |
-| Database | PostgreSQL 16 | Relational entity graph plus `JSONB` for anchors and Fountain text. One engine covers both needs. Full-text search built in for Global Search. |
-| Database driver | `Bun.SQL` (native Postgres) | Built into Bun: parameterized tagged-template queries, lazy connection, no `pg` or query-builder dependency. |
-| Migrations | Plain `.sql` applied on boot | `schema.sql` is idempotent (`CREATE ... IF NOT EXISTS`) and doubles as the migration; a versioned tool is added when the schema starts changing under real data. |
+| Database | SQLite (dev) and PostgreSQL (prod) | SQLite needs zero infrastructure for local dev; Postgres is the production target. One dialect-neutral schema and one query layer run on both. Postgres keeps `JSONB`/full-text options open for Phase B. |
+| Database driver | `bun:sqlite` and `Bun.SQL` behind one uniform interface | Both are built into Bun (no `pg`, no ORM). `src/db.ts` picks the driver from the `DATABASE_URL` scheme; queries are written once with `?` placeholders. |
+| Migrations | Plain `.sql` applied on boot | `schema.sql` is idempotent (`CREATE ... IF NOT EXISTS`), dialect-neutral, and doubles as the migration; a versioned tool is added when the schema starts changing under real data. |
 | Auth | `hono/jwt` access token plus httpOnly refresh cookie; passwords hashed with `Bun.password` (argon2id) | Stateless verification, and both pieces are built in, so nothing extra runs on OCI. |
 | Object storage | Cloudflare R2 (S3-compatible) | Zero egress fees, sits next to Cloudflare Pages, presigned uploads keep large files off the API box. |
 | Reverse proxy / TLS | Caddy 2 | Automatic Let's Encrypt issuance and renewal in ~4 lines of config. Nginx plus certbot is documented as the alternative in Part 2. |
@@ -369,17 +369,18 @@ command list; the essentials:
 cd server
 bun install
 cp .env.example .env          # then set a real JWT_SECRET
-docker compose up -d db       # Postgres matching the default DATABASE_URL
-bun run migrate               # apply schema.sql (idempotent)
-bun run dev                   # http://localhost:8787, auto-reload
+bun run dev                   # http://localhost:8787, SQLite, migrates on boot
 ```
+
+Dev defaults to a local SQLite file, so nothing else needs starting. For
+Postgres parity, set a `postgres://` `DATABASE_URL` (start one with
+`docker compose up -d db`) and run the same way; the URL scheme picks the driver.
 
 Verification:
 
 ```bash
 bun run typecheck             # tsc --noEmit
-bun test                      # health check, no database needed
-RUN_DB_TESTS=1 bun test       # full auth + project-sync flow (needs Postgres up)
+bun test                      # full suite against in-memory SQLite (no infra)
 curl localhost:8787/health
 ```
 
@@ -402,10 +403,11 @@ const project = normalizeDraftNames(ensureBranches(raw));
 for (const s of project.scripts) parseFountain(s.text ?? '');
 ```
 
-Note on the schema: Phase A stores the whole project tree as one `jsonb` column
-(`projects.data`), so the normalized multi-table schema in Part 1 section 2 is
-the Phase B target, not what ships first. `server/src/schema.sql` is the Phase A
-schema (users, projects, refresh_tokens).
+Note on the schema: Phase A stores the whole project tree as one TEXT `data`
+column (`projects.data`), and the dialect-neutral `server/src/schema.sql`
+(TEXT ids, TEXT timestamps) runs unchanged on SQLite and Postgres. The normalized
+multi-table schema in Part 1 section 2, with Postgres-native `jsonb`/`timestamptz`
+types, is the Phase B target, not what ships first.
 
 ## Phase 2: Update `src/data/db.js` to support the backend
 

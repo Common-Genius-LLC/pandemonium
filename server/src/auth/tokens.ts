@@ -4,7 +4,7 @@
 // never yields a usable token. Refresh tokens rotate on every use.
 
 import { sign, verify } from 'hono/jwt';
-import { sql, now } from '../db';
+import { db, now } from '../db';
 import { config } from '../config';
 
 const JWT_ALG = 'HS256';
@@ -38,8 +38,10 @@ function sha256hex(s: string) {
 export async function issueRefreshToken(userId: string) {
   const raw = randomToken();
   const expiresAt = new Date(Date.now() + config.refreshTtlSec * 1000).toISOString();
-  await sql`INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, created_at)
-            VALUES (${crypto.randomUUID()}, ${userId}, ${sha256hex(raw)}, ${expiresAt}, ${now()})`;
+  await db.query(
+    'INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)',
+    [crypto.randomUUID(), userId, sha256hex(raw), expiresAt, now()],
+  );
   return raw;
 }
 
@@ -47,7 +49,10 @@ export async function issueRefreshToken(userId: string) {
 // null if unknown or expired. Does not rotate (that is the caller's job).
 export async function lookupRefreshToken(raw: string | undefined): Promise<string | null> {
   if (!raw) return null;
-  const [row] = await sql`SELECT user_id, expires_at FROM refresh_tokens WHERE token_hash = ${sha256hex(raw)}`;
+  const [row] = await db.query(
+    'SELECT user_id, expires_at FROM refresh_tokens WHERE token_hash = ?',
+    [sha256hex(raw)],
+  );
   if (!row) return null;
   if (new Date(row.expires_at).getTime() < Date.now()) {
     await revokeRefreshToken(raw);
@@ -58,5 +63,5 @@ export async function lookupRefreshToken(raw: string | undefined): Promise<strin
 
 export async function revokeRefreshToken(raw: string | undefined) {
   if (!raw) return;
-  await sql`DELETE FROM refresh_tokens WHERE token_hash = ${sha256hex(raw)}`;
+  await db.query('DELETE FROM refresh_tokens WHERE token_hash = ?', [sha256hex(raw)]);
 }

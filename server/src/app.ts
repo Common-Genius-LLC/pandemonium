@@ -5,6 +5,7 @@
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { logger } from 'hono/logger';
 import { config } from './config';
 import { HttpError } from './errors';
 import authRoutes from './auth/routes';
@@ -12,6 +13,10 @@ import projectRoutes from './routes/projects';
 import type { AppEnv } from './types';
 
 const app = new Hono<AppEnv>();
+
+// Request logging first, so every request and its response status/time is
+// printed to the server console. Skipped under test to keep output clean.
+if (process.env.NODE_ENV !== 'test') app.use('*', logger());
 
 // Credentials are included for the refresh cookie, so the origin must be the
 // exact Vite/Pages origin, never "*".
