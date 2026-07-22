@@ -91,4 +91,4 @@ from the topbar or start screen; projects then sync to the account.
 
 - Asset upload to object storage (replaces base64 data URLs).
 - Granular per-entity routes and normalized tables (Phase B).
-- OCI deployment (Docker, Caddy TLS); see the RFC.
+- OCI deployment (Docker, TLS); see the [deployment runbook](../docs/DEPLOYMENT.md) for the current setup using nginx + certbot and Docker Compose on a shared Ubuntu host.

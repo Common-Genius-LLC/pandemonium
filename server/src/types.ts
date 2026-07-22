@@ -20,6 +20,15 @@ export interface ProjectRow {
   updated_at: string | Date;
 }
 
+export interface AssetRow {
+  id: string;
+  owner_id: string;
+  mime: string;
+  original_name: string;
+  data_url: string;
+  created_at: string | Date;
+}
+
 export interface PublicUser {
   id: string;
   email: string;

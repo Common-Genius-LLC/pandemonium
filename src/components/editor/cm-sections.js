@@ -149,20 +149,31 @@ export function sectionAffordances({ getParsed, onAct, canLink }) {
     update(update) {
       if (update.docChanged) this.sections = computeSections(this.getParsed(update.view));
       this.decorations = this.build(update.view);
-      this.position(update.view);
+      this.requestPosition(update.view);
     }
 
-    position(view) {
-      const idx = view.state.field(hoverSectionField);
-      const sec = this.sections[idx];
-      if (!sec || !this.canLink() || !view.state.selection.main.empty) { this.acts.style.display = 'none'; return; }
-      const doc = view.state.doc;
-      if (sec.firstLine + 1 > doc.lines) { this.acts.style.display = 'none'; return; }
-      const coords = view.coordsAtPos(doc.line(sec.firstLine + 1).from);
-      if (!coords) { this.acts.style.display = 'none'; return; }
-      const scRect = view.scrollDOM.getBoundingClientRect();
-      this.acts.style.display = 'flex';
-      this.acts.style.top = Math.max(0, coords.top - scRect.top + view.scrollDOM.scrollTop) + 'px';
+    requestPosition(view) {
+      view.requestMeasure({
+        read: (v) => {
+          const idx = v.state.field(hoverSectionField);
+          const sec = this.sections[idx];
+          if (!sec || !this.canLink() || !v.state.selection.main.empty) return { show: false };
+          const doc = v.state.doc;
+          if (sec.firstLine + 1 > doc.lines) return { show: false };
+          const coords = v.coordsAtPos(doc.line(sec.firstLine + 1).from);
+          if (!coords) return { show: false };
+          const scRect = v.scrollDOM.getBoundingClientRect();
+          return {
+            show: true,
+            top: Math.max(0, coords.top - scRect.top + v.scrollDOM.scrollTop),
+          };
+        },
+        write: (data) => {
+          if (!data || !data.show) { this.acts.style.display = 'none'; return; }
+          this.acts.style.display = 'flex';
+          this.acts.style.top = data.top + 'px';
+        },
+      });
     }
 
     destroy() {

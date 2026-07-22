@@ -53,7 +53,7 @@ collapse into Bun built-ins, cutting the third-party dependency count to one.
 | Migrations | Plain `.sql` applied on boot | `schema.sql` is idempotent (`CREATE ... IF NOT EXISTS`), dialect-neutral, and doubles as the migration; a versioned tool is added when the schema starts changing under real data. |
 | Auth | `hono/jwt` access token plus httpOnly refresh cookie; passwords hashed with `Bun.password` (argon2id) | Stateless verification, and both pieces are built in, so nothing extra runs on OCI. |
 | Object storage | Cloudflare R2 (S3-compatible) | Zero egress fees, sits next to Cloudflare Pages, presigned uploads keep large files off the API box. |
-| Reverse proxy / TLS | Caddy 2 | Automatic Let's Encrypt issuance and renewal in ~4 lines of config. Nginx plus certbot is documented as the alternative in Part 2. |
+| Reverse proxy / TLS | Nginx + certbot (or Caddy 2) | Nginx is the chosen approach when the host already runs other services; Caddy is simpler standalone. Let's Encrypt in both cases. |
 | Container | Docker + Docker Compose | One `compose.yml` reused locally and on the OCI VM (12-Factor parity between dev and prod). The API image is `oven/bun`. |
 
 ### The decisive argument for a JavaScript/TypeScript backend
