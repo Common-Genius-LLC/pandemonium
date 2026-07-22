@@ -1,0 +1,38 @@
+# Local development stack. `docker compose up -d db` gives you a Postgres that
+# matches the DATABASE_URL default in .env.example; run the API on the host with
+# `bun run dev`. To run the API in a container too (closer to the OCI prod
+# layout), add the `api` service: `docker compose up -d`.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: pandemonium
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: pandemonium
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pandemonium"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    env_file: .env
+    environment:
+      # Reach Postgres over the compose network, not localhost.
+      DATABASE_URL: postgres://pandemonium:devpassword@db:5432/pandemonium
+    ports:
+      - "8787:8787"
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["full"]
+
+volumes:
+  pgdata:

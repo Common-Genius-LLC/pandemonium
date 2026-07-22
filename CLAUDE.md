@@ -63,13 +63,18 @@ kept at the root as a reference until the migration is fully verified against it
 and is being migrated to Lit web components on Vite. Confirmed against the repo
 as of the migration:
 
-- Package manager: npm. Framework: [Lit 3](https://lit.dev), plain modern
-  JavaScript (ES modules), no TypeScript, no decorators (the author does not
-  know TypeScript; components use `static properties = {...}` and
-  `customElements.define(...)`, not `@customElement`/`@property`).
-- Build tool: Vite. `npm run dev` (dev server), `npm run build` (production
-  build to `dist/`), `npm run preview`, `npm test` / `npm run test:watch`
-  (Vitest, not yet populated), `npm run lint` (ESLint, config not yet added).
+- Package manager: Bun (the lockfile is `bun.lock`; use `bun install`, not npm).
+  Framework: [Lit 3](https://lit.dev), plain modern JavaScript (ES modules). The
+  frontend uses no TypeScript and no decorators (the author does not know
+  TypeScript; components use `static properties = {...}` and
+  `customElements.define(...)`, not `@customElement`/`@property`). This is a
+  frontend rule only: the backend under `server/` is TypeScript (see below), run
+  directly by Bun with no build step.
+- Build tool: Vite, run through Bun. `bun run dev` (dev server), `bun run build`
+  (production build to `dist/`), `bun run preview`, `bun run test` / `bun run
+  test:watch` (Vitest, not yet populated). Use `bun run test`, not `bun test`:
+  the latter invokes Bun's own native test runner and bypasses the Vitest
+  script. `bun run lint` (ESLint, config not yet added).
 - Styling: plain CSS custom properties as design tokens (`src/styles/tokens.css`,
   inherited through shadow DOM automatically) plus Lit `css` tagged templates
   per component. Shared form/panel/chip fragments live in `src/styles/shared.js`
@@ -88,12 +93,15 @@ as of the migration:
   `cache.js`), lifted from the original single file. `resolve.js` documents the
   anchor-resolution scheme (quote-search, not fixed offsets) that lets edits
   elsewhere in the document not sever existing board/research links.
-- Storage backend: local-only, no backend. A project is a `.pandemonium.json`
-  file the user explicitly saves (download) and opens (file picker); images
-  and other embedded files are data URLs inside that JSON. All of this goes
-  through `src/data/db.js`, a deliberately thin seam so a future backend
-  (e.g. Firebase, if that's ever revisited) is a second adapter module dropped
-  in behind the same three functions, without UI code changing.
+- Storage backend: local by default. A project is a `.pandemonium.json` file the
+  user explicitly saves (download) and opens (file picker); images and other
+  embedded files are data URLs inside that JSON. All of this goes through
+  `src/data/db.js`, a deliberately thin seam so an alternate backend is a second
+  adapter module dropped in behind the same functions, without UI code changing.
+  An initial remote backend now exists under `server/` (Bun + Hono + PostgreSQL,
+  TypeScript) implementing Phase A document sync, but the client seam is not yet
+  wired to it. The full architecture, schema, and deployment plan (Cloudflare
+  Pages plus Oracle Cloud) live in `docs/BACKEND_ARCHITECTURE.md`.
 - PDF export: browser print (`window.print()`) against a dedicated light-DOM
   `#printRoot` element (see `src/components/print/print.js` and the comment
   in `src/styles/global.css` on why it must live outside every component's
