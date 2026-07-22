@@ -50,11 +50,15 @@ export class PandemoniumPanelLayout extends LitElement {
     .regionctl button:hover{background:var(--ph)}
     .regionctl button.close:hover{background:var(--danger);color:#fff}
 
-    @media (max-width:900px){
+    @media (max-width:1100px){
       :host{display:block;overflow:auto;padding:0 14px 14px}
       .split,.split.row,.split.col{display:flex;flex-direction:column}
-      .pane{flex:none!important;min-height:320px}
+      .pane{flex:none!important;min-height:300px}
       .divider{display:none}
+    }
+    @media (max-width:700px){
+      :host{padding:0 10px 10px}
+      .pane{min-height:240px}
     }
   `;
 

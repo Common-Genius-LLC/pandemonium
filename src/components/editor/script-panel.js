@@ -45,6 +45,15 @@ export class PandemoniumScriptPanel extends LitElement {
     }
     .addtab:hover{color:var(--ui)}
     pandemonium-script-editor{flex:1;min-height:0}
+    @media (max-width:760px){
+      .eltbar{
+        position:static;
+        justify-content:flex-end;
+        flex-wrap:wrap;
+        padding:6px 8px 0;
+      }
+      .wc{font-size:9px}
+    }
   `];
 
   constructor() {

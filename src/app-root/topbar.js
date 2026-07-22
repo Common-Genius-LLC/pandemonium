@@ -51,7 +51,40 @@ export class PandemoniumTopbar extends LitElement {
     #actions{justify-self:end;display:flex;align-items:center;gap:6px}
     #saveDot{width:7px;height:7px;border-radius:50%;background:var(--act);display:none;flex:none;margin-right:2px}
     #saveDot.on{display:inline-block}
-    @media (max-width:900px){:host{gap:8px;padding:0 14px}#projName{display:none}}
+    @media (max-width:1100px){
+      :host{
+        height:auto;
+        grid-template-columns:auto minmax(0,1fr);
+        grid-template-areas:
+          "brand actions"
+          "search search";
+        row-gap:8px;
+        padding:8px 14px;
+      }
+      #brand{grid-area:brand}
+      #searchBox{grid-area:search}
+      #actions{grid-area:actions;flex-wrap:wrap;justify-content:flex-end}
+      pandemonium-search-field{max-width:none}
+    }
+    @media (max-width:760px){
+      :host{
+        grid-template-columns:minmax(0,1fr);
+        grid-template-areas:
+          "brand"
+          "actions"
+          "search";
+        gap:8px;
+      }
+      #projName{display:none}
+      #actions{
+        justify-content:flex-start;
+        flex-wrap:nowrap;
+        overflow:auto hidden;
+        padding-bottom:2px;
+      }
+      #actions::-webkit-scrollbar{height:6px}
+      #actions::-webkit-scrollbar-thumb{background:var(--ph);border-radius:4px}
+    }
   `];
 
   constructor() {

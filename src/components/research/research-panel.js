@@ -13,7 +13,7 @@ export class PandemoniumResearchPanel extends LitElement {
   static properties = { leafId: {} };
 
   static styles = [panelStyles, css`
-    .adds{display:flex;gap:4px}
+    .adds{display:flex;gap:4px;flex-wrap:wrap}
     #researchList{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:12px;align-content:start;padding:10px 10px 24px}
   `];
 
