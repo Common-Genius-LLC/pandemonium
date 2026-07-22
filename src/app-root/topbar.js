@@ -4,6 +4,7 @@ import { LitElement, html, css } from 'lit';
 import { StoreController } from '../state/store-controller.js';
 import { dispatch } from '../utils/events.js';
 import { saveProject, openProjectFile } from '../data/db.js';
+import { session } from '../data/session.js';
 import { readFileAsText, downloadBlob } from '../utils/files.js';
 import { slug } from '../utils/format.js';
 import { printScript, printBoards } from '../components/print/print.js';
@@ -56,6 +57,28 @@ export class PandemoniumTopbar extends LitElement {
   constructor() {
     super();
     this._store = new StoreController(this);
+    this._onSession = () => this.requestUpdate();
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    session.addEventListener('change', this._onSession);
+  }
+
+  disconnectedCallback() {
+    session.removeEventListener('change', this._onSession);
+    super.disconnectedCallback();
+  }
+
+  #openAccount() {
+    dispatch(this, 'pandemonium-open-account', {});
+  }
+
+  #accountLabel() {
+    const user = session.getUser();
+    if (!user) return 'Account';
+    const name = user.displayName || user.email || '';
+    return name.length > 16 ? name.slice(0, 15) + '…' : name;
   }
 
   #openSettings() {
@@ -63,7 +86,10 @@ export class PandemoniumTopbar extends LitElement {
   }
 
   #newProject() {
-    if (!confirm('Start a new project? Your work here autosaves locally, but this browser will forget it once you start a new project unless you export a copy first (Export > Project file).')) return;
+    const msg = session.isAuthed()
+      ? 'Start a new project? The one open now stays saved in your account (find it under Account), and you can also export a copy first (Export > Project file).'
+      : 'Start a new project? Your work here autosaves locally, but this browser will forget it once you start a new project unless you export a copy first (Export > Project file).';
+    if (!confirm(msg)) return;
     // pandemonium-app owns the autosave timer and must cancel any pending
     // write before clearing the slot, or a write already in flight for the
     // project being replaced can land after the clear and resurrect it.
@@ -147,11 +173,15 @@ export class PandemoniumTopbar extends LitElement {
         <pandemonium-search-field title=${'Search everything (' + (isMac ? '⌘K' : 'Ctrl K') + ')'}></pandemonium-search-field>
       </div>
       <div id="actions">
-        <span id="saveDot" class=${ui.dirty ? 'on' : ''} title="Autosaved locally. Not yet exported as a file."></span>
+        <span id="saveDot" class=${ui.dirty ? 'on' : ''} title=${session.isAuthed() ? 'Syncing to your account. Not yet exported as a file.' : 'Autosaved in this browser. Not yet exported as a file.'}></span>
         <pd-button @click=${() => this.#newProject()}>New</pd-button>
         <pd-button @click=${() => this.#save()} title="Download a portable .pandemonium.json backup">Save</pd-button>
         <pd-button @click=${() => this.renderRoot.querySelector('#fileOpen').click()}>Open</pd-button>
         <pd-button @click=${(e) => this.#openExportMenu(e)}>Export</pd-button>
+        <pd-button variant=${session.isAuthed() ? 'default' : 'pink'} @click=${() => this.#openAccount()}
+          title=${session.isAuthed() ? 'Your account and cloud projects' : 'Sign in to sync your projects'}>
+          ${session.isAuthed() ? this.#accountLabel() : 'Sign in'}
+        </pd-button>
       </div>
       <input type="file" id="fileOpen" accept=".json,application/json" style="display:none" @change=${(e) => this.#openFile(e)}>
       <input type="file" id="fileFountain" accept=".fountain,.txt,text/plain" style="display:none" @change=${(e) => this.#importFountain(e)}>

@@ -12,4 +12,9 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: true,
   },
+  // Vitest (frontend). The backend under server/ has its own tests that run on
+  // Bun's native runner (`bun:test`), which Vitest cannot resolve, so exclude it.
+  test: {
+    exclude: ['**/node_modules/**', '**/dist/**', 'server/**'],
+  },
 });

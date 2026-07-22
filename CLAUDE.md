@@ -98,10 +98,13 @@ as of the migration:
   embedded files are data URLs inside that JSON. All of this goes through
   `src/data/db.js`, a deliberately thin seam so an alternate backend is a second
   adapter module dropped in behind the same functions, without UI code changing.
-  An initial remote backend now exists under `server/` (Bun + Hono + PostgreSQL,
-  TypeScript) implementing Phase A document sync, but the client seam is not yet
-  wired to it. The full architecture, schema, and deployment plan (Cloudflare
-  Pages plus Oracle Cloud) live in `docs/BACKEND_ARCHITECTURE.md`.
+  An initial remote backend exists under `server/` (Bun + Hono + PostgreSQL,
+  TypeScript) implementing Phase A document sync, and the client seam is wired to
+  it: `src/data/session.js` holds the account session, `src/data/remote-api-adapter.js`
+  is the third adapter, and `db.js` dispatches autosave/load by mode (local
+  IndexedDB when signed out, the backend when signed in). Sign-in is offered in
+  the topbar and start screen. The full architecture, schema, and deployment plan
+  (Cloudflare Pages plus Oracle Cloud) live in `docs/BACKEND_ARCHITECTURE.md`.
 - PDF export: browser print (`window.print()`) against a dedicated light-DOM
   `#printRoot` element (see `src/components/print/print.js` and the comment
   in `src/styles/global.css` on why it must live outside every component's

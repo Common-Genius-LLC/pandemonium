@@ -72,9 +72,15 @@ identically on both sides:
 - Exactly one final draft per project (hard rule 4).
 - Every script parses as Fountain (hard rule 2).
 
+## Client wiring
+
+The frontend is wired to this backend behind sign-in: `src/data/session.js`
+(account session and the single fetch path), `src/data/remote-api-adapter.js`
+(project CRUD), and `src/data/db.js` (dispatches autosave/load by mode). Sign in
+from the topbar or start screen; projects then sync to the account.
+
 ## Not yet implemented (next phases)
 
 - Asset upload to object storage (replaces base64 data URLs).
 - Granular per-entity routes and normalized tables (Phase B).
-- Client wiring: `src/data/remote-api-adapter.js` and the `db.js` mode dispatch.
 - OCI deployment (Docker, Caddy TLS); see the RFC.

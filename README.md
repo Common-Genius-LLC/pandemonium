@@ -28,9 +28,12 @@ bun run preview      # serve the built dist/
 bun run test         # Vitest (note: NOT "bun test", which runs Bun's own runner)
 ```
 
-The frontend runs fully standalone today: projects save to the browser
-(IndexedDB autosave) and to `.pandemonium.json` files. It is not yet wired to the
-backend, so you do not need the server running to use the app.
+The frontend runs fully standalone: signed out, projects save to the browser
+(IndexedDB autosave) and to `.pandemonium.json` files, so you do not need the
+server running to use the app. Sign in (topbar or start screen) to sync projects
+to your account instead; that path needs the backend running (below). Set
+`VITE_API_BASE` in `.env.local` to point at the API (defaults to
+`http://localhost:8787/v1`; see `.env.example`).
 
 ## Backend (API + database)
 
@@ -75,7 +78,8 @@ Two terminals:
   API on port 8787.
 
 `CORS_ORIGIN` in `server/.env` defaults to `http://localhost:5173`, so the two
-line up once the client seam is wired (Phase 2, not built yet).
+line up. With both running, sign in from the app to create an account and sync
+projects to the backend.
 
 ## Ports
 

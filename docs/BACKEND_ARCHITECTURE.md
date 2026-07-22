@@ -349,10 +349,10 @@ Repo layout added by this plan:
   compose.yml           postgres (+ api under the `full` profile)
   Dockerfile            oven/bun image
   tsconfig.json  .env.example
-/src/data                 (Phase 2, not yet built)
+/src/data                 (Phase 2, built)
   remote-api-adapter.js additive: the third adapter behind db.js
-  db.js                 becomes a mode dispatcher (edited, not rewritten)
-  session.js            mode + access token + active remote project id
+  db.js                 mode dispatcher (edited, not rewritten)
+  session.js            mode + access token + user + active remote project id
 /docs
   BACKEND_ARCHITECTURE.md   this file
 ```

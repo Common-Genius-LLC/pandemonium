@@ -4,6 +4,8 @@ import { LitElement, html, css } from 'lit';
 import { StoreController } from '../state/store-controller.js';
 import { emptyProject } from '../data/schema.js';
 import { openProjectFile } from '../data/db.js';
+import { session } from '../data/session.js';
+import { dispatch } from '../utils/events.js';
 import '../components/ui/logo.js';
 import '../components/ui/button.js';
 import '../components/ui/project-card.js';
@@ -58,6 +60,17 @@ export class PandemoniumStartScreen extends LitElement {
   constructor() {
     super();
     this._store = new StoreController(this);
+    this._onSession = () => this.requestUpdate();
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    session.addEventListener('change', this._onSession);
+  }
+
+  disconnectedCallback() {
+    session.removeEventListener('change', this._onSession);
+    super.disconnectedCallback();
   }
 
   #card() {
@@ -95,6 +108,9 @@ export class PandemoniumStartScreen extends LitElement {
         <div class="actions">
           <pd-button @click=${() => this.#create()}>Create Project</pd-button>
           <pd-button @click=${() => this.renderRoot.getElementById('fileOpen').click()}>Open</pd-button>
+          ${session.isAuthed()
+            ? html`<pd-button @click=${() => dispatch(this, 'pandemonium-open-account', {})}>Open from cloud</pd-button>`
+            : html`<pd-button variant="pink" @click=${() => dispatch(this, 'pandemonium-open-account', {})}>Sign in</pd-button>`}
         </div>
 
         <div class="foot">A Project by <i>Common Genius</i></div>

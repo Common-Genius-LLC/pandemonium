@@ -5,7 +5,8 @@ import { ContextProvider } from '@lit/context';
 import { storeContext } from '../state/context.js';
 import { PandemoniumStore } from '../state/store.js';
 import { dispatch } from '../utils/events.js';
-import { saveProject, autosaveProject, loadAutosavedProject, clearAutosavedProject } from '../data/db.js';
+import { saveProject, autosaveProject, loadAutosavedProject, clearAutosavedProject, loadRemoteProject } from '../data/db.js';
+import { session } from '../data/session.js';
 import { formStyles, chipStyles } from '../styles/shared.js';
 import { debounce } from '../utils/format.js';
 import { imageFromClipboard } from '../utils/clipboard.js';
@@ -24,6 +25,7 @@ import '../components/linking/linkbar.js';
 import '../components/linking/highlight-popover.js';
 import '../components/linking/comment-popover.js';
 import '../components/slideshow/slideshow.js';
+import '../components/auth/account-dialog.js';
 
 // The root shell. Owns the one PandemoniumStore instance for the whole app
 // and hands it down through Lit Context (see state/context.js) rather than
@@ -79,11 +81,52 @@ export class PandemoniumApp extends LitElement {
     this.addEventListener('pandemonium-open-slideshow', () => this.renderRoot.getElementById('slideshow').open());
     this.addEventListener('pandemonium-open-project-settings', () => this.#openProjectSettings());
     this.addEventListener('pandemonium-new-project', () => this.#newProject());
+    this.addEventListener('pandemonium-open-account', () => this.renderRoot.getElementById('accountDialog').open());
+    this.addEventListener('pandemonium-open-remote-project', (e) => this.#openRemoteProject(e.detail.id));
+    this.addEventListener('pandemonium-push-current-to-cloud', () => this.#pushToCloud());
+    // Account state (signed in/out) changes what the topbar and start screen
+    // offer; re-render on it as well as on store changes.
+    session.addEventListener('change', () => this.requestUpdate());
     document.addEventListener('keydown', this.#onKeydown);
     document.addEventListener('paste', this.#onPaste);
-    loadAutosavedProject().then((project) => {
+    this.#boot();
+  }
+
+  // Restore any signed-in session first (trades the refresh cookie for a token),
+  // then load the project the current mode points at: the last cloud project if
+  // signed in, otherwise the local IndexedDB autosave.
+  async #boot() {
+    await session.restore().catch(() => {});
+    try {
+      const project = await loadAutosavedProject();
       if (project && !this.store.project) this.store.loadProject(project);
-    }).catch((err) => console.warn('Could not read autosaved project:', err));
+    } catch (err) {
+      console.warn('Could not restore a project:', err);
+    }
+  }
+
+  // Opening a cloud project: cancel any pending autosave for the outgoing
+  // project first, or a write already scheduled against the old id can land
+  // after the switch (same hazard as #newProject).
+  async #openRemoteProject(id) {
+    this.#debouncedAutosave.cancel();
+    try {
+      const project = await loadRemoteProject(id);
+      this.store.loadProject(project);
+    } catch (err) {
+      dispatch(this, 'pandemonium-toast', { message: 'Could not open that project.' });
+    }
+  }
+
+  // Push the open project into the account right after sign-in, so nothing that
+  // was being worked on locally is left behind.
+  async #pushToCloud() {
+    if (!this.store.project) return;
+    try {
+      await autosaveProject(this.store.project);
+    } catch (err) {
+      dispatch(this, 'pandemonium-toast', { message: 'Could not sync this project to your account.' });
+    }
   }
 
   disconnectedCallback() {
@@ -196,6 +239,7 @@ export class PandemoniumApp extends LitElement {
       <pandemonium-highlight-popover id="boardPopover"></pandemonium-highlight-popover>
       <pandemonium-comment-popover id="commentPopover"></pandemonium-comment-popover>
       <pandemonium-slideshow id="slideshow"></pandemonium-slideshow>
+      <pd-account-dialog id="accountDialog"></pd-account-dialog>
     `;
   }
 }
