@@ -28,6 +28,17 @@ CREATE TABLE IF NOT EXISTS projects (
 
 CREATE INDEX IF NOT EXISTS projects_owner ON projects (owner_id);
 
+CREATE TABLE IF NOT EXISTS assets (
+  id            TEXT PRIMARY KEY,
+  owner_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  mime          TEXT NOT NULL,
+  original_name TEXT NOT NULL DEFAULT '',
+  data_url      TEXT NOT NULL,
+  created_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS assets_owner ON assets (owner_id);
+
 -- Refresh tokens are stored hashed (never cleartext), one row per issued token,
 -- deleted on rotation and logout.
 CREATE TABLE IF NOT EXISTS refresh_tokens (

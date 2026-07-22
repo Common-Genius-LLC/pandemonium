@@ -118,8 +118,11 @@ In Cloudflare DNS for `commongenius.in`, add an A record:
 api.pandemonium   ->  <public-ip>
 ```
 
-Set it DNS-only (grey cloud) at first so Let's Encrypt can validate directly.
-Turn the orange proxy on later if you want Cloudflare in front.
+Set it **DNS-only (grey cloud)**, not Proxied. Reason: Cloudflare's free
+Universal SSL does not cover two-label subdomains (`api.pandemonium.*`), so
+proxying causes `ERR_SSL_VERSION_OR_CIPHER_MISMATCH`. The origin server handles
+TLS directly via Let's Encrypt (see B6). You can keep it DNS-only permanently, or
+switch to proxied once you verify TLS works on the origin.
 
 ### B3. Open the network (two layers, both required)
 
@@ -170,18 +173,54 @@ Notes:
   required across HTTPS origins.
 - `DATABASE_URL` host is `db` (the compose service name), not localhost.
 
-### B6. TLS config (Caddy)
+### B6. TLS config (nginx + certbot)
 
-`server/Caddyfile`:
+The host runs nginx as the reverse proxy for TLS termination (not Caddy in
+compose). This is the preferred setup when the box already runs other services
+(like `prose-backend`) behind nginx.
 
+1. Install nginx and certbot:
+
+```bash
+sudo apt-get install -y nginx certbot python3-certbot-nginx
 ```
-api.pandemonium.commongenius.in {
-  reverse_proxy api:8787
+
+2. Create `/etc/nginx/sites-available/pandemonium`:
+
+```nginx
+server {
+    server_name api.pandemonium.commongenius.in;
+    location / {
+        proxy_pass http://localhost:8787;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 90;
+    }
+    listen 443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/api.pandemonium.commongenius.in/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.pandemonium.commongenius.in/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+}
+server {
+    if ($host = api.pandemonium.commongenius.in) { return 301 https://$host$request_uri; }
+    listen 80;
+    server_name api.pandemonium.commongenius.in;
+    return 404;
 }
 ```
 
-`server/compose.prod.yml` (API + Postgres + Caddy). If it is not already in the
-repo, create it:
+3. Enable the site and get the certificate:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/pandemonium /etc/nginx/sites-enabled/
+sudo certbot --nginx -d api.pandemonium.commongenius.in
+```
+
+4. `server/compose.prod.yml` (API + Postgres, no TLS service):
 
 ```yaml
 services:
@@ -196,22 +235,22 @@ services:
   api:
     build: { context: .., dockerfile: server/Dockerfile }
     env_file: .env
+    environment:
+      DATABASE_URL: postgres://pandemonium:${DB_PASSWORD}@db:5432/pandemonium
     depends_on: { db: { condition: service_healthy } }
     restart: always
-  caddy:
-    image: caddy:2
-    ports: ["80:80", "443:443"]
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddy_data:/data
-    depends_on: [api]
-    restart: always
+    ports:
+      - "8787:8787"
 volumes:
   pgdata:
-  caddy_data:
 ```
 
-(`DB_PASSWORD` here must match the password in `DATABASE_URL`.)
+Notes:
+- The API service binds to `0.0.0.0:8787` (not loopback). Port 8787 is not in
+  the UFW allow list, so it is not publicly reachable; nginx on the host is the
+  only public endpoint.
+- Explicit `DATABASE_URL` override ensures prod uses the correct password from
+  `.env` (the base `compose.yml` hardcodes `devpassword` for local dev).
 
 ### B7. Bring it up
 
@@ -220,7 +259,7 @@ docker compose -f compose.yml -f compose.prod.yml up -d --build
 ```
 
 The API migrates the schema on boot (creates `users`, `projects`,
-`refresh_tokens`). Caddy fetches the certificate automatically on first request.
+`refresh_tokens`).
 
 Verify:
 
@@ -229,18 +268,6 @@ curl https://api.pandemonium.commongenius.in/health
 ```
 
 Expect `{"ok":true,"service":"pandemonium-api"}`.
-
-### B8. Nginx + certbot alternative (if you do not want Caddy)
-
-```bash
-sudo apt-get install -y nginx certbot python3-certbot-nginx
-# server block: proxy_pass http://127.0.0.1:8787; forward Host and X-Forwarded-For
-sudo certbot --nginx -d api.pandemonium.commongenius.in
-```
-
-Here the API container publishes `127.0.0.1:8787` on the host and nginx runs on
-the host instead of in compose. Caddy is fewer moving parts; nginx is the pick if
-the box already runs other host services.
 
 ---
 

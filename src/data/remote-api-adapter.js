@@ -5,11 +5,83 @@
 'use strict';
 
 import { session } from './session.js';
+import { downscaleDataURL } from '../utils/files.js';
 
 async function asJson(res) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
   return data;
+}
+
+const assetIdByDataUrl = new Map();
+const dataUrlByAssetId = new Map();
+
+function isDataUrl(v) {
+  return typeof v === 'string' && v.startsWith('data:');
+}
+
+async function uploadAsset(dataUrl, originalName = '') {
+  const cached = assetIdByDataUrl.get(dataUrl);
+  if (cached) return cached;
+  const compressed = await downscaleDataURL(dataUrl);
+  const out = await asJson(await session.apiFetch('/assets', {
+    method: 'POST',
+    body: JSON.stringify({ dataUrl: compressed, originalName }),
+  }));
+  assetIdByDataUrl.set(dataUrl, out.id);
+  dataUrlByAssetId.set(out.id, compressed);
+  return out.id;
+}
+
+async function loadAssetDataUrl(assetId) {
+  const cached = dataUrlByAssetId.get(assetId);
+  if (cached) return cached;
+  const out = await asJson(await session.apiFetch(`/assets/${assetId}`));
+  dataUrlByAssetId.set(assetId, out.dataUrl);
+  assetIdByDataUrl.set(out.dataUrl, assetId);
+  return out.dataUrl;
+}
+
+async function hydrateProject(project) {
+  const boards = await Promise.all((project.boards || []).map(async (b) => {
+    if (isDataUrl(b.img) || !b.imgAssetId) return b;
+    const img = await loadAssetDataUrl(b.imgAssetId);
+    const next = { ...b, img };
+    delete next.imgAssetId;
+    return next;
+  }));
+
+  const research = await Promise.all((project.research || []).map(async (d) => {
+    const att = d.attachment;
+    if (!att || isDataUrl(att.data) || !att.assetId) return d;
+    const data = await loadAssetDataUrl(att.assetId);
+    const next = { ...d, attachment: { ...att, data } };
+    delete next.attachment.assetId;
+    return next;
+  }));
+
+  return { ...project, boards, research };
+}
+
+async function prepareProjectForRemote(project) {
+  const boards = await Promise.all((project.boards || []).map(async (b) => {
+    if (!isDataUrl(b.img)) return b;
+    const assetId = await uploadAsset(b.img, `${b.id || 'board'}.png`);
+    const next = { ...b, imgAssetId: assetId };
+    delete next.img;
+    return next;
+  }));
+
+  const research = await Promise.all((project.research || []).map(async (d) => {
+    const att = d.attachment;
+    if (!att || !isDataUrl(att.data)) return d;
+    const assetId = await uploadAsset(att.data, att.name || `${d.id || 'attachment'}.bin`);
+    const next = { ...d, attachment: { ...att, assetId } };
+    delete next.attachment.data;
+    return next;
+  }));
+
+  return { ...project, boards, research };
 }
 
 export async function listProjectsRemote() {
@@ -22,7 +94,7 @@ export async function loadProjectRemote(id) {
   const out = await asJson(await session.apiFetch(`/projects/${id}`));
   session.setCurrentRemoteId(out.id);
   session.setBase(out.updatedAt);
-  return out.project;
+  return hydrateProject(out.project);
 }
 
 export async function deleteProjectRemote(id) {
@@ -47,10 +119,11 @@ export function saveProjectRemote(project) {
 
 async function doSave(project) {
   const id = session.getCurrentRemoteId();
+  const remoteProject = await prepareProjectForRemote(project);
   if (!id) {
     const out = await asJson(await session.apiFetch('/projects', {
       method: 'POST',
-      body: JSON.stringify({ project }),
+      body: JSON.stringify({ project: remoteProject }),
     }));
     session.setCurrentRemoteId(out.id);
     session.setBase(out.updatedAt);
@@ -59,7 +132,7 @@ async function doSave(project) {
 
   const put = (base) => session.apiFetch(`/projects/${id}`, {
     method: 'PUT',
-    body: JSON.stringify({ project, baseUpdatedAt: base }),
+    body: JSON.stringify({ project: remoteProject, baseUpdatedAt: base }),
   });
 
   let res = await put(session.getBase());

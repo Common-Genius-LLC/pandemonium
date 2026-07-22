@@ -9,6 +9,7 @@ import { logger } from 'hono/logger';
 import { config } from './config';
 import { HttpError } from './errors';
 import authRoutes from './auth/routes';
+import assetRoutes from './routes/assets';
 import projectRoutes from './routes/projects';
 import type { AppEnv } from './types';
 
@@ -30,6 +31,7 @@ app.use('*', cors({
 app.get('/health', (c) => c.json({ ok: true, service: 'pandemonium-api' }));
 
 app.route('/v1/auth', authRoutes);
+app.route('/v1/assets', assetRoutes);
 app.route('/v1/projects', projectRoutes);
 
 app.notFound((c) => c.json({ error: 'not found' }, 404));
