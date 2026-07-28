@@ -32,12 +32,20 @@ function toResponse(row: ProjectRow) {
 }
 
 // List: metadata only, newest first. The full tree is fetched per project.
+// `workspace` is a column rather than a read into the `data` blob: doing it in
+// SQL would need json_extract on SQLite and ->> on Postgres, which is exactly
+// the dialect split the single query layer exists to avoid.
 projects.get('/', async (c) => {
   const rows = await db.query(
-    'SELECT id, name, updated_at FROM projects WHERE owner_id = ? ORDER BY updated_at DESC',
+    'SELECT id, name, workspace, updated_at FROM projects WHERE owner_id = ? ORDER BY updated_at DESC',
     [c.get('userId')],
   );
-  return c.json(rows.map((r: any) => ({ id: r.id, name: r.name, updatedAt: isoOf(r.updated_at) })));
+  return c.json(rows.map((r: any) => ({
+    id: r.id,
+    name: r.name,
+    workspace: r.workspace || '',
+    updatedAt: isoOf(r.updated_at),
+  })));
 });
 
 projects.post('/', async (c) => {
@@ -46,8 +54,8 @@ projects.post('/', async (c) => {
   const id = crypto.randomUUID();
   const ts = now();
   await db.query(
-    'INSERT INTO projects (id, owner_id, name, data, schema_ver, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)',
-    [id, c.get('userId'), project.name || 'Untitled', JSON.stringify(project), ts, ts],
+    'INSERT INTO projects (id, owner_id, name, workspace, data, schema_ver, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)',
+    [id, c.get('userId'), project.name || 'Untitled', String(project.workspace || ''), JSON.stringify(project), ts, ts],
   );
   return c.json({ id, project, updatedAt: ts }, 201);
 });
@@ -72,8 +80,8 @@ projects.put('/:id', async (c) => {
   const project = validateProject(body.project);
   const ts = now();
   await db.query(
-    'UPDATE projects SET name = ?, data = ?, updated_at = ? WHERE id = ?',
-    [project.name || 'Untitled', JSON.stringify(project), ts, existing.id],
+    'UPDATE projects SET name = ?, workspace = ?, data = ?, updated_at = ? WHERE id = ?',
+    [project.name || 'Untitled', String(project.workspace || ''), JSON.stringify(project), ts, existing.id],
   );
   return c.json({ id: existing.id, project, updatedAt: ts });
 });

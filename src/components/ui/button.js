@@ -33,7 +33,7 @@ export class PdButton extends LitElement {
       gap:6px;
       white-space:nowrap;
       color:var(--ui);
-      background:#fff;
+      background:var(--btn-bg);
       border:1px solid var(--btn-line);
       border-radius:var(--r);
       box-shadow:0 1px 1.25px rgba(0,0,0,.25);
@@ -47,12 +47,12 @@ export class PdButton extends LitElement {
 
     /* Filled variants. The border tracks the fill instead of staying #b8b8b8,
        which only reads as an edge against white. */
-    :host([variant=dark]) button{background:var(--ui);color:#fff;border-color:rgba(0,0,0,.22)}
-    :host([variant=dark]) button:hover{background:var(--ink)}
-    :host([variant=act]) button{background:var(--act);color:var(--ink);border-color:rgba(0,0,0,.22)}
-    :host([variant=act]) button:hover{background:#f0d06d}
+    :host([variant=dark]) button{background:var(--overlay);color:var(--overlay-ink);border-color:rgba(0,0,0,.22)}
+    :host([variant=dark]) button:hover{background:var(--ui)}
+    :host([variant=act]) button{background:var(--act);color:var(--act-ink);border-color:rgba(0,0,0,.22)}
+    :host([variant=act]) button:hover{background:var(--act-hi)}
     :host([variant=pink]) button{background:var(--res);color:#fff;border-color:rgba(0,0,0,.22)}
-    :host([variant=pink]) button:hover{background:#b01286}
+    :host([variant=pink]) button:hover{background:var(--res-hi)}
 
     :host([variant=ghost]) button{
       background:transparent;color:var(--mut);

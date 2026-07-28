@@ -26,10 +26,14 @@ export class PandemoniumStore extends EventTarget {
 
   loadProject(rawProject) {
     const project = Object.assign(
-      { name: 'Untitled', workspace: '', type: '', targetMins: 0, contributors: [], scripts: [], boards: [], research: [], links: [], comments: [] },
+      { name: 'Untitled', workspace: '', type: '', targetMins: 0, contributors: [], scripts: [], boards: [], research: [], links: [], comments: [], layout: null },
       rawProject,
     );
     this.#project = project;
+    // Seeded rather than defaulted in the Object.assign above, so a project
+    // file written before `layout` existed (no key at all) and one written
+    // with an explicit null both land on a real tree.
+    if (!this.#project.layout) this.#project = { ...this.#project, layout: defaultLayout() };
     if (!this.#project.scripts.length) {
       const created = model.createScript(this.#project, {});
       this.#project = created.project;
@@ -79,7 +83,7 @@ export class PandemoniumStore extends EventTarget {
   // Everything derived from the final draft: its parsed blocks, its scenes
   // (numbered, with boarded/sourced coverage), and every board/link anchor
   // resolved against it (see selectors.js). Multiple panels read this on
-  // every render (timesheet, boards, script highlighting, research pairing),
+  // every render (timeline, boards, script highlighting, research pairing),
   // so it is memoized on project+ui identity rather than recomputed by each
   // component -- mirrors the original renderAll()'s single shared `LAST`.
   getFinalState() {
@@ -155,7 +159,7 @@ export class PandemoniumStore extends EventTarget {
   // Used by the live textarea/editor: the underlying text is always written
   // synchronously (so `store.project` is instantly current for Save/export,
   // never lagging behind what's on screen), but the 'change' notification
-  // that triggers other components' re-render (timesheet, boards panel) is
+  // that triggers other components' re-render (timeline, boards panel) is
   // debounced, since those are comparatively expensive to redo on every
   // keystroke. Mirrors the original's `sc.text = value` (sync) followed by
   // a debounced `editorSync()`.
@@ -212,6 +216,19 @@ export class PandemoniumStore extends EventTarget {
     if (parts) trackStoryboardLinkAdd({ script_parts: parts, board_count: project.boards.length });
     return board;
   }
+  // A board with no image yet, made from a script section. It is a real
+  // storyboard link (the section is claimed), so it is tracked as one, but
+  // coverage() will not let it into the boarded percentage until it has an
+  // image.
+  addBlankBoard(opts) {
+    const { project, board } = model.addBlankBoard(this.#project, opts);
+    this.#applyProject(project);
+    const parts = (opts.parts || []).length;
+    if (parts) trackStoryboardLinkAdd({ script_parts: parts, board_count: project.boards.length });
+    return board;
+  }
+
+  reorderBoard(id, delta) { this.#applyProject(model.reorderBoard(this.#project, id, delta)); }
   updateBoardCaption(id, caption) { this.#applyProject(model.updateBoardCaption(this.#project, id, caption)); }
   replaceBoardImage(id, img) { this.#applyProject(model.replaceBoardImage(this.#project, id, img)); }
   reattachBoard(id, parts) { this.#applyProject(model.reattachBoard(this.#project, id, parts)); }
@@ -258,6 +275,20 @@ export class PandemoniumStore extends EventTarget {
   reattachComment(id, parts) { this.#applyProject(model.reattachComment(this.#project, id, parts)); }
   deleteComment(id) { this.#applyProject(model.deleteComment(this.#project, id)); }
 
+  // ---- layout ----
+
+  // The panel arrangement is persisted project state, so it goes through
+  // #applyProject like any other edit: it marks the project dirty and rides
+  // the same autosave. Because it left the ui branch, setUI no longer sees
+  // layout changes, so the virtual-view tracking that used to happen there is
+  // re-asserted here.
+  setLayout(layout) {
+    if (!this.#project || !layout) return;
+    const before = layoutSignature(this.#project.layout);
+    this.#applyProject(model.setLayout(this.#project, layout));
+    if (before !== layoutSignature(layout)) this.#trackViewChange();
+  }
+
   // ---- project meta ----
 
   updateProjectMeta(patch) { this.#applyProject(model.updateProjectMeta(this.#project, patch)); }
@@ -268,11 +299,6 @@ export class PandemoniumStore extends EventTarget {
 
 function defaultUI(draftId) {
   return {
-    // Blender-style window division (see data/layout-tree.js): a binary split
-    // tree of resizable panes, each showing any panel type, replaces the old
-    // everything/split/single view modes. Transient ui state, like the modes
-    // it replaced (resets on reload).
-    layout: defaultLayout(),
     draftId,
     openDoc: null,
     readerEdit: false,
@@ -286,8 +312,10 @@ function defaultUI(draftId) {
   };
 }
 
+// Layout is deliberately absent here: it is project state now, and setLayout
+// reports its own view change.
 function viewPatchAffectsView(prev, next) {
-  return prev.draftId !== next.draftId || prev.openDoc !== next.openDoc || prev.readerEdit !== next.readerEdit || layoutSignature(prev.layout) !== layoutSignature(next.layout);
+  return prev.draftId !== next.draftId || prev.openDoc !== next.openDoc || prev.readerEdit !== next.readerEdit;
 }
 
 // A virtual view is described structurally: which panel arrangement is on
@@ -303,10 +331,13 @@ function viewInfo(project, ui) {
     const mode = ui.readerEdit ? 'edit' : 'read';
     return { title: 'Research ' + mode, path: '/project/research/' + mode };
   }
-  const singleLeaf = ui.layout && ui.layout.type === 'leaf';
+  const layout = project.layout;
+  const singleLeaf = layout && layout.type === 'leaf';
   if (!singleLeaf) return { title: 'Workspace', path: '/project/workspace' };
-  const content = ui.layout.content;
-  const title = content === 'boards' ? 'Storyboard' : content === 'research' ? 'Research' : 'Script';
+  const content = layout.content;
+  const title = content === 'boards' ? 'Storyboard'
+    : content === 'research' ? 'Research'
+      : content === 'timeline' ? 'Timeline' : 'Script';
   return { title, path: '/project/' + content };
 }
 

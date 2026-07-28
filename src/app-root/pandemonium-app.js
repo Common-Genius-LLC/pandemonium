@@ -16,7 +16,6 @@ import { bugReporter } from '../utils/bug-report.js';
 
 import './start-screen.js';
 import './topbar.js';
-import './timesheet.js';
 import './panel-layout.js';
 import '../components/ui/toast.js';
 import '../components/ui/dialog.js';
@@ -31,9 +30,9 @@ import '../components/auth/account-dialog.js';
 
 // The root shell. Owns the one PandemoniumStore instance for the whole app
 // and hands it down through Lit Context (see state/context.js) rather than
-// passing it as a prop through every layer -- topbar/timesheet/the three
-// panels are all several levels deep and all need read+write access to the
-// same project/ui state.
+// passing it as a prop through every layer: the topbar and every panel are
+// several levels deep and all need read+write access to the same project/ui
+// state.
 //
 // Also hosts the "overlay layer": toast, dialog, menu, the floating
 // selection toolbar, linkbar, board popover, and the connector line. These
@@ -257,7 +256,6 @@ export class PandemoniumApp extends LitElement {
       ${!project ? html`<pandemonium-start-screen></pandemonium-start-screen>` : html`
         <div class="app">
           <pandemonium-topbar></pandemonium-topbar>
-          <pandemonium-timesheet></pandemonium-timesheet>
           <pandemonium-panel-layout></pandemonium-panel-layout>
         </div>
       `}

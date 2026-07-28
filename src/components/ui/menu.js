@@ -14,12 +14,12 @@ export class PdMenu extends LitElement {
   static styles = css`
     :host{position:fixed;inset:0;z-index:70;pointer-events:none}
     .pop{
-      position:fixed;background:var(--ui);color:#fff;border-radius:var(--r);
+      position:fixed;background:var(--overlay);color:var(--overlay-ink);border-radius:var(--r);
       display:flex;flex-direction:column;min-width:150px;padding:3px;gap:2px;
       pointer-events:auto;font-family:var(--sans);
     }
     button{
-      font:inherit;color:#fff;font-size:11px;font-weight:500;padding:4px 9px;
+      font:inherit;color:var(--overlay-ink);font-size:11px;font-weight:500;padding:4px 9px;
       white-space:nowrap;text-align:left;background:none;border:0;border-radius:2px;cursor:pointer;
     }
     button:hover{background:rgba(255,255,255,.16)}

@@ -12,6 +12,7 @@ import { getParsed } from '../fountain/cache.js';
 import { formStyles, chipStyles } from '../styles/shared.js';
 import '../components/ui/logo.js';
 import '../components/ui/button.js';
+import '../components/ui/theme-toggle.js';
 import '../components/search/search-field.js';
 
 // Figma "Title bar" (node 39:72): the grey gradient chrome, the white wordmark
@@ -21,7 +22,7 @@ import '../components/search/search-field.js';
 //
 // Save/Open/Export/New live here (rather than a separate row below) so the
 // whole app chrome fits in one header line, leaving more vertical room for
-// the timesheet and the three panels.
+// the panels below it.
 export class PandemoniumTopbar extends LitElement {
   static properties = {};
 
@@ -207,6 +208,7 @@ export class PandemoniumTopbar extends LitElement {
       </div>
       <div id="actions">
         <span id="saveDot" class=${ui.dirty ? 'on' : ''} title=${session.isAuthed() ? 'Syncing to your account. Not yet exported as a file.' : 'Autosaved in this browser. Not yet exported as a file.'}></span>
+        <pd-theme-toggle></pd-theme-toggle>
         <pd-button @click=${() => this.#newProject()}>New</pd-button>
         <pd-button @click=${() => this.#save()} title="Download a portable .pandemonium.json backup">Save</pd-button>
         <pd-button @click=${() => this.renderRoot.querySelector('#fileOpen').click()}>Open</pd-button>

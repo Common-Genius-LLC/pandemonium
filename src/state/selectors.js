@@ -1,4 +1,4 @@
-// Derived-state computations shared by the timesheet, boards panel, script
+// Derived-state computations shared by the timeline, boards panel, script
 // editor and research panel: which board/link anchors currently resolve
 // against the final draft, which scene each falls in, and the coverage
 // fractions that drive the timeline. All pure; ported from the original
@@ -60,21 +60,45 @@ export function computeResolved(parsed, scenes, project, ui) {
 // resolved-anchor sets and boarded/sourced fractions. Safe because scenesOf()
 // always returns brand new scene objects for this call, never shared state.
 export function coverage(scenes, R) {
-  for (const sc of scenes) { sc.bset = new Set(); sc.rset = new Set(); sc.nb = 0; sc.nr = 0; }
-  const put = (arr, setKey, nKey) => {
-    for (const it of arr) {
-      if (!it.ok) continue;
-      if (scenes[it.sceneIdx]) scenes[it.sceneIdx][nKey]++;
-      it.res.forEach((r) => { if (r) { const sc = scenes[sceneIndexOf(scenes, r.bi)]; if (sc) sc[setKey].add(r.bi); } });
-    }
+  for (const sc of scenes) { sc.bset = new Set(); sc.rset = new Set(); sc.nb = 0; sc.nr = 0; sc.nbPending = 0; }
+  const spread = (it, setKey) => {
+    it.res.forEach((r) => { if (r) { const sc = scenes[sceneIndexOf(scenes, r.bi)]; if (sc) sc[setKey].add(r.bi); } });
   };
-  put(R.boards, 'bset', 'nb');
-  put(R.links, 'rset', 'nr');
+
+  // A blank board (no image yet) is a claim that a beat needs boarding, not
+  // evidence that it has been boarded. It is a real link, so it still paints
+  // its highlight in the script and is still reported to the reader, but it
+  // is counted into nbPending and contributes nothing to bset. Per hard rule
+  // 3 the boarded percentage may never include work that has not happened,
+  // and "a placeholder exists" is not the work.
+  for (const it of R.boards) {
+    if (!it.ok) continue;
+    const sc = scenes[it.sceneIdx];
+    if (!it.bd.img) { if (sc) sc.nbPending++; continue; }
+    if (sc) sc.nb++;
+    spread(it, 'bset');
+  }
+
+  for (const it of R.links) {
+    if (!it.ok) continue;
+    if (scenes[it.sceneIdx]) scenes[it.sceneIdx].nr++;
+    spread(it, 'rset');
+  }
+
   for (const sc of scenes) {
     const denom = Math.max(1, sc.content);
     sc.fb = sc.nb ? clamp(sc.bset.size / denom, 0.12, 1) : 0;
     sc.fr = sc.nr ? clamp(sc.rset.size / denom, 0.12, 1) : 0;
   }
+}
+
+// The order boards are read and played in: down the script by resolved
+// position, then by the board's own seq. The second term is not a tiebreak
+// nicety. Several boards attached to one passage all resolve to the same
+// firstBi, so without seq their order is whatever the sort happens to do, and
+// a storyboard sequence with undefined order is not a sequence.
+export function boardOrder(a, b) {
+  return (a.firstBi - b.firstBi) || ((a.bd.seq || 0) - (b.bd.seq || 0));
 }
 
 export function labelScenes(scenes) {
@@ -83,10 +107,12 @@ export function labelScenes(scenes) {
   return scenes;
 }
 
-// {pctBoarded, pctSourced, estimate, hasContent} for the timesheet header.
-// Per hard rule 3, callers must render "unknown" rather than a number when
-// hasContent is false -- there is no honest estimate for an empty script.
-export function timesheetStats(scenes, parsedBlocksLength) {
+// {pctBoarded, pctSourced, estimate, hasContent, totalSeconds} for the
+// timeline panel. Per hard rule 3, callers must render "unknown" rather than a
+// number when hasContent is false: there is no honest estimate for an empty
+// script. pctBoarded excludes blank boards, because coverage() never puts them
+// in bset (see the note there).
+export function timelineStats(scenes, parsedBlocksLength) {
   const total = scenes.reduce((a, s) => a + s.secs, 0);
   const hasContent = parsedBlocksLength > 0;
   const wSum = (k) => scenes.reduce((a, s) => a + s.secs * (s[k] || 0), 0);

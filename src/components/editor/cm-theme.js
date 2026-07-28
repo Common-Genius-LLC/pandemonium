@@ -151,10 +151,10 @@ export const fountainTheme = EditorView.theme({
   '.cm-sec-hover[data-secpos=solo]': { borderRadius: '6px' },
   '.cm-sec-acts': {
     position: 'absolute', right: '10px', zIndex: '6', display: 'flex', gap: '2px', padding: '3px',
-    background: 'var(--ui)', borderRadius: 'var(--r)', boxShadow: '0 1px 5px rgba(0,0,0,.2)', fontFamily: 'var(--sans)',
+    background: 'var(--overlay)', borderRadius: 'var(--r)', boxShadow: '0 1px 5px rgba(0,0,0,.2)', fontFamily: 'var(--sans)',
   },
   '.cm-sec-acts button': {
-    color: '#fff', fontSize: '11px', fontWeight: '500', padding: '4px 9px', background: 'none', border: '0',
+    color: 'var(--overlay-ink)', fontSize: '11px', fontWeight: '500', padding: '4px 9px', background: 'none', border: '0',
     borderRadius: '2px', cursor: 'pointer', fontFamily: 'var(--sans)', display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap',
   },
   '.cm-sec-acts button:hover': { background: 'rgba(255,255,255,.16)' },
@@ -168,15 +168,15 @@ export const fountainTheme = EditorView.theme({
   // the page rather than as part of the script.
   '.cm-elmenu': {
     position: 'absolute', zIndex: '20', minWidth: '240px', maxHeight: '320px', overflowY: 'auto',
-    background: 'var(--ui)', borderRadius: 'var(--r)', boxShadow: '0 6px 22px rgba(0,0,0,.32)',
+    background: 'var(--overlay)', borderRadius: 'var(--r)', boxShadow: '0 6px 22px rgba(0,0,0,.32)',
     padding: '4px', fontFamily: 'var(--sans)', fontSize: '12px', lineHeight: '1.2',
   },
   '.cm-elmenu-row': {
     display: 'flex', alignItems: 'baseline', gap: '8px', padding: '5px 8px',
-    borderRadius: '2px', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap',
+    borderRadius: '2px', color: 'var(--overlay-ink)', cursor: 'pointer', whiteSpace: 'nowrap',
   },
   '.cm-elmenu-row:hover': { background: 'rgba(255,255,255,.12)' },
-  '.cm-elmenu-row.sel': { background: 'var(--act)', color: 'var(--ink)' },
+  '.cm-elmenu-row.sel': { background: 'var(--act)', color: 'var(--act-ink)' },
   '.cm-elmenu-k': { fontVariantNumeric: 'tabular-nums', opacity: '.7', width: '22px' },
   '.cm-elmenu-l': { flex: '1', fontWeight: '500' },
   // What the row actually writes into the Fountain source.

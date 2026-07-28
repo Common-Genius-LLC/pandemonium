@@ -17,6 +17,12 @@ export function emptyProject(overrides) {
     boards: [],
     research: [],
     links: [],
+    // The panel arrangement (see data/layout-tree.js). Persisted because a
+    // layout is part of how this project is being worked on. Null means "use
+    // the default": every project file written before this field existed has
+    // no layout key, and store.loadProject seeds one, so nothing already
+    // saved is invalidated by its arrival.
+    layout: null,
   }, overrides);
 }
 

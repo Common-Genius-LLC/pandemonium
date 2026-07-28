@@ -12,7 +12,7 @@ body{
   -webkit-font-smoothing:antialiased;
 }
 #app-mount{height:100%}
-::selection{background:var(--act);color:var(--ink)}
+::selection{background:var(--act);color:var(--act-ink)}
 
 /* #printRoot lives as a direct child of <body>, a sibling of #app-mount, on
    purpose: print.js (src/components/print/print.js) writes plain HTML into
@@ -21,6 +21,15 @@ body{
    instead, hiding that component to print would hide this along with it. */
 #printRoot{display:none}
 @media print{
+  /* PDF export is always on paper. The dark theme is a screen affordance, and
+     a black page with light text is never what a print button means, so the
+     light token values are forced back for the duration of the print. This
+     wins over :root[data-theme="dark"] on specificity as well as order. */
+  :root,:root[data-theme="dark"]{
+    color-scheme:light;
+    --bg:#ffffff;--panel:#eeeeee;--ph:#d9d9d9;--ph-hi:#cfcfcf;--field:#ffffff;
+    --ink:#000000;--ui:#343434;--mut:#868686;
+  }
   body>*:not(#printRoot){display:none !important}
   body{background:#fff}
   #printRoot{display:block !important;color:#000}

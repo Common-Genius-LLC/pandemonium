@@ -7,6 +7,7 @@
 
 import { esc } from '../../utils/format.js';
 import { trackPdfExport } from '../../utils/analytics.js';
+import { boardOrder } from '../../state/selectors.js';
 
 function printInline(b) {
   let out = '';
@@ -56,7 +57,10 @@ export function printScript(script, parsed) {
 }
 
 export function printBoards(finalState, projectName) {
-  const arr = finalState.R.boards.slice().sort((a, b) => a.firstBi - b.firstBi);
+  // Same order as the panel and the slideshow: down the script, then by the
+  // board's own seq within a section. A printed storyboard whose pages
+  // disagree with the on-screen sequence is worse than no print at all.
+  const arr = finalState.R.boards.slice().sort(boardOrder);
   if (!arr.length) return false;
   let html = '<div class="bh">' + esc(projectName) + ' · Storyboards · ' + esc(finalState.fsc.name) + '</div><div class="grid">';
   for (const o of arr) {

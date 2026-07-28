@@ -16,6 +16,8 @@ import { resolvePart } from '../../fountain/resolve.js';
 import { plainPosToRaw, rawOffsetToPlainPos, blockRawRange } from '../../fountain/doc-map.js';
 import { elementOfBlock } from '../../fountain/element-ops.js';
 import { activeElementField, autoUppercase, applyElementAtCaret, elementKeymap } from './cm-autoformat.js';
+import { caseJournal, caseExempt } from './cm-case-journal.js';
+import { emphasisKeymap } from './cm-emphasis.js';
 import { elementMenu } from './element-menu.js';
 import { readFileAsDataURL } from '../../utils/files.js';
 import { imageFromClipboard } from '../../utils/clipboard.js';
@@ -68,6 +70,7 @@ export class PandemoniumScriptEditor extends LitElement {
         // Enter and the letter keys (element-menu.js sets its own precedence).
         elementMenu({ onPick: (view, key) => applyElementAtCaret(view, key) }),
         elementKeymap({ getParsed: (v) => v.plugin(this.#plugin)?.parsed || parseFountain(v.state.doc.toString()) }),
+        emphasisKeymap({ getParsed: (v) => v.plugin(this.#plugin)?.parsed || parseFountain(v.state.doc.toString()) }),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         // Shown only while the document is empty, so it appears on a new
         // draft, goes on the first keystroke, and comes back if the writer
@@ -77,6 +80,11 @@ export class PandemoniumScriptEditor extends LitElement {
         fountainTheme,
         this.#plugin,
         activeElementField,
+        // Both fields belong to the element flow: the journal records what a
+        // transform overwrote so Shift+Tab can give it back, and the exemption
+        // is what stops autoUppercase from immediately undoing that.
+        caseJournal,
+        caseExempt,
         autoUppercase,
         hoverSectionField,
         sectionAffordances({
@@ -278,14 +286,21 @@ export class PandemoniumScriptEditor extends LitElement {
     this.#view.focus();
   }
 
+  // Several images at once, because several boards can attach to one section
+  // now. They keep the order they were picked in, which is what their `seq`
+  // records.
   async #onSectionImage(e) {
-    const file = e.target.files && e.target.files[0];
+    const files = [...(e.target.files || [])].filter((f) => f.type.startsWith('image/'));
     e.target.value = '';
-    if (!file) return;
-    const img = await readFileAsDataURL(file);
-    this._store.store.addBoard({ parts: this.#pendingBoardParts || [], img, caption: '' });
+    const parts = this.#pendingBoardParts || [];
     this.#pendingBoardParts = null;
-    dispatch(this, 'pandemonium-toast', { message: 'Board added.' });
+    if (!files.length) return;
+    for (const file of files) {
+      this._store.store.addBoard({ parts, img: await readFileAsDataURL(file), caption: '' });
+    }
+    dispatch(this, 'pandemonium-toast', {
+      message: files.length === 1 ? 'Board added.' : files.length + ' boards added to this section.',
+    });
   }
 
   #completePendingRelink(parts) {
@@ -492,7 +507,7 @@ export class PandemoniumScriptEditor extends LitElement {
   render() {
     return html`
       <div class="host"></div>
-      <input type="file" id="secFileImg" accept="image/*" style="display:none" @change=${(e) => this.#onSectionImage(e)}>
+      <input type="file" id="secFileImg" accept="image/*" multiple style="display:none" @change=${(e) => this.#onSectionImage(e)}>
     `;
   }
 }

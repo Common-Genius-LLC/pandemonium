@@ -20,11 +20,11 @@ export class PandemoniumSelectionToolbar extends LitElement {
   static styles = css`
     :host{position:fixed;inset:0;z-index:70;pointer-events:none}
     .bar{
-      position:fixed;background:var(--ui);color:#fff;border-radius:var(--r);display:flex;padding:3px;gap:2px;
+      position:fixed;background:var(--overlay);color:var(--overlay-ink);border-radius:var(--r);display:flex;padding:3px;gap:2px;
       pointer-events:auto;font-family:var(--sans);
     }
     button{
-      color:#fff;font-size:11px;font-weight:500;padding:4px 9px;white-space:nowrap;text-align:left;
+      color:var(--overlay-ink);font-size:11px;font-weight:500;padding:4px 9px;white-space:nowrap;text-align:left;
       background:none;border:0;border-radius:2px;cursor:pointer;font-family:var(--sans);
     }
     button:hover{background:rgba(255,255,255,.16)}
@@ -93,14 +93,27 @@ export class PandemoniumSelectionToolbar extends LitElement {
     if (act === 'board') {
       const input = this.renderRoot.getElementById('fileImg');
       input.value = '';
+      // Multiple, because several boards can attach to one passage now: a
+      // beat that takes four frames should take one trip through the picker,
+      // not four. They keep the order they were picked in.
       input.onchange = async () => {
-        const file = input.files && input.files[0];
-        if (!file) return;
-        const img = await readFileAsDataURL(file);
-        store.addBoard({ parts, img, caption: '' });
-        dispatch(this, 'pandemonium-toast', { message: 'Board added.' });
+        const files = [...(input.files || [])].filter((f) => f.type.startsWith('image/'));
+        if (!files.length) return;
+        for (const file of files) {
+          store.addBoard({ parts, img: await readFileAsDataURL(file), caption: '' });
+        }
+        dispatch(this, 'pandemonium-toast', {
+          message: files.length === 1 ? 'Board added.' : files.length + ' boards added to this passage.',
+        });
       };
       input.click();
+      return;
+    }
+    if (act === 'board-blank') {
+      store.addBlankBoard({ parts });
+      dispatch(this, 'pandemonium-toast', {
+        message: 'Blank board added. Drop an image on it here or during the slideshow. It will not count as boarded until it has one.',
+      });
       return;
     }
     if (act === 'comment') {
@@ -128,13 +141,14 @@ export class PandemoniumSelectionToolbar extends LitElement {
     } else {
       buttons = html`
         <button class="b" @click=${() => this.#act('board')}>Board</button>
+        <button class="b" title="Claim this passage for a frame you have not drawn yet" @click=${() => this.#act('board-blank')}>Board (blank)</button>
         <button class="r" @click=${() => this.#act('source')}>Source</button>
         <button class="n" @click=${() => this.#act('comment')}>Comment</button>
       `;
     }
     return html`
       <div class="bar" style="left:${this._x || 0}px;top:${this._y || 0}px">${buttons}</div>
-      <input type="file" id="fileImg" accept="image/*" style="display:none">
+      <input type="file" id="fileImg" accept="image/*" multiple style="display:none">
     `;
   }
 }

@@ -27,6 +27,7 @@ import { keymap } from '@codemirror/view';
 import { applyElement, applyElementTo, elementOfBlock, isBareMarkup } from '../../fountain/element-ops.js';
 import { isCharacterCueText } from '../../fountain/parse.js';
 import { openElementMenu } from './element-menu.js';
+import { recordOriginal, exemptFromUpper, journalAtCaret, isExempt, revertPlan } from './cm-case-journal.js';
 
 const UPPER = new Set(['scene', 'character', 'transition']);
 const SCENE_RE = /^(INT|EXT|EST|I\/E|INT\.?\/EXT)[.\s]/i;
@@ -121,6 +122,12 @@ function upperElementFor(lineText, active) {
 export const autoUppercase = EditorState.transactionFilter.of((tr) => {
   if (!tr.docChanged || !tr.isUserEvent('input')) return tr;
   const line = tr.newDoc.lineAt(tr.newSelection.main.head);
+  // A line whose element transform was just reverted (Shift+Tab) is off
+  // limits until the caret leaves it. Without this the revert survives
+  // exactly one keystroke: the pin is gone, but the text still looks like a
+  // scene heading or a cue to upperElementFor, so it gets upper-cased again
+  // and the writer's casing is taken away a second time.
+  if (isExempt(tr.startState, line.from)) return tr;
   let active = tr.startState.field(activeElementField, false);
   if (active) {
     const pos = Math.min(tr.changes.mapPos(active.pos, -1), tr.newDoc.length);
@@ -183,10 +190,49 @@ function setLine(view, line, key) {
   const sep = elementSeparator(view.state.doc, line, key);
   const { text: next, caret } = applyElementTo(line.text, key);
   const start = line.from + sep.length;
+  const changed = !!sep || next !== line.text;
   view.dispatch({
-    changes: sep || next !== line.text ? { from: line.from, to: line.to, insert: sep + next } : undefined,
+    changes: changed ? { from: line.from, to: line.to, insert: sep + next } : undefined,
     selection: { anchor: start + caret },
-    effects: setActiveElement.of({ el: key, pos: start }),
+    effects: [
+      setActiveElement.of({ el: key, pos: start }),
+      // Recorded in the same transaction as the transform, so undo and revert
+      // see one coherent step. Cleared when the transform was a no-op, since
+      // there would be nothing for Shift+Tab to give back and a stale entry
+      // from an earlier line's transform must not survive into this one.
+      recordOriginal.of(changed
+        ? { pos: start, before: line.text, after: next, sep: sep.length, upper: UPPER.has(key) }
+        : null),
+    ],
+  });
+  return true;
+}
+
+// Shift+Tab, first meaning: undo the element transform on this line, casing
+// and markup and the separator line it inserted, in one press. Returns false
+// when there is nothing recorded or the line has drifted too far from what the
+// transform left, so Shift+Tab keeps its second meaning (cycle backwards)
+// everywhere else.
+export function revertElementAtCaret(view) {
+  const entry = journalAtCaret(view.state);
+  if (!entry) return false;
+  const line = view.state.doc.lineAt(view.state.selection.main.head);
+  const plan = revertPlan(line.text, entry);
+  if (!plan) return false;
+  const from = Math.max(0, line.from - plan.sep);
+  view.dispatch({
+    changes: { from, to: line.to, insert: plan.text },
+    selection: { anchor: from + plan.text.length },
+    effects: [
+      // The pin goes with the transform it belonged to: from here the parser
+      // decides what this line is, which is the whole point of putting the
+      // original text back.
+      setActiveElement.of(null),
+      recordOriginal.of(null),
+      exemptFromUpper.of(from),
+    ],
+    userEvent: 'input',
+    scrollIntoView: true,
   });
   return true;
 }
@@ -342,7 +388,9 @@ function plainNewline(view) {
 // shortcuts will live elsewhere.
 export function elementKeymap({ getParsed }) {
   return keymap.of([
-    { key: 'Tab', run: (v) => cycle(v, getParsed, 1), shift: (v) => cycle(v, getParsed, -1) },
+    // Shift+Tab reverts the last element transform on this line if there is
+    // one to revert, and otherwise cycles backwards as it always did.
+    { key: 'Tab', run: (v) => cycle(v, getParsed, 1), shift: (v) => revertElementAtCaret(v) || cycle(v, getParsed, -1) },
     { key: 'Enter', run: (v) => smartEnter(v, getParsed) },
     { key: 'Shift-Enter', run: plainNewline },
     // Falls through to the default when the plan is null, so ordinary

@@ -688,3 +688,81 @@ choice if you already run other host services.
 Nothing in this plan removes local file mode. `saveProject` and
 `openProjectFile` stay local forever: a `.pandemonium.json` on disk remains a
 first-class portable artifact regardless of whether a backend is present.
+
+---
+
+# Addendum: server work required by the feature queue
+
+`docs/FEATURE_ARCHITECTURE.md` queues three features that reach the server. This
+section is the server half of those; the client half stays in that document.
+
+## A. `workspace` promoted to a column
+
+The cloud project list has to show which workspace each project belongs to.
+`workspace` currently lives inside the `data` blob, and reading it per row would
+need `json_extract` on SQLite and `->>` on Postgres, which breaks the single
+query layer this backend is built around. Promote it to a real column, written
+on insert and update exactly as `name` already is:
+
+```sql
+ALTER TABLE projects ADD COLUMN workspace TEXT NOT NULL DEFAULT '';
+```
+
+`GET /v1/projects` then returns `{id, name, workspace, updatedAt}`. The column is
+a denormalized copy of `data.workspace`, and `data` stays authoritative: on
+conflict, the blob wins and the column is refreshed from it on the next write.
+
+## B. Sharing
+
+Phase A stores a project tree as one row, so a grant is project-scoped. Offering
+per-script access in the UI would describe an isolation the storage cannot
+enforce.
+
+```sql
+CREATE TABLE project_shares (
+  id            TEXT PRIMARY KEY,
+  project_id    TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  grantee_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role          TEXT NOT NULL,            -- 'viewer' | 'editor'
+  created_at    TIMESTAMP NOT NULL,
+  UNIQUE (project_id, grantee_id)
+);
+
+CREATE TABLE project_links (
+  project_id    TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  token         TEXT NOT NULL UNIQUE,     -- unguessable, revocable independently
+  created_at    TIMESTAMP NOT NULL
+);
+```
+
+Routes in `server/src/routes/shares.ts`: list, add and remove collaborators, plus
+mint and revoke the read link. `ownedRow` in `routes/projects.ts` generalises to
+an `accessibleRow` that returns an effective role (`owner`, `editor`, `viewer`),
+with every write gated on `owner` or `editor`. The read-link route is the one
+unauthenticated surface and must serve a projection (final draft plus its
+boards), never the whole row: research notes and contributor names are not part
+of what a shared script link promises.
+
+## C. Conflicts stop being last-write-wins
+
+`PUT /v1/projects/:id` already responds 409 with the current server copy, which
+is correct and needs no change. What changes is the client: it currently adopts
+the server timestamp and retries, which silently discards the other write. That
+is defensible for one user on two devices and is a data-loss bug the moment
+sharing exists, so it is replaced by a three-way merge on the client (see
+`docs/FEATURE_ARCHITECTURE.md` section 5.3).
+
+Two server-side consequences:
+
+- The 409 body must keep returning the **full** current project, not just a
+  timestamp. It already does. Do not "optimize" it to a metadata-only response.
+- `validateProject` runs on the merged result like any other write, so hard rule
+  4 is enforced server-side even if a client merge produced two final drafts.
+
+## D. Additive project keys
+
+Two new keys ride inside the project blob: `layout` (the per-project panel tree)
+and `seq` on each board. `ensureBranches` in `server/src/domain/validate.ts`
+spreads the incoming object, so both pass through untouched with no server
+change required. This note exists so that a future tightening of validation to a
+strict allowlist does not silently drop them.

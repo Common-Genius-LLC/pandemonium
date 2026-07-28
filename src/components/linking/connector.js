@@ -16,6 +16,11 @@ export class PandemoniumConnector extends LitElement {
   static styles = css`
     :host{position:fixed;inset:0;z-index:65;pointer-events:none;display:block}
     svg{width:100%;height:100%;display:block}
+    /* Painted from CSS rather than from stroke/fill attributes: a
+       presentation attribute cannot take a var(), so the research pink would
+       have been the one colour in the app frozen to its light-theme hex. */
+    svg path{stroke:var(--res)}
+    svg circle{fill:var(--res)}
   `;
 
   #script = null;
@@ -49,9 +54,9 @@ export class PandemoniumConnector extends LitElement {
     const mx = (a.x + b.x) / 2;
     const d = `M${a.x} ${a.y} C${mx} ${a.y}, ${mx} ${b.y}, ${b.x} ${b.y}`;
     return html`<svg viewBox="0 0 ${innerWidth} ${innerHeight}">
-      ${svg`<path d=${d} fill="none" stroke="#cf159e" stroke-width="2"/>
-      <circle cx=${a.x} cy=${a.y} r="4" fill="#cf159e"/>
-      <circle cx=${b.x} cy=${b.y} r="4" fill="#cf159e"/>`}
+      ${svg`<path d=${d} fill="none" stroke-width="2"/>
+      <circle cx=${a.x} cy=${a.y} r="4"/>
+      <circle cx=${b.x} cy=${b.y} r="4"/>`}
     </svg>`;
   }
 }

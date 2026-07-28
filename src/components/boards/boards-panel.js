@@ -2,6 +2,8 @@
 
 import { LitElement, html, css } from 'lit';
 import { StoreController } from '../../state/store-controller.js';
+import { boardOrder } from '../../state/selectors.js';
+import { boardRuns } from '../../data/project-model.js';
 import { dispatch } from '../../utils/events.js';
 import { readFileAsDataURL } from '../../utils/files.js';
 import { panelStyles } from '../../styles/shared.js';
@@ -114,7 +116,8 @@ export class PandemoniumBoardsPanel extends LitElement {
     if (!project) return html``;
     const ui = this._store.ui;
     const state = this._store.store.getFinalState();
-    const arr = state.R.boards.slice().sort((a, b) => a.firstBi - b.firstBi);
+    const arr = state.R.boards.slice().sort(boardOrder);
+    const runs = boardRuns(project.boards);
     return html`
       <div class="shell" style="--pane-bg:var(--pane-board)">
         <div class="chrome">
@@ -130,7 +133,11 @@ export class PandemoniumBoardsPanel extends LitElement {
           @drop=${(e) => this.#onDrop(e)}>
           ${arr.length
             ? html`<div id="boardsList">
-                ${arr.map((o) => html`<pandemonium-board-card .resolved=${o} .sceneLabel=${o.ok ? state.fscenes[o.sceneIdx].label : ''}></pandemonium-board-card>`)}
+                ${arr.map((o) => html`<pandemonium-board-card
+                  .resolved=${o}
+                  .sceneLabel=${o.ok ? state.fscenes[o.sceneIdx].label : ''}
+                  .run=${runs.get(o.bd.id)}
+                ></pandemonium-board-card>`)}
               </div>`
             : html`<div class="noboards">
                 <img src="/boards-empty.png" alt="">

@@ -26,6 +26,11 @@ CREATE TABLE IF NOT EXISTS projects (
   updated_at  TEXT NOT NULL
 );
 
+-- NOTE: `workspace` is added by the additive migration in db.ts rather than
+-- here, because a fresh database and an existing one both have to end up with
+-- it and ADD COLUMN has no portable IF NOT EXISTS. Adding it to the CREATE
+-- above as well would leave the two paths free to drift.
+
 CREATE INDEX IF NOT EXISTS projects_owner ON projects (owner_id);
 
 CREATE TABLE IF NOT EXISTS assets (

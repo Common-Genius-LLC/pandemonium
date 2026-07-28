@@ -19,7 +19,7 @@ export class PandemoniumStartScreen extends LitElement {
   static styles = css`
     :host{
       position:fixed;inset:0;z-index:60;
-      background:linear-gradient(180deg,#ffffff 0%,#d8d8d8 100%);
+      background:linear-gradient(180deg,var(--scrim-a) 0%,var(--scrim-b) 100%);
       font-family:var(--sans);
       display:flex;flex-direction:column;align-items:center;
       overflow:auto;
@@ -40,7 +40,7 @@ export class PandemoniumStartScreen extends LitElement {
     .tagline{
       margin-top:15.18px;
       font-size:14.277px;line-height:17.434px;
-      text-align:center;color:#000;
+      text-align:center;color:var(--ink);
     }
 
     pd-project-card{margin-top:134px;flex:none}
@@ -52,7 +52,7 @@ export class PandemoniumStartScreen extends LitElement {
 
     .foot{
       margin-top:auto;padding-top:40px;flex:none;
-      font-size:13.277px;line-height:17.434px;color:#000;text-align:center;
+      font-size:13.277px;line-height:17.434px;color:var(--ink);text-align:center;
     }
     .foot i{font-style:italic}
   `;

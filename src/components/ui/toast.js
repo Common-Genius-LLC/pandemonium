@@ -15,7 +15,7 @@ export class PdToast extends LitElement {
       z-index:90;pointer-events:none;
     }
     .box{
-      background:var(--ui);color:#fff;padding:7px 14px;border-radius:var(--r);
+      background:var(--overlay);color:var(--overlay-ink);padding:7px 14px;border-radius:var(--r);
       font-size:12px;opacity:0;transition:opacity .18s;max-width:80vw;
       font-family:var(--sans);
     }

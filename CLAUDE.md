@@ -33,7 +33,13 @@ From the product spec. Confirm against the code before relying on it.
   and research.
 - **Storyboard link**: a script section connected to one or more images. Viewable
   as a board, or as a slideshow with the image on top and the linked script
-  portion in the bottom fifth of the frame.
+  portion in the bottom fifth of the frame. Several boards may attach to one
+  section; their order within that section is the board's `seq` field, since
+  they all resolve to the same script position and nothing else would order
+  them. A board may also be **blank** (`img: null`), created from a section
+  before the frame exists. A blank board is a real link but is **not** counted
+  as boarded by the timeline (see hard rule 3): the section is claimed, not
+  drawn.
 - **Research link**: a script section connected to a URL, a research document, or
   a note. A highlighted span inside a research doc links to a specific script
   span. Clicking either end reveals the link between the two.
@@ -41,6 +47,11 @@ From the product spec. Confirm against the code before relying on it.
   the script is storyboarded, how much is backed by research, and the estimated
   video length.
 - **Global search**: across scripts, storyboards, research, and notes.
+- **Panel layout**: a Blender-style binary split tree of panes, each showing any
+  panel type (script, storyboards, research, timeline). It is **per project**,
+  not per user: a layout is part of how a given project is being worked on, so
+  it lives in the persisted project and syncs with it. Theme is the opposite
+  case and stays per user in localStorage.
 - **Persistence**: file save and read, plus PDF export.
 
 ---
@@ -53,6 +64,15 @@ figma.com/design/S7i6Jcdhx0gViHlxU7RrCz
 
 Derive any remaining screens from that same design language. When a screen is not
 yet in Figma, match the existing tokens rather than inventing new ones.
+
+There are two themes. The light one is the Figma file. The dark one is a
+midnight-working palette declared under `:root[data-theme="dark"]` in
+`src/styles/tokens.css`, built for a dark room rather than derived by inverting
+the light values. Because tokens are inherited CSS custom properties, both
+themes reach every shadow root without a component change, so **never hardcode a
+color in a component**: a literal is a hole in the dark theme. Two deliberate
+exceptions are documented in place, the slideshow (always a lights-down surface)
+and the print block in `global.css` (always paper).
 
 ---
 
@@ -81,7 +101,8 @@ as of the migration:
   since shadow DOM does not inherit ordinary CSS rules, only custom properties.
 - State management: a single framework-agnostic `PandemoniumStore`
   (`src/state/store.js`, extends `EventTarget`) holding a `project` branch
-  (persisted) and a `ui` branch (transient), delivered through the component
+  (persisted, and now including the panel `layout`) and a `ui` branch
+  (transient), delivered through the component
   tree via Lit Context (`src/state/context.js`) and a `StoreController`
   reactive controller (`src/state/store-controller.js`) that components attach
   in their constructor. Mutations go through pure reducers in
@@ -162,14 +183,29 @@ concern. Do not edit the fixture to make a feature pass. Fix the feature.
   nothing here should invent screenplay content standing in for it.
 - Stack confirmed and documented above; keep this section current as the
   migration phases land instead of letting it drift back out of date.
-- The Lit migration has completed feature-parity (Preview/Edit script split
-  still present, matching the original interaction model) but not yet the
-  Figma re-skin (real topbar chrome, Button-Standard styling, illustrated
-  start screen) or the unified CodeMirror-based script/research editor that
-  removes the Preview/Edit split. See CLAUDE.md's own commit history or ask
-  the session that did the migration which phase is current.
 - Derive the remaining screens from the Pandemonium Figma.
 - Wire the `[[Rn]]` reference convention in the fixture to the research-link model.
+
+The current feature queue, its architecture, and the reasoning behind each
+decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
+
+1. Dark mode. **Done.**
+2. Blank boards excluded from coverage, then the timesheet to timeline refactor
+   (timeline is now an ordinary panel at the foot of the layout). **Done.**
+3. Per-project layout persistence, then Blender corner-drag split and merge.
+   **Done.**
+4. Editor: Shift+Tab reverts an element transform (casing and markup both), and
+   manual bold/italic restricted to elements whose parse cannot be broken by it.
+   **Done.**
+5. Storyboards: several boards per section with explicit ordering, blank boards
+   created from a section, and image drop onto a slide during playback.
+   **Done.**
+6. Cloud: workspace and last-synced in the project list (**done**), then script
+   sharing, then a three-way merge replacing the last-write-wins conflict path.
+   **Sharing and merge are still to do**, and the merge one matters: the retry
+   in `remote-api-adapter.js` silently discards the other writer's work, which
+   is defensible for one user on two devices and a data-loss bug the moment
+   sharing ships. Sharing must not land before it.
 
 ---
 

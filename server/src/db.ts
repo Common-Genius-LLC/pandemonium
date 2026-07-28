@@ -80,9 +80,35 @@ export const db: Driver = dbKind === 'postgres'
 // exactly what optimistic-concurrency comparisons run against.
 export const now = () => new Date().toISOString();
 
-// Applies schema.sql. It is all CREATE ... IF NOT EXISTS, so it is safe on every
-// boot, on either engine.
+// Columns added to existing tables after the fact.
+//
+// schema.sql is all CREATE ... IF NOT EXISTS and can be re-run on every boot,
+// but ADD COLUMN has no portable IF NOT EXISTS (Postgres has one, SQLite does
+// not), and one failing statement inside that file would abort every statement
+// after it. So each is issued on its own and "column already exists" is the
+// success case, which makes this safe to run on every boot like the rest.
+const ADD_COLUMNS: Array<[string, string, string]> = [
+  // Denormalized from data.workspace so the cloud project list can show which
+  // workspace a project belongs to without parsing the JSON blob per row.
+  // `data` stays authoritative; this column is refreshed from it on every write.
+  ['projects', 'workspace', "TEXT NOT NULL DEFAULT ''"],
+];
+
+async function addColumns() {
+  for (const [table, column, type] of ADD_COLUMNS) {
+    try {
+      await db.query(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+    } catch (err) {
+      const msg = String((err as Error)?.message || '').toLowerCase();
+      if (!msg.includes('duplicate column') && !msg.includes('already exists')) throw err;
+    }
+  }
+}
+
+// Applies schema.sql, then any additive column migrations. Safe on every boot,
+// on either engine.
 export async function migrate() {
   const text = readFileSync(join(here, 'schema.sql'), 'utf8');
   await db.exec(text);
+  await addColumns();
 }

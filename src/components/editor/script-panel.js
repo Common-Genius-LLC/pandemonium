@@ -109,7 +109,7 @@ export class PandemoniumScriptPanel extends LitElement {
     const wc = words ? words.toLocaleString() + ' w · est ' + fmtT(secs) : '';
 
     return html`
-      <div class="shell" style="--pane-bg:${sc.final ? 'var(--pane-script)' : '#fff'}">
+      <div class="shell" style="--pane-bg:${sc.final ? 'var(--pane-script)' : 'var(--bg)'}">
         <div class="chrome">
           ${this.#title()}
           <div class="tabs">

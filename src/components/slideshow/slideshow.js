@@ -3,6 +3,8 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { StoreController } from '../../state/store-controller.js';
 import { CONTENT_TYPES } from '../../fountain/blocks.js';
+import { boardOrder } from '../../state/selectors.js';
+import { readFileAsDataURL } from '../../utils/files.js';
 
 // Fullscreen playback: image on top, the linked (or nearest) script excerpt
 // in the bottom fifth. One instance at app-root, opened via
@@ -19,6 +21,10 @@ export class PandemoniumSlideshow extends LitElement {
     :host([data-open]){display:flex}
     .stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;position:relative}
     .stage img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+    /* An image can be dropped straight onto the slide on screen, so the slide
+       has to say when it will accept one. Inset rather than a border so the
+       frame does not shift under the presenter mid-drag. */
+    .stage.dropping::after{content:"";position:absolute;inset:10px;outline:2px dashed var(--res);border-radius:3px;pointer-events:none}
     .noimg{width:min(58%,640px);aspect-ratio:16/9;background:#1a1a1a;display:flex;align-items:center;justify-content:center;color:var(--smut);font-size:12px;letter-spacing:.08em;text-transform:uppercase;border-radius:2px}
     button{color:var(--sink);background:rgba(255,255,255,.12);border:0;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:var(--sans)}
     button:hover:not(:disabled){background:rgba(255,255,255,.26)}
@@ -88,7 +94,7 @@ export class PandemoniumSlideshow extends LitElement {
     const state = store.getFinalState();
     const scenes = state.fscenes, parsed = state.fparsed;
     const byScene = scenes.map(() => []);
-    state.R.boards.slice().sort((a, b) => a.firstBi - b.firstBi).forEach((o) => {
+    state.R.boards.slice().sort(boardOrder).forEach((o) => {
       if (o.ok && byScene[o.sceneIdx]) byScene[o.sceneIdx].push(o);
     });
     // Slide text is kept as [{type, text}], not a flat string: the strip
@@ -120,13 +126,17 @@ export class PandemoniumSlideshow extends LitElement {
       if (sc.end < sc.start && !byScene[ix].length) return;
       const label = (sc.pre ? 'Opening' : 'Sc ' + sc.label) + ' · ' + sc.name;
       if (!byScene[ix].length) {
+        // A scene with no boards at all. boardId stays null, which is what
+        // makes this slide refuse an image drop: there is no board to put the
+        // image on, and creating one behind the presenter's back mid-talk is
+        // worse than doing nothing.
         const lines = excerpt(sc);
-        slides.push({ img: null, label, lines: lines.length ? lines : [{ type: 'scene', text: sc.name }] });
+        slides.push({ boardId: null, img: null, label, lines: lines.length ? lines : [{ type: 'scene', text: sc.name }] });
         return;
       }
       byScene[ix].forEach((o) => {
         const lines = boardLines(o);
-        slides.push({ img: o.bd.img, cap: o.bd.caption, label, lines: lines.length ? lines : excerpt(sc) });
+        slides.push({ boardId: o.bd.id, img: o.bd.img, cap: o.bd.caption, label, lines: lines.length ? lines : excerpt(sc) });
       });
     });
     return slides;
@@ -153,6 +163,48 @@ export class PandemoniumSlideshow extends LitElement {
     this._ix = Math.max(0, Math.min(this._slides.length - 1, this._ix + d));
   }
 
+  // The slide list is a snapshot taken at open(). Dropping an image changes
+  // the project underneath it, so the snapshot has to be retaken, holding the
+  // current index: the presenter must stay on the slide they just filled
+  // rather than being thrown back to the top of the deck mid-talk.
+  #refreshSlides() {
+    if (!this._open) return;
+    const ix = this._ix;
+    this._slides = this.#buildSlides();
+    this._ix = Math.max(0, Math.min(ix, this._slides.length - 1));
+  }
+
+  #canDrop(e) {
+    const slide = this._slides[this._ix];
+    return !!(slide && slide.boardId && e.dataTransfer && [...e.dataTransfer.types].includes('Files'));
+  }
+
+  #onDragOver(e) {
+    if (!this.#canDrop(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    if (!this._dropping) { this._dropping = true; this.requestUpdate(); }
+  }
+
+  #onDragLeave() {
+    if (this._dropping) { this._dropping = false; this.requestUpdate(); }
+  }
+
+  // Fill the slide on screen from a dropped image. Uses replaceBoardImage
+  // rather than creating anything, so this works the same whether the slide is
+  // a blank board waiting for its frame or an existing board being swapped.
+  async #onDrop(e) {
+    if (!this.#canDrop(e)) return;
+    e.preventDefault();
+    this._dropping = false;
+    const slide = this._slides[this._ix];
+    const file = [...(e.dataTransfer.files || [])].find((f) => f.type.startsWith('image/'));
+    if (!file) { this.requestUpdate(); return; }
+    const dataUrl = await readFileAsDataURL(file);
+    this._store.store.replaceBoardImage(slide.boardId, dataUrl);
+    this.#refreshSlides();
+  }
+
   // Script type size for one slide. A short line plays big; the longer the
   // excerpt, the further the type steps down, so the whole of it still fits
   // the bottom strip and wraps rather than scrolling. Linear between the two
@@ -172,13 +224,19 @@ export class PandemoniumSlideshow extends LitElement {
     const s = this._slides[this._ix];
     const last = this._slides.length - 1;
     return html`
-      <div class="stage" @click=${(e) => { if (!e.target.closest('button')) this.#step(1); }}>
+      <div class="stage ${this._dropping ? 'dropping' : ''}"
+        @click=${(e) => { if (!e.target.closest('button')) this.#step(1); }}
+        @dragover=${(e) => this.#onDragOver(e)}
+        @dragleave=${() => this.#onDragLeave()}
+        @drop=${(e) => this.#onDrop(e)}>
         <button class="x" title="Close slideshow (Esc)" aria-label="Close slideshow" @click=${() => this.close()}>×</button>
         <button class="nav prev" title="Previous slide (←)" aria-label="Previous slide"
           ?disabled=${this._ix === 0} @click=${() => this.#step(-1)}>‹</button>
         <button class="nav next" title="Next slide (→)" aria-label="Next slide"
           ?disabled=${this._ix === last} @click=${() => this.#step(1)}>›</button>
-        ${s.img ? html`<img alt="" src=${s.img}>` : html`<div class="noimg">No board yet</div>`}
+        ${s.img
+          ? html`<img alt="" src=${s.img}>`
+          : html`<div class="noimg">${s.boardId ? 'Drop an image here' : 'No board yet'}</div>`}
       </div>
       <div class="bottom">
         <div class="prog"><i style="width:${((this._ix + 1) / this._slides.length) * 100}%"></i></div>
