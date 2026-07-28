@@ -42,6 +42,11 @@ export class PandemoniumResearchReader extends LitElement {
     .mode{display:flex;gap:2px}
     .mode button{height:20px;padding:0 8px;font-size:10px;font-weight:500;color:var(--mut);background:var(--panel);border:0;border-radius:var(--r);cursor:pointer;font-family:var(--sans)}
     .mode button.on{background:var(--ui);color:#fff}
+    @media (max-width:900px){
+      .rhead{flex-wrap:wrap}
+      .rtitle{order:2;flex-basis:100%}
+      .rurl{order:3;flex-basis:100%;max-width:100%}
+    }
   `];
 
   static properties = { doc: { type: Object } };

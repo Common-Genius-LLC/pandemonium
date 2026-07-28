@@ -13,13 +13,21 @@ import { fmtT } from '../utils/format.js';
 export class PandemoniumTimesheet extends LitElement {
   static styles = css`
     :host{flex:none;padding:6px 22px 8px;display:block}
-    #tsHead{display:flex;align-items:baseline;gap:14px;margin-bottom:5px}
+    #tsHead{display:flex;align-items:baseline;gap:14px;margin-bottom:5px;flex-wrap:wrap}
     .lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut)}
     #tsStats{color:var(--mut);font-size:11px}
     #tsStats b{color:var(--ui);font-weight:500}
     #tsStats .sb{color:#7fae53;font-weight:500}
     #tsStats .sr{color:var(--res);font-weight:500}
-    #tsStrip{display:flex;gap:6px;height:34px}
+    #tsStrip{
+      display:flex;gap:6px;height:34px;
+      overflow:auto hidden;
+      scrollbar-width:thin;
+      scrollbar-color:var(--ph) transparent;
+      padding-bottom:2px;
+    }
+    #tsStrip::-webkit-scrollbar{height:6px}
+    #tsStrip::-webkit-scrollbar-thumb{background:var(--ph);border-radius:4px}
     .seg{
       position:relative;display:flex;flex-direction:column;gap:2px;min-width:10px;
       cursor:pointer;border-radius:2px;overflow:hidden;flex-basis:12px;
@@ -35,6 +43,7 @@ export class PandemoniumTimesheet extends LitElement {
        reads as "nothing yet"; the per-scene segments would otherwise collapse
        into a couple of 12px stubs that look like a rendering fault. */
     #tsStrip .none{flex:1;background:var(--ph);border-radius:2px;opacity:.45}
+    @media (max-width:900px){:host{padding:6px 14px 8px}}
   `;
 
   constructor() {

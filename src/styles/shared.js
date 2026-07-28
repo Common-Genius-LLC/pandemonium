@@ -66,6 +66,23 @@ export const panelStyles = css`
   .mode button{height:20px;padding:0 8px;font-size:10px;font-weight:500;color:var(--mut);background:var(--panel);border:0;border-radius:var(--r);cursor:pointer;font-family:var(--sans)}
   .mode button.on{background:var(--ui);color:#fff}
   .empty{color:var(--mut);padding:18px 14px;line-height:1.7;max-width:340px}
+  @media (max-width:900px){
+    .chrome{
+      height:auto;
+      min-height:30px;
+      flex-wrap:wrap;
+      row-gap:4px;
+      padding:4px 6px;
+    }
+    .chrome .sub{margin-left:0}
+    .chrome .tools{
+      margin-left:0;
+      padding-right:0;
+      flex-wrap:wrap;
+      justify-content:flex-start;
+    }
+    .mode{flex-wrap:wrap}
+  }
 `;
 
 // The draft tabs in the script panel's chrome strip (Figma 44:148 / 44:157).
