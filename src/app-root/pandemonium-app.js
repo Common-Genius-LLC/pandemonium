@@ -11,6 +11,8 @@ import { formStyles, chipStyles } from '../styles/shared.js';
 import { debounce } from '../utils/format.js';
 import { imageFromClipboard } from '../utils/clipboard.js';
 import { readFileAsDataURL } from '../utils/files.js';
+import { BETA } from '../config/beta.js';
+import { bugReporter } from '../utils/bug-report.js';
 
 import './start-screen.js';
 import './topbar.js';
@@ -89,7 +91,28 @@ export class PandemoniumApp extends LitElement {
     session.addEventListener('change', () => this.requestUpdate());
     document.addEventListener('keydown', this.#onKeydown);
     document.addEventListener('paste', this.#onPaste);
+    this.#installBeta();
     this.#boot();
+  }
+
+  // BETA is a build-time constant (see config/beta.js), so with beta switched
+  // off Rollup drops this body and the two dynamic imports never become part
+  // of the graph: no badge, no listeners, no beta code in the bundle.
+  #installBeta() {
+    if (!BETA) return;
+    // Before the imports: an error thrown while the beta UI is still loading
+    // is exactly the kind worth catching.
+    bugReporter.install();
+    import('../components/beta/beta-badge.js');
+    import('../components/beta/bug-report-dialog.js');
+    this.addEventListener('pandemonium-open-bug-report', () => this.#openBugReport());
+  }
+
+  #openBugReport() {
+    customElements.whenDefined('pd-bug-report-dialog').then(() => {
+      const el = this.renderRoot.getElementById('bugReport');
+      if (el) el.open();
+    });
   }
 
   // Restore any signed-in session first (trades the refresh cookie for a token),
@@ -146,6 +169,13 @@ export class PandemoniumApp extends LitElement {
 
   #onKeydown = (e) => {
     const store = this.store;
+    // Before the no-project guard: a tester needs to be able to report a bug
+    // from the start screen too, which is where a failed restore lands them.
+    if (BETA && e.altKey && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+      e.preventDefault();
+      this.#openBugReport();
+      return;
+    }
     if (!store.project) return;
     const mod = e.metaKey || e.ctrlKey;
     // Cmd/Ctrl-K puts the caret in the title bar's search field. There is no
@@ -240,6 +270,10 @@ export class PandemoniumApp extends LitElement {
       <pandemonium-comment-popover id="commentPopover"></pandemonium-comment-popover>
       <pandemonium-slideshow id="slideshow"></pandemonium-slideshow>
       <pd-account-dialog id="accountDialog"></pd-account-dialog>
+      ${BETA ? html`
+        <pd-beta-badge></pd-beta-badge>
+        <pd-bug-report-dialog id="bugReport"></pd-bug-report-dialog>
+      ` : ''}
     `;
   }
 }

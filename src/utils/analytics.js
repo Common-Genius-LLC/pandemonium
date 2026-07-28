@@ -13,6 +13,8 @@
 //     is the normal state for a fresh clone and for the test runner.
 'use strict';
 
+import { BETA } from '../config/beta.js';
+
 const DEFAULT_MEASUREMENT_ID = import.meta.env.VITE_GA4_MEASUREMENT_ID || '';
 
 let activeMeasurementId = '';
@@ -62,7 +64,15 @@ export function initAnalytics(measurementId = DEFAULT_MEASUREMENT_ID) {
   if (!ensureGtag(win)) return false;
   activeMeasurementId = measurementId;
   win.gtag('js', new Date());
-  win.gtag('config', measurementId, { send_page_view: false });
+  // send_page_view:false because every view in this app is a virtual one
+  // raised from the store. Leaving it on gives an extra automatic page_view
+  // at the real URL on load, which double-counts against the first real view.
+  //
+  // debug_mode rides the beta flag: on for the beta so reports land in
+  // DebugView, off automatically the moment beta is switched off. That is
+  // also why this is the only config call. A second one in index.html would
+  // re-fire the page_view this one exists to suppress.
+  win.gtag('config', measurementId, { send_page_view: false, debug_mode: BETA });
   return true;
 }
 
@@ -105,4 +115,11 @@ export function trackResearchLinkAdd(params = {}) {
 
 export function trackPdfExport(params = {}) {
   return sendEvent('pdf_export', cleanParams(params));
+}
+
+// Beta only. The report body never comes through here: this records that a
+// report happened and how it was delivered, so a delivery channel silently
+// failing shows up as a gap rather than as silence.
+export function trackBugReport(params = {}) {
+  return sendEvent('bug_report', cleanParams(params));
 }

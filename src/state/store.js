@@ -68,6 +68,14 @@ export class PandemoniumStore extends EventTarget {
     return this.#project.scripts.find((s) => s.id === this.#ui.draftId) || this.finalScript();
   }
 
+  // The structural path for whatever is on screen, e.g. '/project/boards'.
+  // Shared by the analytics view tracking below and by a beta bug report,
+  // which needs to say what the tester was looking at. The app is a single
+  // URL, so location.pathname cannot answer this.
+  viewPath() {
+    return viewInfo(this.#project, this.#ui).path;
+  }
+
   // Everything derived from the final draft: its parsed blocks, its scenes
   // (numbered, with boarded/sourced coverage), and every board/link anchor
   // resolved against it (see selectors.js). Multiple panels read this on
