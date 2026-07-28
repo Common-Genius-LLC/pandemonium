@@ -349,12 +349,40 @@ landing with Phase B.
 
 ## Build order and status
 
-Not arbitrary. Two dependencies are real.
+Not arbitrary. Two dependencies are real, and both were honored.
 
-Items 1 to 4 and the first half of 5 have landed. What remains is script
-sharing and the three-way merge, in that order, with the caveat recorded under
-5.3: sharing must not ship before the merge, because the current conflict path
-discards the other writer's work.
+**Everything below has landed.** The merge shipped before sharing, per the
+caveat under 5.3: the old conflict path discarded the other writer's work, so
+sharing could not be allowed to create a second writer first.
+
+Implementation notes for what shipped beyond the plan text above:
+
+- The merge engine is `src/data/merge.js`, pure and covered by
+  `src/data/merge.test.js`. When the base snapshot is missing (a reload loses
+  it; it is in-memory because it can be multi-megabyte) the merge degrades to
+  a two-way merge: common regions still merge, genuine divergence conflicts,
+  nothing is guessed.
+- Project meta (name, workspace, type, target, layout, contributors) merges
+  field-wise with mine winning ties, and never raises a conflict: a modal
+  negotiation over a field the settings card can change back in one keystroke
+  is disproportionate.
+- The conflict handler is injected into the remote adapter
+  (`setConflictHandler`) so the adapter never imports a component. The merged
+  result is pushed with `saveMergedRemote`, which adopts the concurrency token
+  the 409 reported so the reconciling write cannot 409 against the version it
+  just reconciled.
+- Sharing is `server/src/routes/shares.ts` plus `src/data/sharing-adapter.js`
+  behind the db.js seam and `src/components/collab/share-dialog.js`. Grants
+  need an existing account (no email pipeline exists to invite with). The
+  read link serves a projection: final draft and boards with images inlined,
+  research and contributor names stripped.
+- Asset reads became authenticated-capability (any signed-in holder of the
+  unguessable id) rather than owner-only, because collaborators must hydrate
+  each other's images and Phase A assets carry no project linkage to check
+  against. Phase B's granular tables turn this into a real access check.
+- A viewer-role collaborator's autosaves are refused server-side (403); the
+  client surfaces that once, with the export path as the escape hatch, instead
+  of letting every keystroke fail silently into the console.
 
 1. **Dark mode.** Touches every component, so landing it first means the new
    panels and dialogs below are written against tokens rather than retrofitted.

@@ -11,6 +11,7 @@ import { HttpError } from './errors';
 import authRoutes from './auth/routes';
 import assetRoutes from './routes/assets';
 import projectRoutes from './routes/projects';
+import { shares as shareRoutes, sharedPublic } from './routes/shares';
 import type { AppEnv } from './types';
 
 const app = new Hono<AppEnv>();
@@ -32,7 +33,12 @@ app.get('/health', (c) => c.json({ ok: true, service: 'pandemonium-api' }));
 
 app.route('/v1/auth', authRoutes);
 app.route('/v1/assets', assetRoutes);
+// Shares before projects: both match /v1/projects/:id/..., and the shares
+// router must claim its /shares and /share-link subpaths first.
+app.route('/v1/projects', shareRoutes);
 app.route('/v1/projects', projectRoutes);
+// The one unauthenticated data surface: read-link resolution (see shares.ts).
+app.route('/v1/shared', sharedPublic);
 
 app.notFound((c) => c.json({ error: 'not found' }, 404));
 

@@ -200,12 +200,14 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
 5. Storyboards: several boards per section with explicit ordering, blank boards
    created from a section, and image drop onto a slide during playback.
    **Done.**
-6. Cloud: workspace and last-synced in the project list (**done**), then script
-   sharing, then a three-way merge replacing the last-write-wins conflict path.
-   **Sharing and merge are still to do**, and the merge one matters: the retry
-   in `remote-api-adapter.js` silently discards the other writer's work, which
-   is defensible for one user on two devices and a data-loss bug the moment
-   sharing ships. Sharing must not land before it.
+6. Cloud: workspace and last-synced in the project list, the three-way merge
+   replacing the last-write-wins conflict path, and script sharing
+   (collaborator grants by email with viewer/editor roles, plus a revocable
+   read-only link that opens the final draft and boards via `?share=TOKEN`).
+   **Done.** The merge engine is `src/data/merge.js` (pure, tested in
+   `merge.test.js`); a 409 from the server now opens a merge instead of
+   retrying over the other writer, and `ui.merge` is transient by design so a
+   half-merged project can never autosave.
 
 ---
 

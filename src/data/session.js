@@ -21,6 +21,12 @@ class Session extends EventTarget {
   #accessToken = null;
   #user = null;
   #baseUpdatedAt = null; // optimistic-concurrency token for the open project
+  // The last project content this device successfully synced, client-shaped
+  // (data URLs, not asset ids). This is the common ancestor a three-way merge
+  // needs when a 409 arrives; without it the merge degrades to two-way (see
+  // data/merge.js). In memory only: it can be multi-megabyte, and losing it on
+  // reload costs merge quality, not correctness.
+  #baseSnapshot = null;
 
   get apiBase() { return API_BASE; }
   getMode() { return this.#mode; }
@@ -39,6 +45,9 @@ class Session extends EventTarget {
 
   getBase() { return this.#baseUpdatedAt; }
   setBase(updatedAt) { this.#baseUpdatedAt = updatedAt || null; }
+
+  getBaseSnapshot() { return this.#baseSnapshot; }
+  setBaseSnapshot(project) { this.#baseSnapshot = project || null; }
 
   #emit() { this.dispatchEvent(new CustomEvent('change')); }
 
@@ -74,6 +83,7 @@ class Session extends EventTarget {
     this.#user = null;
     this.#mode = 'local';
     this.#baseUpdatedAt = null;
+    this.#baseSnapshot = null;
     this.setCurrentRemoteId(null);
     this.#emit();
   }

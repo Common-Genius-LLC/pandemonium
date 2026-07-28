@@ -1,6 +1,6 @@
 {
   "name": "pandemonium",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Pandemonium: a web app for film pre-production. Script, storyboard, and research in one place.",

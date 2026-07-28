@@ -44,6 +44,30 @@ CREATE TABLE IF NOT EXISTS assets (
 
 CREATE INDEX IF NOT EXISTS assets_owner ON assets (owner_id);
 
+-- Sharing. Phase A stores a project as one document row, so a grant is
+-- project-scoped: offering per-script access would promise an isolation the
+-- storage cannot enforce.
+CREATE TABLE IF NOT EXISTS project_shares (
+  id          TEXT PRIMARY KEY,
+  project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  grantee_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role        TEXT NOT NULL,            -- 'viewer' | 'editor'
+  created_at  TEXT NOT NULL,
+  UNIQUE (project_id, grantee_id)
+);
+
+CREATE INDEX IF NOT EXISTS shares_grantee ON project_shares (grantee_id);
+CREATE INDEX IF NOT EXISTS shares_project ON project_shares (project_id);
+
+-- Read-only share links: one unguessable token per project, minted on demand
+-- and revocable independently of everything else. The token is a capability;
+-- it is never derivable from anything the client already holds.
+CREATE TABLE IF NOT EXISTS project_links (
+  project_id  TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  token       TEXT NOT NULL UNIQUE,
+  created_at  TEXT NOT NULL
+);
+
 -- Refresh tokens are stored hashed (never cleartext), one row per issued token,
 -- deleted on rotation and logout.
 CREATE TABLE IF NOT EXISTS refresh_tokens (

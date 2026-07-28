@@ -27,7 +27,11 @@ export class PandemoniumPanelLayout extends LitElement {
   static GESTURE_THRESHOLD = 18;
 
   static styles = css`
-    :host{flex:1;min-height:0;display:flex;padding:0 22px 18px}
+    /* Even padding on all four sides. The top used to be 0 because the
+       timesheet strip sat between this and the title bar and supplied the gap;
+       once it became a panel inside the layout, the panes butted straight up
+       against the chrome. */
+    :host{flex:1;min-height:0;display:flex;padding:18px 22px}
     .split{display:flex;flex:1;min-width:0;min-height:0}
     .split.row{flex-direction:row}
     .split.col{flex-direction:column}
@@ -86,7 +90,7 @@ export class PandemoniumPanelLayout extends LitElement {
     .ghost.merge{background:var(--res);opacity:.28}
 
     @media (max-width:1100px){
-      :host{display:block;overflow:auto;padding:0 14px 14px}
+      :host{display:block;overflow:auto;padding:14px}
       .split,.split.row,.split.col{display:flex;flex-direction:column}
       .pane{flex:none!important;min-height:300px}
       .divider{display:none}
@@ -95,7 +99,7 @@ export class PandemoniumPanelLayout extends LitElement {
       .grip{display:none}
     }
     @media (max-width:700px){
-      :host{padding:0 10px 10px}
+      :host{padding:10px}
       .pane{min-height:240px}
     }
   `;

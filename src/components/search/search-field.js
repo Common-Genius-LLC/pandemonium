@@ -20,9 +20,12 @@ export class PandemoniumSearchField extends LitElement {
 
   static styles = css`
     :host{position:relative;display:block;width:100%;font-family:var(--sans)}
+    /* Tokenised, not white: this field sits on the title bar chrome, so in the
+       dark theme it has to be a dark grey well with light text rather than a
+       white slab burning a hole in the header. */
     .field{
       position:relative;box-sizing:border-box;width:100%;height:28px;
-      background:#fff;border-radius:1px;box-shadow:0 2px 4px rgba(0,0,0,.09);
+      background:var(--field);border-radius:1px;box-shadow:0 2px 4px rgba(0,0,0,.09);
       display:flex;align-items:center;padding:0 10px;overflow:hidden;
     }
     /* "Search Everything" is one placeholder in two weights, so it has to be
@@ -31,12 +34,12 @@ export class PandemoniumSearchField extends LitElement {
     .ph{
       position:absolute;left:10px;top:50%;transform:translateY(-50%);
       display:flex;gap:3px;pointer-events:none;
-      font-size:14px;line-height:16px;color:#000;white-space:nowrap;
+      font-size:14px;line-height:16px;color:var(--ink);white-space:nowrap;
     }
     .ph i{font-style:italic;color:var(--mut)}
     input{
       flex:1;min-width:0;font-family:inherit;font-size:14px;line-height:16px;
-      color:#000;background:transparent;border:0;outline:none;padding:0;
+      color:var(--ink);background:transparent;border:0;outline:none;padding:0;
     }
 
     .pop{

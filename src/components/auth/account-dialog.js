@@ -44,22 +44,24 @@ export class PdAccountDialog extends LitElement {
     .toggle{background:none;border:0;color:var(--res);font-size:12px;cursor:pointer;padding:0;font-family:var(--sans)}
     .list{display:flex;flex-direction:column;gap:6px;margin:2px 0}
     /* Two rows: what the project is on top, where it lives and how current it
-       is underneath. The delete button spans both so it does not push the
-       metadata around. */
+       is underneath. Delete sits in the first column, spanning both rows, so
+       the destructive control is never the thing your eye lands on last, and
+       so it cannot shift position as titles change length. */
     .proj{
-      display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:1px 8px;
+      display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:1px 8px;
       padding:8px 10px;border-radius:var(--r);background:var(--panel);cursor:pointer;
     }
     .proj:hover{background:var(--ph)}
-    .proj .name{font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .proj pd-button{grid-row:1 / span 2}
+    .proj pd-button,.proj .role{grid-column:1;grid-row:1 / span 2;align-self:center}
+    .proj .name{grid-column:2;font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .proj .sub2{
-      grid-column:1;display:flex;align-items:center;gap:6px;min-width:0;
+      grid-column:2;display:flex;align-items:center;gap:6px;min-width:0;
       font-size:11px;color:var(--mut);
     }
     .proj .ws{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .proj .dot{flex:none;opacity:.6}
     .proj .when{flex:none}
+    .proj .role{font-size:11px;color:var(--mut);white-space:nowrap}
     .empty{font-size:12px;color:var(--mut);padding:6px 0}
     .who{font-size:12px;color:var(--ui)}
     .who b{color:var(--ink)}
@@ -217,8 +219,10 @@ export class PdAccountDialog extends LitElement {
           : html`<div class="list">
               ${this._projects.map((p) => html`
                 <div class="proj" @click=${() => this.#openProject(p.id)} title="Open">
+                  ${!p.role || p.role === 'owner'
+                    ? html`<pd-button variant="ghost" @click=${(e) => this.#deleteProject(e, p.id)}>Delete</pd-button>`
+                    : html`<span class="role">shared · ${p.role}</span>`}
                   <span class="name">${p.name || 'Untitled'}</span>
-                  <pd-button variant="ghost" @click=${(e) => this.#deleteProject(e, p.id)}>Delete</pd-button>
                   <span class="sub2">
                     ${p.workspace ? html`<span class="ws">${p.workspace}</span><span class="dot">·</span>` : ''}
                     <span class="when" title=${this.#fmtWhen(p.updatedAt)}>${fmtAgo(p.updatedAt)}</span>

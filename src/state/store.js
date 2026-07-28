@@ -7,6 +7,7 @@
 'use strict';
 
 import * as model from '../data/project-model.js';
+import { mergeProjects, commitMergedProject } from '../data/merge.js';
 import { getParsed } from '../fountain/cache.js';
 import { scenesOf } from '../fountain/blocks.js';
 import { computeResolved, coverage, labelScenes } from './selectors.js';
@@ -289,6 +290,57 @@ export class PandemoniumStore extends EventTarget {
     if (before !== layoutSignature(layout)) this.#trackViewChange();
   }
 
+  // ---- sync merge ----
+
+  // A 409 from the backend arrives here (via app-root's conflict handler)
+  // as {base, mine, theirs, theirUpdatedAt}. When the merge is clean it is
+  // applied immediately and returned so the caller can push it back up with
+  // the right concurrency token; when it is not, the whole merge result goes
+  // into transient ui state and the merge dialog takes over.
+  //
+  // ui.merge is transient BY DESIGN: an unresolved merge is a live
+  // negotiation, and persisting it would let a half-merged project autosave
+  // itself into the account, which is the one outcome worse than the
+  // conflict itself.
+  beginMerge({ base, mine, theirs, theirUpdatedAt }) {
+    const result = mergeProjects(base || null, mine, theirs);
+    if (result.clean) {
+      this.#project = model.normalizeDraftNames(result.project);
+      this.#ui = { ...this.#ui, dirty: true };
+      this.#emit('project');
+      return { clean: true, project: this.#project, theirUpdatedAt };
+    }
+    this.setUI({ merge: { result, theirUpdatedAt } });
+    return { clean: false };
+  }
+
+  resolveMergeHunk(index, resolution) {
+    const m = this.#ui.merge;
+    if (!m || !m.result.hunks[index]) return;
+    const hunks = m.result.hunks.map((h, ix) => (ix === index ? { ...h, resolution } : h));
+    this.setUI({ merge: { ...m, result: { ...m.result, hunks } } });
+  }
+
+  // Refuses while anything is unresolved (commitMergedProject returns null),
+  // so the dialog cannot be talked into a silent choice. Hard rule 4 is
+  // re-normalized here because a merge can legitimately arrive with two
+  // promoted finals; commitMergedProject settles the flag and
+  // normalizeDraftNames settles the names.
+  commitMerge() {
+    const m = this.#ui.merge;
+    if (!m) return null;
+    const project = commitMergedProject(m.result);
+    if (!project) return null;
+    this.#project = model.normalizeDraftNames(project);
+    this.#ui = { ...this.#ui, merge: null, dirty: true };
+    this.#emit('project');
+    return { project: this.#project, theirUpdatedAt: m.theirUpdatedAt };
+  }
+
+  // Postponing is safe: nothing was written, the local state stays as it was,
+  // and the next autosave will 409 again and reopen the same negotiation.
+  cancelMerge() { this.setUI({ merge: null }); }
+
   // ---- project meta ----
 
   updateProjectMeta(patch) { this.#applyProject(model.updateProjectMeta(this.#project, patch)); }
@@ -308,6 +360,7 @@ function defaultUI(draftId) {
     scrollToBlock: null,
     scrollToParagraph: null,
     highlightBoard: null,
+    merge: null, // {result: mergeProjects() output, theirUpdatedAt} while a sync conflict awaits resolution
     dirty: false,
   };
 }

@@ -89,7 +89,11 @@ export function trackVirtualView(viewName, params = {}) {
     ...cleanParams(params),
     page_title: pageTitle,
     page_path: pagePath,
-    page_location: params.page_location || (win ? win.location.href : undefined),
+    // GA4 derives its Page path dimension from page_location, not from
+    // page_path (a UA-era field GA4 ignores). The real href never changes in
+    // this single-URL app, so the virtual path is grafted onto the origin;
+    // sending location.href here collapses every view into one "/" row.
+    page_location: params.page_location || (win ? win.location.origin + pagePath : undefined),
   });
   // Only remember the view once it actually went out, so a view raised before
   // initAnalytics() ran is not swallowed permanently.

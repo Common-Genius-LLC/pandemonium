@@ -16,6 +16,7 @@
 import { saveProjectToFile, parseProjectFileText } from './local-file-adapter.js';
 import { saveCurrentProjectLocally, loadCurrentProjectLocally, clearCurrentProjectLocally } from './local-db.js';
 import { saveProjectRemote, loadProjectRemote } from './remote-api-adapter.js';
+import { fetchSharedProjection } from './sharing-adapter.js';
 import { readFileAsText } from '../utils/files.js';
 import { session } from './session.js';
 import { trackProjectSave } from '../utils/analytics.js';
@@ -63,6 +64,7 @@ export function clearAutosavedProject() {
   if (session.getMode() === 'remote') {
     session.setCurrentRemoteId(null);
     session.setBase(null);
+    session.setBaseSnapshot(null);
   }
   return clearCurrentProjectLocally();
 }
@@ -72,4 +74,17 @@ export function clearAutosavedProject() {
 // know about this seam.
 export function loadRemoteProject(id) {
   return loadProjectRemote(id);
+}
+
+// Sharing goes through the same seam. Components import these from here, never
+// from the adapter directly, so sharing swaps with the backend like everything
+// else does.
+export {
+  listShares, addShare, removeShare,
+  getReadLink, createReadLink, revokeReadLink,
+  readLinkUrl,
+} from './sharing-adapter.js';
+
+export function loadSharedProjection(token) {
+  return fetchSharedProjection(token);
 }

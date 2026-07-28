@@ -5,6 +5,7 @@ import { StoreController } from '../state/store-controller.js';
 import { dispatch } from '../utils/events.js';
 import { saveProject, openProjectFile } from '../data/db.js';
 import { session } from '../data/session.js';
+import { syncStatus } from '../state/sync-status.js';
 import { readFileAsText, downloadBlob } from '../utils/files.js';
 import { slug } from '../utils/format.js';
 import { printScript, printBoards } from '../components/print/print.js';
@@ -50,8 +51,14 @@ export class PandemoniumTopbar extends LitElement {
     #searchBox{justify-self:stretch;min-width:0;display:flex;justify-content:center}
     pandemonium-search-field{width:100%;max-width:418px}
     #actions{justify-self:end;display:flex;align-items:center;gap:6px}
-    #saveDot{width:7px;height:7px;border-radius:50%;background:var(--act);display:none;flex:none;margin-right:2px}
-    #saveDot.on{display:inline-block}
+    /* Sync status, not a generic "unsaved" marker: amber while anything is
+       still on its way to storage, green once it has landed, red when the last
+       write was refused. Always visible, because a dot that only appears when
+       something is wrong cannot tell you that things are right. */
+    #saveDot{width:7px;height:7px;border-radius:50%;flex:none;margin-right:2px;transition:background .18s}
+    #saveDot.pending{background:var(--act)}
+    #saveDot.synced{background:var(--ok)}
+    #saveDot.failed{background:var(--danger)}
     @media (max-width:1100px){
       :host{
         height:auto;
@@ -92,16 +99,32 @@ export class PandemoniumTopbar extends LitElement {
     super();
     this._store = new StoreController(this);
     this._onSession = () => this.requestUpdate();
+    this._onSync = () => this.requestUpdate();
   }
 
   connectedCallback() {
     super.connectedCallback();
     session.addEventListener('change', this._onSession);
+    syncStatus.addEventListener('change', this._onSync);
   }
 
   disconnectedCallback() {
     session.removeEventListener('change', this._onSession);
+    syncStatus.removeEventListener('change', this._onSync);
     super.disconnectedCallback();
+  }
+
+  // What the dot says, in the two modes the app can be in. Signed out, "synced"
+  // means written to this browser; signed in, it means written to the account.
+  // The distinction matters enough to say out loud on hover.
+  #syncTitle() {
+    const where = session.isAuthed() ? 'your account' : 'this browser';
+    if (syncStatus.state === 'failed') {
+      return 'Not saved: the last write failed. ' + (syncStatus.detail || 'Check your connection.')
+        + ' Use File > Export > Project file to keep a copy.';
+    }
+    if (syncStatus.state === 'pending') return 'Saving to ' + where + '...';
+    return 'All changes saved to ' + where + '.';
   }
 
   #openAccount() {
@@ -160,11 +183,29 @@ export class PandemoniumTopbar extends LitElement {
     dispatch(this, 'pandemonium-toast', { message: 'Imported "' + script.name + '" as a new draft.' });
   }
 
-  #openExportMenu(e) {
+  // Everything that acts on the project as a file lives here now, so the title
+  // bar carries one control instead of five and the search field keeps the
+  // width it was designed at. The anchor is passed down through both levels so
+  // the export submenu opens under the same button.
+  #openFileMenu(e) {
+    const anchor = e.currentTarget;
+    const items = [
+      { label: 'New project', fn: () => this.#newProject() },
+      { label: 'Open project file...', fn: () => this.renderRoot.querySelector('#fileOpen').click() },
+      { label: 'Save a copy', fn: () => this.#save() },
+    ];
+    if (session.isAuthed()) {
+      items.push({ label: 'Share...', fn: () => dispatch(this, 'pandemonium-open-share', {}) });
+    }
+    items.push({ label: 'Export', fn: () => this.#openExportMenu(anchor) });
+    dispatch(this, 'pandemonium-open-menu', { anchor, items });
+  }
+
+  #openExportMenu(anchor) {
     const store = this._store.store;
     const project = this._store.project;
     dispatch(this, 'pandemonium-open-menu', {
-      anchor: e.currentTarget,
+      anchor,
       items: [
         {
           label: 'Script PDF (print)',
@@ -195,7 +236,6 @@ export class PandemoniumTopbar extends LitElement {
 
   render() {
     const project = this._store.project;
-    const ui = this._store.ui;
     if (!project) return html``;
     const isMac = /mac/i.test(navigator.platform || '');
     return html`
@@ -207,12 +247,9 @@ export class PandemoniumTopbar extends LitElement {
         <pandemonium-search-field title=${'Search everything (' + (isMac ? '⌘K' : 'Ctrl K') + ')'}></pandemonium-search-field>
       </div>
       <div id="actions">
-        <span id="saveDot" class=${ui.dirty ? 'on' : ''} title=${session.isAuthed() ? 'Syncing to your account. Not yet exported as a file.' : 'Autosaved in this browser. Not yet exported as a file.'}></span>
+        <span id="saveDot" class=${syncStatus.state} title=${this.#syncTitle()}></span>
         <pd-theme-toggle></pd-theme-toggle>
-        <pd-button @click=${() => this.#newProject()}>New</pd-button>
-        <pd-button @click=${() => this.#save()} title="Download a portable .pandemonium.json backup">Save</pd-button>
-        <pd-button @click=${() => this.renderRoot.querySelector('#fileOpen').click()}>Open</pd-button>
-        <pd-button @click=${(e) => this.#openExportMenu(e)}>Export</pd-button>
+        <pd-button @click=${(e) => this.#openFileMenu(e)} title="New, open, save, share and export">File</pd-button>
         <pd-button variant=${session.isAuthed() ? 'default' : 'pink'} @click=${() => this.#openAccount()}
           title=${session.isAuthed() ? 'Your account and cloud projects' : 'Sign in to sync your projects'}>
           ${session.isAuthed() ? this.#accountLabel() : 'Sign in'}

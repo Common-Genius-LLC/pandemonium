@@ -13,10 +13,17 @@ const assets = new Hono<AppEnv>();
 
 assets.use('*', requireAuth);
 
-function ownedAsset(id: string, userId: string): Promise<AssetRow> {
+// Reads are gated on authentication plus possession of the id, not on
+// ownership. Sharing forces this: a collaborator opening a shared project has
+// to hydrate the owner's board images, and an owner has to hydrate images a
+// collaborator uploaded, but assets carry no project linkage Phase A could
+// check against. The id is an unguessable UUID, so possession works as a
+// capability the project blob itself grants. Phase B's granular tables give
+// assets a project_id and this becomes a real access check.
+function readableAsset(id: string): Promise<AssetRow> {
   return db.query('SELECT * FROM assets WHERE id = ?', [id]).then((rows) => {
     const [row] = rows;
-    if (!row || row.owner_id !== userId) throw new HttpError(404, 'asset not found');
+    if (!row) throw new HttpError(404, 'asset not found');
     return row as AssetRow;
   });
 }
@@ -42,7 +49,7 @@ assets.post('/', async (c) => {
 });
 
 assets.get('/:id', async (c) => {
-  const asset = await ownedAsset(c.req.param('id'), c.get('userId'));
+  const asset = await readableAsset(c.req.param('id'));
   return c.json({
     id: asset.id,
     mime: asset.mime,

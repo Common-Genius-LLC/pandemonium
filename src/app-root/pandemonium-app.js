@@ -5,8 +5,10 @@ import { ContextProvider } from '@lit/context';
 import { storeContext } from '../state/context.js';
 import { PandemoniumStore } from '../state/store.js';
 import { dispatch } from '../utils/events.js';
-import { saveProject, autosaveProject, loadAutosavedProject, clearAutosavedProject, loadRemoteProject } from '../data/db.js';
+import { saveProject, autosaveProject, loadAutosavedProject, clearAutosavedProject, loadRemoteProject, loadSharedProjection } from '../data/db.js';
+import { setConflictHandler, saveMergedRemote } from '../data/remote-api-adapter.js';
 import { session } from '../data/session.js';
+import { syncStatus } from '../state/sync-status.js';
 import { formStyles, chipStyles } from '../styles/shared.js';
 import { debounce } from '../utils/format.js';
 import { imageFromClipboard } from '../utils/clipboard.js';
@@ -27,6 +29,8 @@ import '../components/linking/highlight-popover.js';
 import '../components/linking/comment-popover.js';
 import '../components/slideshow/slideshow.js';
 import '../components/auth/account-dialog.js';
+import '../components/collab/merge-dialog.js';
+import '../components/collab/share-dialog.js';
 
 // The root shell. Owns the one PandemoniumStore instance for the whole app
 // and hands it down through Lit Context (see state/context.js) rather than
@@ -64,10 +68,40 @@ export class PandemoniumApp extends LitElement {
     // Save/Open still exist for portable file backups, this is just
     // continuity across reloads.
     this.#debouncedAutosave = debounce((project) => {
-      autosaveProject(project).catch((err) => console.warn('Autosave failed:', err));
+      autosaveProject(project).then(
+        () => syncStatus.markSynced(),
+        (err) => {
+          const msg = (err && err.message) || '';
+          syncStatus.markFailed(msg);
+          // A viewer-role collaborator's writes are refused by the server. Say
+          // so once instead of letting every keystroke fail into the console:
+          // the person typing believes their work is syncing, and it is not.
+          if (!this._warnedViewOnly && /view access/i.test(msg)) {
+            this._warnedViewOnly = true;
+            dispatch(this, 'pandemonium-toast', { message: 'You have view access to this project: your edits stay in this window and do not sync. Export a copy (File > Export > Project file) to keep them.' });
+          }
+          console.warn('Autosave failed:', err);
+        },
+      );
     }, 1500);
     this.store.addEventListener('change', () => {
-      if (this.store.project) this.#debouncedAutosave(this.store.project);
+      // A shared read-only view (see #bootSharedView) is a visitor's copy of
+      // someone else's script: autosaving it would overwrite whatever project
+      // this browser's own local slot holds.
+      if (!this.store.project || this._sharedView) return;
+      syncStatus.markPending();
+      this.#debouncedAutosave(this.store.project);
+    });
+    // The remote adapter hands every 409 here instead of retrying over the
+    // other writer's work. A clean merge is applied and pushed straight back;
+    // one with conflicts opens the merge dialog (it renders off ui.merge).
+    setConflictHandler((conflict) => {
+      const out = this.store.beginMerge(conflict);
+      if (out && out.clean) {
+        saveMergedRemote(out.project, out.theirUpdatedAt)
+          .then(() => syncStatus.markSynced(), (err) => { syncStatus.markFailed(err && err.message); console.warn('Merged save failed:', err); });
+        dispatch(this, 'pandemonium-toast', { message: 'Merged changes from another device or collaborator.' });
+      }
     });
   }
 
@@ -85,6 +119,11 @@ export class PandemoniumApp extends LitElement {
     this.addEventListener('pandemonium-open-account', () => this.renderRoot.getElementById('accountDialog').open());
     this.addEventListener('pandemonium-open-remote-project', (e) => this.#openRemoteProject(e.detail.id));
     this.addEventListener('pandemonium-push-current-to-cloud', () => this.#pushToCloud());
+    this.addEventListener('pandemonium-open-share', () => this.renderRoot.getElementById('shareDialog').open());
+    this.addEventListener('pandemonium-merge-committed', (e) => {
+      saveMergedRemote(e.detail.project, e.detail.theirUpdatedAt)
+        .then(() => syncStatus.markSynced(), (err) => { syncStatus.markFailed(err && err.message); console.warn('Merged save failed:', err); });
+    });
     // Account state (signed in/out) changes what the topbar and start screen
     // offer; re-render on it as well as on store changes.
     session.addEventListener('change', () => this.requestUpdate());
@@ -116,8 +155,10 @@ export class PandemoniumApp extends LitElement {
 
   // Restore any signed-in session first (trades the refresh cookie for a token),
   // then load the project the current mode points at: the last cloud project if
-  // signed in, otherwise the local IndexedDB autosave.
+  // signed in, otherwise the local IndexedDB autosave. A share link in the URL
+  // takes over the whole boot instead.
   async #boot() {
+    if (await this.#bootSharedView()) return;
     await session.restore().catch(() => {});
     try {
       const project = await loadAutosavedProject();
@@ -125,6 +166,27 @@ export class PandemoniumApp extends LitElement {
     } catch (err) {
       console.warn('Could not restore a project:', err);
     }
+  }
+
+  // ?share=TOKEN opens a read-only projection of someone's final draft and
+  // boards, no account required. It is a visitor's copy: it never autosaves
+  // (see the guard in the constructor), so it cannot clobber this browser's
+  // own local project, and closing the tab is how you leave.
+  async #bootSharedView() {
+    const token = new URLSearchParams(location.search).get('share');
+    if (!token) return false;
+    this._sharedView = true;
+    try {
+      const projection = await loadSharedProjection(token);
+      this.store.loadProject(projection);
+      dispatch(this, 'pandemonium-toast', {
+        message: 'Viewing a shared script. This is a read-only copy: edits here stay in this window and are not saved anywhere.',
+      });
+    } catch (err) {
+      this._sharedView = false;
+      dispatch(this, 'pandemonium-toast', { message: 'That share link is not valid any more.' });
+    }
+    return true;
   }
 
   // Opening a cloud project: cancel any pending autosave for the outgoing
@@ -268,6 +330,8 @@ export class PandemoniumApp extends LitElement {
       <pandemonium-comment-popover id="commentPopover"></pandemonium-comment-popover>
       <pandemonium-slideshow id="slideshow"></pandemonium-slideshow>
       <pd-account-dialog id="accountDialog"></pd-account-dialog>
+      <pd-merge-dialog></pd-merge-dialog>
+      <pd-share-dialog id="shareDialog"></pd-share-dialog>
       ${BETA ? html`
         <pd-beta-badge></pd-beta-badge>
         <pd-bug-report-dialog id="bugReport"></pd-bug-report-dialog>

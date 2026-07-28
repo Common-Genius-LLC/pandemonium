@@ -89,12 +89,15 @@ export async function listProjectsRemote() {
 }
 
 // Loads a project and adopts it as the currently open remote project (records
-// its id and concurrency token so subsequent autosaves update it in place).
+// its id, concurrency token, and the content snapshot future merges will use
+// as their common ancestor).
 export async function loadProjectRemote(id) {
   const out = await asJson(await session.apiFetch(`/projects/${id}`));
   session.setCurrentRemoteId(out.id);
   session.setBase(out.updatedAt);
-  return hydrateProject(out.project);
+  const project = await hydrateProject(out.project);
+  session.setBaseSnapshot(project);
+  return project;
 }
 
 export async function deleteProjectRemote(id) {
@@ -117,6 +120,23 @@ export function saveProjectRemote(project) {
   return chain;
 }
 
+// Where a 409 goes. Set once by app-root (setConflictHandler below); kept as an
+// injected function so this adapter never imports a component or the store.
+// Receives {base, mine, theirs, theirUpdatedAt}: everything a three-way merge
+// needs, with `theirs` already hydrated back to client shape so the three
+// trees compare like for like.
+let onConflict = null;
+export function setConflictHandler(fn) { onConflict = fn; }
+
+// After the user (or a clean automatic merge) has produced the reconciled
+// project: adopt the server timestamp the conflict reported and save. Riding
+// the same chain as every other save keeps merge commits ordered with
+// ordinary autosaves.
+export function saveMergedRemote(project, theirUpdatedAt) {
+  session.setBase(theirUpdatedAt);
+  return saveProjectRemote(project);
+}
+
 async function doSave(project) {
   const id = session.getCurrentRemoteId();
   const remoteProject = await prepareProjectForRemote(project);
@@ -127,24 +147,40 @@ async function doSave(project) {
     }));
     session.setCurrentRemoteId(out.id);
     session.setBase(out.updatedAt);
+    session.setBaseSnapshot(project);
     return out;
   }
 
-  const put = (base) => session.apiFetch(`/projects/${id}`, {
+  const res = await session.apiFetch(`/projects/${id}`, {
     method: 'PUT',
-    body: JSON.stringify({ project: remoteProject, baseUpdatedAt: base }),
+    body: JSON.stringify({ project: remoteProject, baseUpdatedAt: session.getBase() }),
   });
 
-  let res = await put(session.getBase());
   if (res.status === 409) {
-    // Another device wrote in between. For single-user multi-device sync the
-    // safe-and-simple resolution is last-write-wins: adopt the server's current
-    // timestamp and retry once so this device's latest state lands.
+    // Another writer landed in between. This used to retry with the server's
+    // timestamp, which is last-write-wins: defensible for one person on two
+    // devices, and silent data loss the moment a collaborator can write. The
+    // 409 body carries the full server copy, session holds the snapshot this
+    // device last synced, and `project` is what we tried to write: exactly
+    // base, theirs and mine for a three-way merge. Hand them over and write
+    // nothing; the merge flow owns the next save (saveMergedRemote).
     const conflict = await res.json().catch(() => ({}));
-    const serverTs = conflict.current && conflict.current.updatedAt;
-    res = await put(serverTs);
+    const current = conflict.current;
+    if (!current || !current.project || !onConflict) {
+      throw new Error('The project changed on the server and could not be reconciled.');
+    }
+    const theirs = await hydrateProject(current.project);
+    onConflict({
+      base: session.getBaseSnapshot(),
+      mine: project,
+      theirs,
+      theirUpdatedAt: current.updatedAt,
+    });
+    return null;
   }
+
   const out = await asJson(res);
   session.setBase(out.updatedAt);
+  session.setBaseSnapshot(project);
   return out;
 }
