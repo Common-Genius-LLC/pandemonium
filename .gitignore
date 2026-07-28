@@ -3,3 +3,6 @@ dist
 .npm-cache
 .DS_Store
 *.local
+
+# Real env values stay out of the repo. .env.example is the tracked template.
+.env

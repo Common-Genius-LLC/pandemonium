@@ -18,10 +18,22 @@ import { saveCurrentProjectLocally, loadCurrentProjectLocally, clearCurrentProje
 import { saveProjectRemote, loadProjectRemote } from './remote-api-adapter.js';
 import { readFileAsText } from '../utils/files.js';
 import { session } from './session.js';
+import { trackProjectSave } from '../utils/analytics.js';
 
 // File save/open: always local, both modes.
+//
+// Only the explicit user-initiated save is tracked. autosaveProject() runs
+// continuously on every mutation, so an event there would be noise, not a
+// signal. No project name is sent: see the note in state/store.js viewInfo.
 export function saveProject(project) {
   saveProjectToFile(project);
+  trackProjectSave({
+    target: 'file',
+    session_mode: session.getMode(),
+    script_count: project && project.scripts ? project.scripts.length : 0,
+    board_count: project && project.boards ? project.boards.length : 0,
+    link_count: project && project.links ? project.links.length : 0,
+  });
 }
 
 export async function openProjectFile(file) {

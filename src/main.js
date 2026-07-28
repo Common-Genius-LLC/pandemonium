@@ -1,7 +1,10 @@
 'use strict';
 
 import './styles/global.css';
+import { initAnalytics } from './utils/analytics.js';
 import './app-root/pandemonium-app.js';
+
+initAnalytics();
 
 // #printRoot must be a direct child of <body>, sibling to the app itself,
 // not nested inside it -- see styles/global.css for why (the print media

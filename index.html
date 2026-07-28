@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pandemonium</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<!-- GA4. The id is substituted at build time from VITE_GA4_MEASUREMENT_ID (see
+     .env.example). The tag only queues commands onto dataLayer; the actual
+     config call, and every event, goes through src/utils/analytics.js. -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=%VITE_GA4_MEASUREMENT_ID%"></script>
+<script>
+window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+</script>
 </head>
 <body>
 <div id="app-mount"></div>

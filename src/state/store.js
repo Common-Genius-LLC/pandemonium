@@ -11,6 +11,7 @@ import { getParsed } from '../fountain/cache.js';
 import { scenesOf } from '../fountain/blocks.js';
 import { computeResolved, coverage, labelScenes } from './selectors.js';
 import { defaultLayout } from '../data/layout-tree.js';
+import { trackVirtualView, trackStoryboardLinkAdd, trackResearchLinkAdd, trackScriptParse } from '../utils/analytics.js';
 
 export class PandemoniumStore extends EventTarget {
   #project = null;
@@ -38,12 +39,15 @@ export class PandemoniumStore extends EventTarget {
     }
     this.#project = model.normalizeDraftNames(this.#project);
     this.#ui = defaultUI(this.#project.scripts.find((s) => s.final).id);
+    this.#trackScriptParse(this.finalScript(), 'project_open');
+    this.#trackViewChange();
     this.#emit();
   }
 
   closeProject() {
     this.#project = null;
     this.#ui = null;
+    this.#trackViewChange();
     this.#emit();
   }
 
@@ -90,6 +94,28 @@ export class PandemoniumStore extends EventTarget {
     this.dispatchEvent(new CustomEvent('change', { detail: { kind } }));
   }
 
+  // Analytics hooks. Both are fire-and-forget and no-op when GA4 is not
+  // configured, so nothing here can affect a mutation's outcome.
+  #trackViewChange() {
+    const info = viewInfo(this.#project, this.#ui);
+    trackVirtualView(info.title, { page_path: info.path });
+  }
+
+  // Deliberately NOT in fountain/cache.js: getParsed() is a render-path
+  // memoization seam that misses on every keystroke, so hooking it there sent
+  // one event per edit tick. It also has to stay DOM-free and dependency-free.
+  // A parse is only a user-facing event when a script first arrives.
+  #trackScriptParse(script, source) {
+    if (!script) return;
+    const parsed = getParsed(script);
+    trackScriptParse({
+      source,
+      script_id: script.id,
+      script_final: !!script.final,
+      block_count: parsed.blocks.length,
+    });
+  }
+
   #applyProject(next) {
     this.#project = next;
     this.#ui = { ...this.#ui, dirty: true };
@@ -102,7 +128,10 @@ export class PandemoniumStore extends EventTarget {
   }
 
   setUI(patch) {
-    this.#applyUI({ ...this.#ui, ...patch });
+    const prev = this.#ui;
+    const next = { ...this.#ui, ...patch };
+    this.#applyUI(next);
+    if (prev && viewPatchAffectsView(prev, next)) this.#trackViewChange();
   }
 
   // ---- script actions ----
@@ -160,6 +189,7 @@ export class PandemoniumStore extends EventTarget {
   importFountain(name, text) {
     const { project, script } = model.importFountain(this.#project, name, text);
     this.#applyProject(project);
+    this.#trackScriptParse(script, 'import');
     return script;
   }
 
@@ -168,6 +198,10 @@ export class PandemoniumStore extends EventTarget {
   addBoard(opts) {
     const { project, board } = model.addBoard(this.#project, opts);
     this.#applyProject(project);
+    // An image dropped into the boards panel with no anchor is not yet a
+    // storyboard *link*: only a board attached to a script passage counts.
+    const parts = (opts.parts || []).length;
+    if (parts) trackStoryboardLinkAdd({ script_parts: parts, board_count: project.boards.length });
     return board;
   }
   updateBoardCaption(id, caption) { this.#applyProject(model.updateBoardCaption(this.#project, id, caption)); }
@@ -194,6 +228,12 @@ export class PandemoniumStore extends EventTarget {
   addLink(opts) {
     const { project, link } = model.addLink(this.#project, opts);
     this.#applyProject(project);
+    trackResearchLinkAdd({
+      script_parts: (opts.sParts || []).length,
+      // Whether the research end is a highlighted span or the whole doc.
+      two_ended: !!(opts.rParts || []).length,
+      link_count: project.links.length,
+    });
     return link;
   }
   reattachLink(id, parts) { this.#applyProject(model.reattachLink(this.#project, id, parts)); }
@@ -236,4 +276,34 @@ function defaultUI(draftId) {
     highlightBoard: null,
     dirty: false,
   };
+}
+
+function viewPatchAffectsView(prev, next) {
+  return prev.draftId !== next.draftId || prev.openDoc !== next.openDoc || prev.readerEdit !== next.readerEdit || layoutSignature(prev.layout) !== layoutSignature(next.layout);
+}
+
+// A virtual view is described structurally: which panel arrangement is on
+// screen, and whether a research doc is open for reading or editing.
+//
+// Deliberately no project name, script name, or research doc title. Those are
+// the user's unreleased screenplay material and must not leave the browser in
+// an analytics payload. It also keeps the GA4 report readable: per-project
+// paths would shard every row into a long tail of one-off URLs.
+function viewInfo(project, ui) {
+  if (!project || !ui) return { title: 'Start screen', path: '/start' };
+  if (ui.openDoc) {
+    const mode = ui.readerEdit ? 'edit' : 'read';
+    return { title: 'Research ' + mode, path: '/project/research/' + mode };
+  }
+  const singleLeaf = ui.layout && ui.layout.type === 'leaf';
+  if (!singleLeaf) return { title: 'Workspace', path: '/project/workspace' };
+  const content = ui.layout.content;
+  const title = content === 'boards' ? 'Storyboard' : content === 'research' ? 'Research' : 'Script';
+  return { title, path: '/project/' + content };
+}
+
+function layoutSignature(node) {
+  if (!node) return '';
+  if (node.type === 'leaf') return 'leaf:' + node.content;
+  return node.dir + '(' + layoutSignature(node.a) + ',' + layoutSignature(node.b) + ')';
 }

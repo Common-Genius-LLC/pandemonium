@@ -6,6 +6,7 @@
 'use strict';
 
 import { esc } from '../../utils/format.js';
+import { trackPdfExport } from '../../utils/analytics.js';
 
 function printInline(b) {
   let out = '';
@@ -50,6 +51,7 @@ export function printScript(script, parsed) {
     if (b.type === 'page') { html += '<div class="p-page"></div>'; continue; }
     html += '<div class="pb p-' + b.type + '">' + (printInline(b) || '&nbsp;') + '</div>';
   }
+  trackPdfExport({ export_type: 'script', block_count: parsed.blocks.length });
   doPrint('mode-script', html);
 }
 
@@ -66,6 +68,7 @@ export function printBoards(finalState, projectName) {
       '<div class="q">' + esc(q) + '</div></div>';
   }
   html += '</div>';
+  trackPdfExport({ export_type: 'boards', board_count: arr.length });
   doPrint('mode-boards', html);
   return true;
 }
