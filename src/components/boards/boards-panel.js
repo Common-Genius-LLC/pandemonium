@@ -5,7 +5,7 @@ import { StoreController } from '../../state/store-controller.js';
 import { boardOrder } from '../../state/selectors.js';
 import { boardRuns } from '../../data/project-model.js';
 import { dispatch } from '../../utils/events.js';
-import { readFileAsDataURL } from '../../utils/files.js';
+import { readFileAsDataURL, isBoardMediaFile, BOARD_MEDIA_ACCEPT } from '../../utils/files.js';
 import { panelStyles } from '../../styles/shared.js';
 import '../ui/button.js';
 import '../ui/panel-picker.js';
@@ -27,7 +27,7 @@ export class PandemoniumBoardsPanel extends LitElement {
 
   static styles = [panelStyles, css`
     .pbody.over{outline:2px solid var(--res);outline-offset:-2px}
-    #boardsList{display:flex;flex-direction:column;gap:16px;padding:10px 10px 30px}
+    #boardsList{display:flex;flex-direction:column;gap:6px;padding:6px 6px 30px}
     /* Figma "Frame 4" (node 19:330): the illustration over the pane's own
        pink, with the drop invitation beneath it, centered in the empty pane. */
     .noboards{
@@ -37,7 +37,7 @@ export class PandemoniumBoardsPanel extends LitElement {
     .noboards img{width:440px;max-width:78%;height:auto;display:block;pointer-events:none}
     .noboards p{
       width:250px;max-width:70%;margin:0;text-align:center;
-      font-size:14px;line-height:18px;color:var(--pane-board-ink);
+      font-size:14px;line-height:18px;color:var(--mut);
     }
   `];
 
@@ -67,7 +67,7 @@ export class PandemoniumBoardsPanel extends LitElement {
   // The empty pane invites a drop, so the pane has to accept one. Same
   // unattached board a picked file produces, one per image dropped.
   async #addImages(files) {
-    const images = [...files].filter((f) => f.type.startsWith('image/'));
+    const images = [...files].filter(isBoardMediaFile);
     if (!images.length) return;
     for (const file of images) {
       const img = await readFileAsDataURL(file);
@@ -119,12 +119,12 @@ export class PandemoniumBoardsPanel extends LitElement {
     const arr = state.R.boards.slice().sort(boardOrder);
     const runs = boardRuns(project.boards);
     return html`
-      <div class="shell" style="--pane-bg:var(--pane-board)">
+      <div class="shell" style="--pane-bg:var(--bg)">
         <div class="chrome">
           ${this.#title()}
           <div class="tools">
-            <pd-button variant="pink" title="Play the linked storyboards full-screen" @click=${() => this.#startSlideshow()}>Start slideshow</pd-button>
-            <pd-button @click=${() => this.#addBoard()}>Add Image</pd-button>
+            <pd-button variant="pink" title="Play the linked storyboards full-screen" @click=${() => this.#startSlideshow()}>Start Show</pd-button>
+            <pd-button title="Add images or video as storyboard frames" @click=${() => this.#addBoard()}>Add Media</pd-button>
           </div>
         </div>
         <div class="pbody"
@@ -145,7 +145,7 @@ export class PandemoniumBoardsPanel extends LitElement {
               </div>`}
         </div>
       </div>
-      <input type="file" id="fileImg" accept="image/*" multiple style="display:none" @change=${(e) => this.#onFilePicked(e)}>
+      <input type="file" id="fileImg" accept=${BOARD_MEDIA_ACCEPT} multiple style="display:none" @change=${(e) => this.#onFilePicked(e)}>
     `;
   }
 }

@@ -33,7 +33,7 @@ export class PandemoniumResearchPanel extends LitElement {
     const openDoc = project.research.find((d) => d.id === ui.openDoc);
 
     return html`
-      <div class="shell" style="--pane-bg:var(--pane-research)">
+      <div class="shell" style="--pane-bg:var(--bg)">
         <div class="chrome">
           ${this.#title()}
           <div class="tools">

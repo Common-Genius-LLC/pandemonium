@@ -28,7 +28,12 @@ export const fountainTheme = EditorView.theme({
   '.cm-scroller': {
     fontFamily: 'var(--script)',
     lineHeight: '1.6',
-    overflow: 'auto',
+    // overflow-x hidden so the full-bleed row-hover band (which extends far past
+    // the text column, see .cm-sec-hover) is clipped to the panel instead of
+    // creating a horizontal scrollbar. lineWrapping means there is no real
+    // horizontal content to scroll.
+    overflowX: 'hidden',
+    overflowY: 'auto',
   },
   '.cm-content': {
     padding: '10px 10px 40vh 10px',
@@ -143,25 +148,41 @@ export const fountainTheme = EditorView.theme({
   '.hc': { borderBottom: '2px solid var(--act)', cursor: 'pointer' },
   '.hl-flash': { background: 'var(--act) !important', color: 'var(--ink) !important' },
 
-  // Section hover model (cm-sections.js): a soft rounded band behind the
-  // whole hovered Fountain section, plus the floating Board/Source rail.
-  '.cm-sec-hover': { background: 'var(--panel)' },
-  '.cm-sec-hover[data-secpos=first]': { borderTopLeftRadius: '6px', borderTopRightRadius: '6px' },
-  '.cm-sec-hover[data-secpos=last]': { borderBottomLeftRadius: '6px', borderBottomRightRadius: '6px' },
-  '.cm-sec-hover[data-secpos=solo]': { borderRadius: '6px' },
+  // Section hover model (cm-sections.js): a flat band behind the whole hovered
+  // Fountain section, plus the two-pill rail from the Figma paragraph element
+  // (node 85-590) -- a dark "link to" pill and a yellow "Comment" pill at the
+  // row's right edge. The band bleeds the full width of the panel (edge to
+  // edge, no rounded corners) to keep the surface calm: it is drawn as a
+  // pseudo-element stretched -10px past the line box (cancelling .cm-content's
+  // 10px inset) and sat behind the text with z-index, since a line
+  // decoration's own background can only reach the text column, not the panel
+  // edge. Adjacent lines' bands touch, so a multiline section reads as one
+  // continuous strip from the very left to the very right.
+  '.cm-sec-hover': { position: 'relative' },
+  // -50vw each side so the band always reaches the panel edges no matter how a
+  // line is indented (dialogue and character are centered columns, so a small
+  // fixed negative would stop short of the edge). The scroller clips the
+  // overflow (lineWrapping means there is no real horizontal scroll to lose).
+  '.cm-sec-hover::before': {
+    content: '""', position: 'absolute', top: '0', bottom: '0', left: '-50vw', right: '-50vw',
+    background: 'var(--row-hover)', zIndex: '-1', pointerEvents: 'none',
+  },
   '.cm-sec-acts': {
-    position: 'absolute', right: '10px', zIndex: '6', display: 'flex', gap: '2px', padding: '3px',
-    background: 'var(--overlay)', borderRadius: 'var(--r)', boxShadow: '0 1px 5px rgba(0,0,0,.2)', fontFamily: 'var(--sans)',
+    position: 'absolute', right: '10px', zIndex: '6', display: 'flex', gap: '6px', fontFamily: 'var(--sans)',
   },
   '.cm-sec-acts button': {
-    color: 'var(--overlay-ink)', fontSize: '11px', fontWeight: '500', padding: '4px 9px', background: 'none', border: '0',
-    borderRadius: '2px', cursor: 'pointer', fontFamily: 'var(--sans)', display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap',
+    fontSize: '12px', fontWeight: '500', lineHeight: '1', padding: '6px 12px', minHeight: '24px', border: '0',
+    borderRadius: '20px', cursor: 'pointer', fontFamily: 'var(--sans)', whiteSpace: 'nowrap',
   },
-  '.cm-sec-acts button:hover': { background: 'rgba(255,255,255,.16)' },
-  '.cm-sec-acts button::before': { content: '""', width: '7px', height: '7px', borderRadius: '50%', display: 'inline-block', marginRight: '6px' },
-  '.cm-sec-acts button.b::before': { background: 'var(--board)' },
-  '.cm-sec-acts button.r::before': { background: 'var(--res)' },
-  '.cm-sec-acts button.n::before': { background: 'var(--act)' },
+  // The element-type pill (item 6, neutral), the dark pill (link to) and the
+  // yellow pill (Comment). All use theme tokens rather than the Figma literals
+  // so they hold up in dark mode.
+  '.cm-sec-acts button.elt': { background: 'var(--panel)', color: 'var(--ui)' },
+  '.cm-sec-acts button.elt:hover': { background: 'var(--ph-hi)' },
+  '.cm-sec-acts button.linkto': { background: 'var(--overlay)', color: 'var(--overlay-ink)' },
+  '.cm-sec-acts button.linkto:hover': { background: 'var(--ui)' },
+  '.cm-sec-acts button.comment': { background: 'var(--act)', color: 'var(--act-ink)' },
+  '.cm-sec-acts button.comment:hover': { background: 'var(--act-hi)' },
 
   // Element menu (element-menu.js): the Enter-on-an-empty-line chooser. Dark
   // chrome, like the section rail above, so it reads as a tool floating over

@@ -11,7 +11,7 @@ import { mergeProjects, commitMergedProject } from '../data/merge.js';
 import { getParsed } from '../fountain/cache.js';
 import { scenesOf } from '../fountain/blocks.js';
 import { computeResolved, coverage, labelScenes } from './selectors.js';
-import { defaultLayout } from '../data/layout-tree.js';
+import { defaultLayout, hasContent, firstLeafId, splitLeafAt } from '../data/layout-tree.js';
 import { trackVirtualView, trackStoryboardLinkAdd, trackResearchLinkAdd, trackScriptParse } from '../utils/analytics.js';
 
 export class PandemoniumStore extends EventTarget {
@@ -71,6 +71,21 @@ export class PandemoniumStore extends EventTarget {
   activeScript() {
     if (!this.#project) return null;
     return this.#project.scripts.find((s) => s.id === this.#ui.draftId) || this.finalScript();
+  }
+
+  // The draft shown in a specific pane. Each script pane can hold a different
+  // draft (open Draft 7 beside the Final Draft), so the draft selection is
+  // per-leaf, overriding the global draftId. A pane with no explicit choice
+  // falls back to activeScript(), so a single-pane layout behaves exactly as
+  // before and every "jump to the final draft" action still lands.
+  scriptForLeaf(leafId) {
+    if (!this.#project) return null;
+    const id = leafId && this.#ui.paneDrafts && this.#ui.paneDrafts[leafId];
+    return this.#project.scripts.find((s) => s.id === id) || this.activeScript();
+  }
+
+  setPaneDraft(leafId, id) {
+    this.setUI({ paneDrafts: { ...this.#ui.paneDrafts, [leafId]: id }, pair: null });
   }
 
   // The structural path for whatever is on screen, e.g. '/project/boards'.
@@ -195,7 +210,15 @@ export class PandemoniumStore extends EventTarget {
   }
   deleteScript(id) {
     this.#applyProject(model.deleteScript(this.#project, id));
-    if (this.#ui.draftId === id) this.setUI({ draftId: this.finalScript().id });
+    const patch = {};
+    if (this.#ui.draftId === id) patch.draftId = this.finalScript().id;
+    // Drop any pane that was showing the deleted draft so it falls back to the
+    // final draft rather than pointing at a script that no longer exists.
+    const panes = this.#ui.paneDrafts || {};
+    if (Object.values(panes).includes(id)) {
+      patch.paneDrafts = Object.fromEntries(Object.entries(panes).filter(([, v]) => v !== id));
+    }
+    if (Object.keys(patch).length) this.setUI(patch);
   }
   makeFinal(id) { this.#applyProject(model.makeFinal(this.#project, id)); }
   updateScriptText(id, text) { this.#applyProject(model.updateScriptText(this.#project, id, text)); }
@@ -290,6 +313,17 @@ export class PandemoniumStore extends EventTarget {
     if (before !== layoutSignature(layout)) this.#trackViewChange();
   }
 
+  // Make sure a panel of `content` is on screen, opening one beside the first
+  // pane if none shows it yet. Used when an action produces something the user
+  // should now see (linking a passage to a storyboard opens the boards panel).
+  revealContent(content) {
+    if (!this.#project) return;
+    const layout = this.#project.layout || defaultLayout();
+    if (hasContent(layout, content)) return;
+    // Split the top-left pane, putting the revealed panel on its right at ~40%.
+    this.setLayout(splitLeafAt(layout, firstLeafId(layout), 'row', 0.4, false, content));
+  }
+
   // ---- sync merge ----
 
   // A 409 from the backend arrives here (via app-root's conflict handler)
@@ -352,6 +386,7 @@ export class PandemoniumStore extends EventTarget {
 function defaultUI(draftId) {
   return {
     draftId,
+    paneDrafts: {}, // { [leafId]: scriptId } -- per-pane draft override (see scriptForLeaf)
     openDoc: null,
     readerEdit: false,
     linking: null, // {from:'script', parts} | {from:'research', docId, rParts}
@@ -368,7 +403,7 @@ function defaultUI(draftId) {
 // Layout is deliberately absent here: it is project state now, and setLayout
 // reports its own view change.
 function viewPatchAffectsView(prev, next) {
-  return prev.draftId !== next.draftId || prev.openDoc !== next.openDoc || prev.readerEdit !== next.readerEdit;
+  return prev.draftId !== next.draftId || prev.paneDrafts !== next.paneDrafts || prev.openDoc !== next.openDoc || prev.readerEdit !== next.readerEdit;
 }
 
 // A virtual view is described structurally: which panel arrangement is on

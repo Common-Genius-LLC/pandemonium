@@ -59,9 +59,40 @@ export function scenesOf(parsed) {
     if (b.type === 'dialogue' || b.type === 'lyric') cur.dw += b.words;
     else if (b.type === 'action' || b.type === 'centered' || b.type === 'paren') cur.aw += b.words;
   }
-  for (const sc of scenes) { sc.secs = (sc.dw || sc.aw) ? Math.max(2, sc.dw / 2.4 + sc.aw / 4.5) : 2; }
-  if (!scenes.length) scenes.push({ name: 'Script', start: 0, end: -1, dw: 0, aw: 0, content: 0, secs: 0 });
+  for (const sc of scenes) {
+    // A scene heading with nothing written under it (possibly carrying a
+    // synopsis, which is an outline note rather than script) is PLANNED, not
+    // written. Its screen time is genuinely unknown, so it carries 0 seconds
+    // and is reported separately by scriptProgress() rather than being folded
+    // into the running-time estimate. This used to award every empty scene a
+    // flat 2 seconds, which inflated the estimate by the exact amount of the
+    // script that had not been written yet: hard rule 3 says show a number as
+    // unknown rather than invent it.
+    sc.scripted = sc.content > 0;
+    sc.secs = sc.scripted ? Math.max(2, sc.dw / 2.4 + sc.aw / 4.5) : 0;
+  }
+  if (!scenes.length) scenes.push({ name: 'Script', start: 0, end: -1, dw: 0, aw: 0, content: 0, secs: 0, scripted: false });
   return scenes;
+}
+
+// The script's own outline structure, from Fountain sections (`#`, `##`, ...).
+// These are what a writer uses for ACT ONE / SEQUENCE 3 / and so on, so they
+// are the timeline's dividers: spans of the script a reader already thinks in,
+// as opposed to scenes, which are the units screen time is estimated from.
+// `level` is the heading depth, so a caller can divide by top-level acts
+// without losing the finer headings underneath.
+export function sectionsOf(parsed) {
+  const sections = [];
+  let cur = null;
+  for (const b of parsed.blocks) {
+    if (b.type === 'section') {
+      cur = { name: b.plain || 'Section', level: b.level || 1, start: b.i, end: b.i };
+      sections.push(cur);
+      continue;
+    }
+    if (cur) cur.end = b.i;
+  }
+  return sections;
 }
 
 export function sceneIndexOf(scenes, bi) {

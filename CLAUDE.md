@@ -208,6 +208,11 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
    `merge.test.js`); a 409 from the server now opens a merge instead of
    retrying over the other writer, and `ui.merge` is transient by design so a
    half-merged project can never autosave.
+7. Global context menu (replaces both the absent native-menu handling and the
+   floating BETA badge, see `docs/FEATURE_ARCHITECTURE.md` section 1.4), and
+   the corner-drag gesture generalized to reach any ancestor boundary a drag
+   actually crosses rather than only the immediate sibling (section 1.1).
+   **Done.**
 
 ---
 

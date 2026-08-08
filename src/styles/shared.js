@@ -39,10 +39,12 @@ export const formStyles = css`
 // `--pane-bg` is the working area's colour, set per panel.
 export const panelStyles = css`
   :host{display:flex;flex-direction:column;min-height:0;min-width:0}
+  /* Sharp corners, no shadow (Figma node 101-1095): panes are flat blocks set
+     apart by even gaps rather than by rounding or elevation, matching the
+     design language (flat, solid fills, no borders). */
   .shell{
     flex:1;min-height:0;display:flex;flex-direction:column;
-    background:var(--pane-bg,var(--bg));border-radius:6px;
-    box-shadow:0 0 2px rgba(0,0,0,.3);overflow:hidden;
+    background:var(--pane-bg,var(--bg));border-radius:0;overflow:hidden;
   }
   /* The strip takes the pane's own colour, so a panel is one solid object.
      Only the script panel overrides it back to the chrome grey, because its
@@ -107,11 +109,11 @@ export const tabStyles = css`
     box-shadow:inset 1px 0 0 rgba(0,0,0,.07),0.5px -1px 1px rgba(0,0,0,.15);
   }
   .tab:hover{color:var(--ink)}
-  /* The final draft is the one that owns the links, so it carries weight as
-     well as colour: Untitled Sans Medium against the others' Regular. */
-  .tab.final{background:var(--pane-script);color:var(--tab-final-ink);font-weight:500;box-shadow:none}
+  /* The final draft is the one that owns the links, so it carries weight
+     (Untitled Sans Medium against the others' Regular). No colour tint now:
+     panels are one neutral surface (Figma 101-1095). */
+  .tab.final{font-weight:500}
   .tab.on{background:var(--pane-bg,var(--bg));box-shadow:none}
-  .tab.on.final{background:var(--pane-script)}
 `;
 
 export const chipStyles = css`

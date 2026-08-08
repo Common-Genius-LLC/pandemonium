@@ -3,165 +3,82 @@
 import { LitElement, html, css } from 'lit';
 import { StoreController } from '../state/store-controller.js';
 import { timelineStats } from '../state/selectors.js';
+import { sectionsOf } from '../fountain/blocks.js';
 import { fmtT } from '../utils/format.js';
+import { dispatch } from '../utils/events.js';
 import { panelStyles } from '../styles/shared.js';
 import '../components/ui/panel-picker.js';
+import '../components/ui/button.js';
 
-// The coverage strip, formerly the "timesheet" and formerly fixed chrome above
-// the layout. It is now an ordinary panel (see data/layout-tree.js), so it can
-// be moved, resized, closed, or given a whole pane when it is the thing being
-// read. The default layout puts it across the bottom.
+// Timeline (Figma node 100-208): a "torrent" coverage view. Two rows,
+// Storyboarded and Sourced, run the length of the written script. Each is one
+// even-celled bar, filled where that stretch of script is boarded / sourced and
+// grey where it is not, so at a glance it reads like a download's received
+// chunks. Act boundaries (top-level Fountain sections) are marked with a
+// labelled divider through both rows. The overall boarded/sourced PERCENTAGES
+// moved to the Project Status panel; this panel is the where, not the how much.
 //
-// One segment per scene, sized proportionally to its estimated screen time,
-// each with a boarded lane and a sourced lane. Clicking a segment jumps the
-// script panel to that scene.
-//
-// Two things here are hard rule 3 (the timeline math must be honest) rather
-// than styling choices:
-//   - an empty final draft has no honest estimate, so the header reads
-//     "unknown" and the strip shows one flat lane, never a fabricated "0:00"
-//   - the tick marks step up in unit rather than always drawing one line per
-//     second, because at a step too fine to resolve they stop being a scale
-//     and become a texture that implies precision the strip does not have
+// Honest math (hard rule 3): the x-axis is the running time of what is WRITTEN
+// (unscripted scenes carry 0 seconds and show as a thin grey unwritten slot,
+// never a fabricated duration), and a cell is filled only where a scene really
+// has a board with an image / a source -- coverage()'s fb/fr fractions.
 export class PandemoniumTimeline extends LitElement {
-  static properties = { leafId: {}, _stripWidth: { state: true } };
+  static properties = { leafId: {} };
 
-  // One marker line per second is the intent, but only while a second is wide
-  // enough to draw. A 12 minute script in a 900px strip is 720 seconds at
-  // 1.25px each, which renders as a grey wash. The step therefore climbs
-  // through units a reader already thinks in until the gap clears MIN_GAP,
-  // and the strip's tooltip states the step it settled on (see #stripTitle).
-  static TICK_STEPS = [1, 5, 10, 30, 60, 300];
-  static MIN_TICK_GAP = 6;
+  // A scene with no running time still needs to be visible (it exists in the
+  // outline, just unwritten), so it gets this fixed sliver rather than a share
+  // of the duration it does not have.
+  static UNWRITTEN_PX = 10;
 
   static styles = [panelStyles, css`
-    .chrome .est{align-self:center;margin-left:auto;padding-right:8px;font-size:11px;color:var(--mut);white-space:nowrap}
-    .chrome .est b{color:var(--ui);font-weight:500}
+    .chrome .est{align-self:center;margin-left:auto;padding-right:10px;font-size:11px;color:var(--mut);white-space:nowrap}
+    .chrome .est b{color:var(--res);font-weight:500}
+    .chrome .tools{align-self:center;padding-right:6px;display:flex;gap:4px}
 
-    /* overflow:hidden, not auto (which panelStyles sets): the strip below
-       shrinks vertically instead of scrolling, so a short pane thins the lanes
-       rather than growing a scrollbar the panel is too small to use. */
-    .pbody{display:flex;flex-direction:column;padding:8px 10px;overflow:hidden}
-    .tlbody{flex:1;min-height:0;display:flex;align-items:stretch;gap:10px}
+    /* overflow:hidden (panelStyles sets auto): the bars thin as the pane
+       shrinks instead of scrolling. Extra bottom padding leaves room for the
+       act labels that hang below the lower bar. */
+    .pbody{display:flex;flex-direction:column;padding:8px 10px 20px;overflow:hidden}
+    .tlbody{flex:1;min-height:0;display:flex;align-items:center;gap:12px}
 
-    /* The two figures sit in a left gutter, each one on the row of the lane it
-       describes, so the strip is its own legend and nothing has to be read
-       top to bottom to be matched up. The 2px gap here is the same gap each
-       segment puts between its two lanes, which is what keeps them aligned. */
-    .labels{flex:none;display:flex;flex-direction:column;gap:2px}
-    .lab{
-      flex:1;min-height:0;display:flex;align-items:center;gap:4px;
-      font-size:11px;color:var(--mut);white-space:nowrap;
-    }
-    .lab b{color:var(--ui);font-weight:500}
-    .lab.b em{font-style:normal;color:var(--board-ink)}
-    .lab.r em{font-style:normal;color:var(--res)}
+    .labels{flex:none;display:flex;flex-direction:column;gap:4px}
+    .lab{font-size:11px;font-weight:500;white-space:nowrap}
+    .lab.b{color:var(--board-ink)}
+    .lab.r{color:var(--res)}
 
-    #tlStrip{
-      flex:1;min-width:0;min-height:0;
-      display:flex;gap:6px;
-      overflow:auto hidden;
-      scrollbar-width:thin;
-      scrollbar-color:var(--ph) transparent;
-    }
-    /* Ticks are painted, not built: at one line per second a feature-length
-       script would add hundreds of nodes to be re-rendered on every keystroke.
-       --tick is the step as a percentage of total runtime, computed in
-       render() from the measured strip width. */
-    #tlStrip.ticked{
-      background-image:linear-gradient(to right,var(--ph-hi) 0 1px,transparent 1px);
-      background-size:var(--tick) 100%;
-      background-repeat:repeat-x;
-      background-position:left bottom;
-    }
-    #tlStrip::-webkit-scrollbar{height:6px}
-    #tlStrip::-webkit-scrollbar-thumb{background:var(--ph);border-radius:4px}
+    .strip{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+    .track{position:relative;height:22px;display:flex;background:var(--ph);overflow:hidden}
+    .seg{position:relative;min-width:2px}
+    .seg.scripted{cursor:pointer}
+    .seg.unwritten{flex:none;opacity:.4}
+    .seg .fill{position:absolute;inset:0 auto 0 0}
+    .track.b .seg .fill{background:var(--board-strong)}
+    .track.r .seg .fill{background:var(--res)}
+    .seg.scripted:hover{outline:1px solid var(--ui);outline-offset:-1px;z-index:2}
+    .seg.flash{background:var(--act)}
+    .seg.flash .fill{background:var(--act)}
+    /* Even vertical cell lines over the whole bar (the torrent chunks). Painted
+       as a repeating gradient, not nodes, so a long script adds nothing to
+       re-render. */
+    .track::after{content:"";position:absolute;inset:0;pointer-events:none;
+      background-image:linear-gradient(to right, var(--bg) 0 1px, transparent 1px);
+      background-size:11px 100%;opacity:.6}
+    .none{flex:1;background:var(--ph);opacity:.45}
 
-    .seg{
-      position:relative;display:flex;flex-direction:column;gap:2px;min-width:10px;
-      cursor:pointer;border-radius:2px;overflow:hidden;flex-basis:12px;
-    }
-    /* min-height keeps both lanes readable as the panel is squeezed; below
-       that the pbody clips rather than scrolls. */
-    .seg .lane{flex:1;min-height:5px;background:var(--ph);position:relative;overflow:hidden}
-    .seg .lane .fill{position:absolute;inset:0 auto 0 0}
-    .seg .lane.b .fill{background:var(--board)}
-    .seg .lane.r .fill{background:var(--res)}
-    .seg .num{position:absolute;top:3px;left:5px;font-size:9px;font-weight:500;color:var(--ui);opacity:.7;pointer-events:none;z-index:1}
-    .seg:hover .lane{background:var(--ph-hi)}
-    .seg.flash .lane{background:var(--act)}
-    /* An empty final draft has nothing to divide into scenes. One flat lane
-       reads as "nothing yet"; per-scene segments would collapse into a couple
-       of 12px stubs that look like a rendering fault. */
-    #tlStrip .none{flex:1;background:var(--ph);border-radius:2px;opacity:.45}
-
+    /* Act markers span both bars, label hanging under the lower one. */
+    .markers{position:absolute;left:0;right:0;top:0;bottom:0;pointer-events:none}
+    .mark{position:absolute;top:0;bottom:0;width:2px;background:var(--ui)}
+    .mark span{position:absolute;bottom:-15px;left:3px;font-size:8px;font-weight:600;
+      letter-spacing:.05em;color:var(--mut);white-space:nowrap;text-transform:uppercase}
   `];
 
   constructor() {
     super();
     this._store = new StoreController(this);
-    this._stripWidth = 0;
-    // The tick step depends on how wide the strip actually is, and the strip
-    // changes width when a divider is dragged, which writes no store state
-    // until release. Observing the element is the only way to stay correct
-    // through the drag and through a plain window resize.
-    this._ro = new ResizeObserver((entries) => {
-      const w = Math.round(entries[0].contentRect.width);
-      if (w !== this._stripWidth) this._stripWidth = w;
-    });
-  }
-
-  disconnectedCallback() {
-    this._ro.disconnect();
-    super.disconnectedCallback();
-  }
-
-  updated() {
-    const strip = this.renderRoot.getElementById('tlStrip');
-    if (strip && this._observed !== strip) {
-      if (this._observed) this._ro.unobserve(this._observed);
-      this._ro.observe(strip);
-      this._observed = strip;
-    }
-    this.renderRoot.querySelectorAll('.seg').forEach((el) => {
-      const n = el.querySelector('.num');
-      if (n) n.style.display = el.offsetWidth < 32 ? 'none' : '';
-    });
-  }
-
-  #tickStep(totalSeconds) {
-    const width = this._stripWidth;
-    if (!totalSeconds || !width) return null;
-    const perSecond = width / totalSeconds;
-    return PandemoniumTimeline.TICK_STEPS.find((s) => s * perSecond >= PandemoniumTimeline.MIN_TICK_GAP) || null;
-  }
-
-  // The scale the marks are drawn at. It used to be a caption under the strip;
-  // it is a tooltip now, because the caption was a permanent line of text
-  // restating something the eye reads off the marks anyway. It is still stated
-  // somewhere rather than dropped: per hard rule 3 a drawn scale that does not
-  // say its unit is a number without units.
-  #stripTitle(step, stats) {
-    if (!stats.hasContent) return 'No script yet, so there is no running time to divide.';
-    const scale = !step ? 'Too long to mark individual seconds at this width.'
-      : step === 1 ? 'One mark per second.'
-        : step < 60 ? `One mark every ${step} seconds.`
-          : `One mark every ${step / 60} minutes.`;
-    return `Each block is a scene, sized by its estimated screen time. ${scale}`;
-  }
-
-  #segTitle(sc) {
-    const where = sc.pre ? 'Opening' : 'Sc ' + sc.label;
-    const boards = sc.nb === 1 ? '1 board' : sc.nb + ' boards';
-    // Pending boards are named separately rather than folded into the count,
-    // because they are exactly the difference between what is claimed and what
-    // the boarded figure above is willing to report.
-    const pending = sc.nbPending ? `, ${sc.nbPending} awaiting an image` : '';
-    const sources = sc.nr === 1 ? '1 source' : sc.nr + ' sources';
-    return `${where} · ${sc.name} · ~${fmtT(sc.secs)} · ${boards}${pending} · ${sources}`;
   }
 
   #jump(sc, el) {
+    if (!sc.scripted) return;
     const store = this._store.store;
     const fsc = store.getFinalState().fsc;
     const patch = { scrollToBlock: sc.start };
@@ -171,41 +88,85 @@ export class PandemoniumTimeline extends LitElement {
     setTimeout(() => el.classList.remove('flash'), 700);
   }
 
+  #recordPacing() {
+    // Pacing is recorded by stepping the slideshow; that flow lands with the
+    // slideshow work. Until then this says so rather than silently doing nothing.
+    dispatch(this, 'pandemonium-toast', { message: 'Record pacing: step through the slideshow to time each beat. Coming soon.' });
+  }
+
+  // Top-level act (section level 1) boundaries as x-percentages of the written
+  // running time, each at the start of the first scene at or after the section.
+  #markers(scenes, parsed, total) {
+    if (!total) return [];
+    const cum = [];
+    let acc = 0;
+    scenes.forEach((sc, i) => { cum[i] = acc; acc += sc.secs; });
+    return sectionsOf(parsed)
+      .filter((s) => (s.level || 1) === 1)
+      .map((sec) => {
+        const si = scenes.findIndex((sc) => sc.start >= sec.start);
+        if (si < 0) return null;
+        return { x: (cum[si] / total) * 100, name: sec.name };
+      })
+      .filter((m) => m && m.x > 0.5 && m.x < 99.5);
+  }
+
+  #segTitle(sc) {
+    const where = sc.pre ? 'Opening' : 'Sc ' + sc.label;
+    if (!sc.scripted) return `${where} · ${sc.name} · not written yet`;
+    const boards = sc.nb === 1 ? '1 board' : sc.nb + ' boards';
+    const pending = sc.nbPending ? `, ${sc.nbPending} awaiting an image` : '';
+    const sources = sc.nr === 1 ? '1 source' : sc.nr + ' sources';
+    return `${where} · ${sc.name} · ~${fmtT(sc.secs)} · ${boards}${pending} · ${sources}`;
+  }
+
+  #track(kind, scenes) {
+    const fillKey = kind === 'b' ? 'fb' : 'fr';
+    return html`<div class="track ${kind}">
+      ${scenes.map((sc) => html`
+        <div class="seg ${sc.scripted ? 'scripted' : 'unwritten'}"
+          style=${sc.scripted ? `flex-grow:${Math.max(0.001, sc.secs)}` : `flex-basis:${PandemoniumTimeline.UNWRITTEN_PX}px`}
+          title=${this.#segTitle(sc)}
+          @click=${(e) => this.#jump(sc, e.currentTarget)}>
+          <div class="fill" style="width:${((sc[fillKey] || 0) * 100).toFixed(1)}%"></div>
+        </div>`)}
+    </div>`;
+  }
+
   render() {
     const project = this._store.project;
     if (!project) return html``;
     const state = this._store.store.getFinalState();
     const scenes = state.fscenes;
     const stats = timelineStats(scenes, state.fparsed.blocks.length);
-    const step = stats.hasContent ? this.#tickStep(stats.totalSeconds) : null;
+    const markers = stats.hasContent ? this.#markers(scenes, state.fparsed, stats.totalSeconds) : [];
 
     return html`
-      <div class="shell" style="--pane-bg:var(--pane-research)">
+      <div class="shell" style="--pane-bg:var(--bg)">
         <div class="chrome">
           <pd-panel-picker current="timeline" .leafId=${this.leafId}></pd-panel-picker>
-          <span class="est" title="Estimated running time of the final draft">
-            est <b>${stats.hasContent ? stats.estimate : 'unknown'}</b>${project.targetMins ? html` of ${project.targetMins}:00` : ''}
+          <span class="est" title="Estimated running time of the written final draft">
+            estimated duration : <b>~${stats.hasContent ? stats.estimate : 'unknown'}</b>${project.targetMins ? html` of ${project.targetMins}:00` : ''}
           </span>
+          <div class="tools">
+            <pd-button @click=${() => this.#recordPacing()}>Record Pacing</pd-button>
+          </div>
         </div>
         <div class="pbody">
           <div class="tlbody">
             <div class="labels">
-              <div class="lab b"><b>${stats.pctBoarded}%</b> <em>boarded</em></div>
-              <div class="lab r"><b>${stats.pctSourced}%</b> <em>sourced</em></div>
+              <div class="lab b">Storyboarded</div>
+              <div class="lab r">Sourced</div>
             </div>
-            <div id="tlStrip" class=${step ? 'ticked' : ''}
-              title=${this.#stripTitle(step, stats)}
-              style=${step ? `--tick:${(100 * step) / stats.totalSeconds}%` : ''}>
-              ${!stats.hasContent ? html`<div class="none"></div>` : scenes.map((sc) => html`
-                <div class="seg" style="flex-grow:${Math.max(0.001, sc.secs)}"
-                  title=${this.#segTitle(sc)}
-                  @click=${(e) => this.#jump(sc, e.currentTarget)}
-                >
-                  <span class="num">${sc.label}</span>
-                  <div class="lane b"><div class="fill" style="width:${(sc.fb * 100).toFixed(1)}%"></div></div>
-                  <div class="lane r"><div class="fill" style="width:${(sc.fr * 100).toFixed(1)}%"></div></div>
-                </div>
-              `)}
+            <div class="strip">
+              ${!stats.hasContent
+                ? html`<div class="track"><div class="none"></div></div><div class="track"><div class="none"></div></div>`
+                : html`
+                  ${this.#track('b', scenes)}
+                  ${this.#track('r', scenes)}
+                  <div class="markers">
+                    ${markers.map((m) => html`<div class="mark" style="left:${m.x}%"><span>${m.name}</span></div>`)}
+                  </div>`}
             </div>
           </div>
         </div>

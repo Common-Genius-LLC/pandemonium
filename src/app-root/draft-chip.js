@@ -9,7 +9,7 @@ import { tabStyles } from '../styles/shared.js';
 // clicking the already-active chip opens its context menu (rename,
 // duplicate, make final, delete) -- same two-purpose click as the original.
 export class PandemoniumDraftChip extends LitElement {
-  static properties = { script: { type: Object }, active: { type: Boolean, reflect: true } };
+  static properties = { script: { type: Object }, leafId: {}, active: { type: Boolean, reflect: true } };
 
   // Figma "Final Draft" / "Other Drafts" (44:148, 44:157). tabStyles carries
   // the shape; --pane-bg is inherited from the panel shell so the active tab
@@ -26,7 +26,9 @@ export class PandemoniumDraftChip extends LitElement {
   #click(e) {
     const store = this._store.store;
     if (!this.active) {
-      store.setUI({ draftId: this.script.id, pair: null });
+      // Switch only this pane's draft (per-pane, see store.scriptForLeaf), so
+      // another script pane showing a different draft is left alone.
+      store.setPaneDraft(this.leafId, this.script.id);
       return;
     }
     const s = this.script;
@@ -64,7 +66,8 @@ export class PandemoniumDraftChip extends LitElement {
     const s = this.script;
     const ui = this._store.ui;
     if (!ui) return html``;
-    this.active = ui.draftId === s.id;
+    // Active reflects this pane's own draft (its override, else the global one).
+    this.active = this._store.store.scriptForLeaf(this.leafId).id === s.id;
     const title = this.active ? 'Draft options: rename, duplicate, make final, delete' : 'Switch to this draft';
     return html`<button class="tab ${s.final ? 'final' : ''} ${this.active ? 'on' : ''}"
       title=${title} @click=${(e) => this.#click(e)}>${s.name}</button>`;

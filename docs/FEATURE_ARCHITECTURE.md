@@ -57,20 +57,37 @@ Corner drag maps onto the existing tree with no new tree concept:
   swallows the subtree on the other side of its own divider. In a binary tree
   that is exactly "replace the parent split with this leaf".
 
-Restricting merge to the sibling subtree loses nothing. In the tree, the region
-on the far side of a given divider *is* the sibling subtree, and that divider is
-the only one any corner of the pane touches. There is no adjacent region a
-corner drag can reach that this rule excludes.
+**Superseded.** Restricting merge to the *immediate* sibling subtree turned out
+to lose something real: on the default layout, `research`'s immediate sibling
+is the whole `(boards, script)` row, so research could never merge with
+`timeline` below it (timeline is two levels up, sibling of research's parent,
+not of research itself) even though the two are visually adjacent. The gesture
+now walks outward through however many ancestor boundaries the drag actually
+crosses, not just the first one, and distinguishes two outward cases: if the
+far side of the crossed boundary is a single pane, the drag absorbs it outright
+(unchanged from before, just reachable from farther away); if the far side is
+itself a multi-pane cluster, the drag targets the specific pane touching the
+crossed boundary and splits *that* pane instead, carrying the dragged pane's
+own content into the fresh sliver, so growing into a big neighboring cluster
+reads as "claimed a piece of it" rather than "swallowed the whole thing".
 
-New pure helpers in `layout-tree.js`: `parentOf`, `subtreeContains`,
-`siblingSubtree`, `splitLeafAt(node, id, dir, ratio, before)` and
-`absorbSibling(node, keepId)`.
+Pure helpers in `layout-tree.js`: `pathTo(node, id)` (the root-to-leaf chain, so
+the gesture can walk outward once instead of repeated top-down searches),
+`absorbAcross(node, ancestorId, keepSide)` (collapses an arbitrary ancestor down
+to one side, generalizing the old immediate-parent-only `absorbSibling`), and
+`splitLeafAt(node, id, dir, ratio, before, content)` (the trailing `content`
+override is what lets a split target a different pane than the one dragged).
+`parentOf`, `subtreeContains`, `siblingSubtree` and `absorbSibling` were removed
+once nothing else called them.
 
-The gesture itself lives in `panel-layout.js` as four grip elements per leaf and
-one pointer handler that classifies the drag after an 18px threshold, previews
-the result with an absolutely positioned ghost element (so nothing in the tree
-re-renders per pointer move, matching how divider drags already work), and
-commits one `setLayout` call on release.
+The gesture itself lives in `panel-layout.js` as four corner handles per leaf
+(only the one nearest the pointer is shown, within a fixed radius, rather than
+all four on any hover) and one pointer handler that classifies the drag after
+an 18px threshold, previews the result with an absolutely positioned ghost
+element (so nothing in the tree re-renders per pointer move, matching how
+divider drags already work), and commits one `setLayout` call on release.
+Right-clicking a pane reaches the same two moves, plus switching its content,
+without a drag; see the global context menu system below.
 
 ### 1.2 Layout persistence (per project)
 
@@ -127,6 +144,49 @@ surface regardless of the app theme.
 (`src/components/print/print.js`). Under dark tokens the print root inherits
 dark values and exports a black page. `global.css` therefore forces the light
 token values inside `@media print`, for both the default and the dark root.
+
+### 1.4 Global context menu, and BETA reporting off the floating badge
+
+There was no `contextmenu` handling anywhere: the browser's native menu showed
+everywhere, and beta bug reporting lived on a fixed floating badge
+(`pd-beta-badge`, bottom-right). Both are replaced by one mechanism.
+
+The existing single-instance popover `src/components/ui/menu.js` (`pd-menu`,
+already mounted at app-root and opened via a bubbling `pandemonium-open-menu`
+event) is reused rather than duplicated: `open()` now also accepts `{x, y,
+items}` as an alternative to `{anchor, items}`, positioning at a raw viewport
+point (there is no anchor element for a cursor position), and items can be
+`{divider: true}` for a separator.
+
+`src/utils/context-menu.js` exports the one place "these items belong on every
+menu" is expressed: `withGlobalItems(el, items)` appends a divider and the
+global section (theme toggle, and "Report a problem" when `BETA` is on,
+carrying a live count from `bugReporter.errorCount`) to whatever
+panel-specific items a caller already built. Every right-click handler in the
+app funnels through it, so there is exactly one copy of what "global" means.
+
+Native `contextmenu` is `composed: true`, so it already crosses shadow
+boundaries the same way `pandemonium-open-menu` does. Two handlers, inner
+first:
+
+- Each pane's `.leaf` element (`panel-layout.js`) handles its own
+  `contextmenu`: switch-content items (mirroring `panel-picker.js`, sharing its
+  `PANEL_LABELS`), then split left/right, split top/bottom, and close if more
+  than one pane exists. These three are also the removed hover buttons' only
+  home now, and the accessible, non-drag path to what the corner gesture does.
+  Calls `stopPropagation()` after building its menu.
+- `pandemonium-app.js` has one fallback `contextmenu` listener that only ever
+  fires for chrome outside any pane (the leaf handler already stopped it
+  otherwise), offering just the global items.
+
+Between the two, `preventDefault()` is called somewhere on every surface in the
+app, so no separate always-on capture-phase listener is needed to suppress the
+native menu.
+
+This is the extension point for later, more specific menus (a script row, a
+board card): an inner component adds its own `contextmenu` handler and calls
+`stopPropagation()` before it reaches the leaf's, same pattern, innermost
+wins first refusal. Not built out yet.
 
 ---
 
@@ -266,6 +326,37 @@ exactly as it does to a printed number.
 The ticks are painted as a repeating background gradient, not as elements: at
 one line per second a long script would otherwise add hundreds of nodes to be
 re-rendered on every keystroke.
+
+### 4.1 Written versus planned (the coverage strip proper)
+
+The strip reported boarded and sourced coverage but had no notion of how much
+of the script existed at all, and `scenesOf` awarded every scene a minimum of
+2 seconds, including scenes that were nothing but a heading. That inflated the
+running-time estimate by exactly the part of the script that had not been
+written, which is a hard rule 3 violation: the estimate was reporting planned
+scenes as though they had been timed.
+
+A scene is **scripted** when it has at least one content block under it
+(`CONTENT_TYPES`); a heading carrying only a synopsis (`=`) is an outline note,
+not script. Unscripted scenes now carry 0 seconds, so the header estimate is
+the running time of what is actually written, and `scriptProgress(scenes)` in
+`selectors.js` reports the split separately.
+
+`scriptProgress` counts **scenes**, not seconds, and that is load-bearing
+rather than incidental: an unwritten scene contributes 0 seconds, so a
+seconds-weighted percentage computes written over written and reports every
+draft as 100% written. Counted by scene, a script with two of three scenes
+written reports 67%.
+
+In the strip, an unwritten scene gets a fixed narrow slot rather than a
+proportional width, because there is no estimated duration for it to be
+proportional to. Drawing it at a guessed length would draw the unwritten part
+of the script at a length the script does not have.
+
+`sectionsOf(parsed)` in `fountain/blocks.js` reads Fountain sections (`#`,
+`##`) as the outline structure a writer already thinks in (ACT ONE, SEQUENCE 3)
+and keeps their depth, so the strip can divide by top-level act without losing
+the finer headings. Tests: `src/fountain/script-progress.test.js`.
 
 ---
 

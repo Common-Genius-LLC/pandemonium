@@ -1,34 +1,47 @@
 'use strict';
 
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, svg } from 'lit';
 import { StoreController } from '../../state/store-controller.js';
 import { clamp } from '../../utils/format.js';
 
-// The inline comment box (notes.md points i and j). A comment has no research
-// panel and no connector line: clicking its marker in the script opens this
-// small editable box right where the marker is, and that's the whole comment
-// UI. Opened via `pandemonium-show-comment` with {commentId, anchorRect}.
+// The circular submit's up-arrow (a plain geometric glyph, drawn inline).
+const SEND_ICON = svg`<svg viewBox="0 0 12 12" fill="none" aria-hidden="true">
+  <path d="M6 10V2.4M6 2.4 2.7 5.7M6 2.4 9.3 5.7" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
+
+// The comment sticky note (Figma node 100-360): the yellow Comment pill expands
+// into a yellow-framed white note with a circular submit. Opened via
+// `pandemonium-show-comment` with {commentId, anchorRect}; it anchors at (and
+// visually grows from) that rect. The white inner surface is a deliberate fixed
+// "paper" like a sticky note rather than a themed fill -- the same kind of
+// documented exception as the slideshow -- so a comment reads as a note in both
+// light and dark. The frame is the action yellow (--act).
 export class PandemoniumCommentPopover extends LitElement {
   static properties = { _open: { state: true }, _id: { state: true }, _x: { state: true }, _y: { state: true } };
 
   static styles = css`
     :host{position:fixed;inset:0;z-index:72;pointer-events:none}
     .pop{
-      position:fixed;width:260px;background:var(--panel);border-radius:var(--r);padding:8px;
-      display:flex;flex-direction:column;gap:6px;pointer-events:auto;font-family:var(--sans);
-      box-shadow:0 2px 12px rgba(0,0,0,.18);
+      position:fixed;width:240px;background:var(--act);border-radius:12px;padding:3px;
+      pointer-events:auto;font-family:var(--sans);box-shadow:0 4px 16px rgba(0,0,0,.22);
+      transform-origin:top right;animation:pop-in .12s ease-out;
     }
-    .lbl{font-size:9px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--mut)}
+    @keyframes pop-in{from{transform:scale(.7);opacity:0}to{transform:scale(1);opacity:1}}
+    .inner{background:rgba(255,255,255,.92);border-radius:9px;padding:10px;display:flex;flex-direction:column;gap:8px}
     textarea{
-      width:100%;min-height:70px;background:var(--bg);color:var(--ink);border:0;border-radius:var(--r);
-      padding:7px 8px;font-family:var(--sans);font-size:12px;line-height:1.5;resize:vertical;outline:none;
+      width:100%;min-height:56px;background:transparent;color:#161719;border:0;
+      font-family:var(--sans);font-size:12px;line-height:1.5;resize:vertical;outline:none;padding:0;
     }
-    textarea::placeholder{color:var(--mut)}
+    textarea::placeholder{color:rgba(0,0,0,.42)}
     .foot{display:flex;justify-content:space-between;align-items:center}
-    button{height:22px;padding:0 9px;background:var(--bg);color:var(--ui);font-size:11px;font-weight:500;border:0;border-radius:var(--r);cursor:pointer;font-family:var(--sans)}
-    button:hover{background:var(--ph)}
-    button.del{color:var(--danger)}
-    button.del:hover{background:var(--danger);color:#fff}
+    .del{background:transparent;border:0;color:rgba(0,0,0,.5);font-size:11px;cursor:pointer;font-family:var(--sans);padding:2px 4px}
+    .del:hover{color:var(--danger)}
+    .send{
+      width:22px;height:22px;border-radius:50%;background:#161719;border:0;cursor:pointer;margin-left:auto;
+      display:inline-flex;align-items:center;justify-content:center;flex:none;
+    }
+    .send:hover{background:#000}
+    .send svg{width:11px;height:11px;display:block}
   `;
 
   constructor() {
@@ -77,8 +90,11 @@ export class PandemoniumCommentPopover extends LitElement {
   #position(rect) {
     const pop = this.renderRoot.querySelector('.pop');
     if (!pop || !rect) return;
-    this._x = clamp(rect.left, 8, innerWidth - pop.offsetWidth - 8);
-    this._y = clamp(rect.bottom + 8, 8, innerHeight - pop.offsetHeight - 8);
+    // Align the note's right edge to the anchor's right and grow down from it,
+    // so it reads as expanding out of the Comment pill (transform-origin top
+    // right). Falls back to the viewport edge when it would overflow.
+    this._x = clamp(rect.right - pop.offsetWidth, 8, innerWidth - pop.offsetWidth - 8);
+    this._y = clamp(rect.bottom + 6, 8, innerHeight - pop.offsetHeight - 8);
   }
 
   #body(e) { this._store.store.updateCommentBody(this._id, e.target.value); }
@@ -88,13 +104,15 @@ export class PandemoniumCommentPopover extends LitElement {
     if (!this._open) return html``;
     const c = this.#comment();
     if (!c) return html``;
+    const hasBody = !!(c.body || '').trim();
     return html`
       <div class="pop" style="left:${this._x || 0}px;top:${this._y || 0}px">
-        <span class="lbl">Comment</span>
-        <textarea placeholder="Write a comment on this section..." .value=${c.body || ''} @input=${(e) => this.#body(e)}></textarea>
-        <div class="foot">
-          <button class="del" @click=${() => this.#delete()}>Delete</button>
-          <button @click=${() => this.close()}>Done</button>
+        <div class="inner">
+          <textarea placeholder="Add a comment" .value=${c.body || ''} @input=${(e) => this.#body(e)}></textarea>
+          <div class="foot">
+            ${hasBody ? html`<button class="del" @click=${() => this.#delete()}>Delete</button>` : html`<span></span>`}
+            <button class="send" title="Save comment" @click=${() => this.#closeMaybeDiscard()}>${SEND_ICON}</button>
+          </div>
         </div>
       </div>
     `;

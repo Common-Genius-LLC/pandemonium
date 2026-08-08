@@ -7,19 +7,21 @@ import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { StoreController } from '../../state/store-controller.js';
 import { dispatch } from '../../utils/events.js';
 import { fountainDecorations } from './cm-fountain-plugin.js';
-import { sectionAffordances, hoverSectionField } from './cm-sections.js';
+import { sectionAffordances, hoverSectionField, pinnedSectionField, setPinnedSection } from './cm-sections.js';
 import { fountainTheme } from './cm-theme.js';
 import { captureFromSelection } from './selection-capture.js';
 import { openSourceDialog } from '../research/source-dialog.js';
 import { parseFountain } from '../../fountain/parse.js';
 import { resolvePart } from '../../fountain/resolve.js';
 import { plainPosToRaw, rawOffsetToPlainPos, blockRawRange } from '../../fountain/doc-map.js';
-import { elementOfBlock } from '../../fountain/element-ops.js';
+import { elementOfBlock, ELEMENT_LABELS, ELEMENT_MENU } from '../../fountain/element-ops.js';
 import { activeElementField, autoUppercase, applyElementAtCaret, elementKeymap } from './cm-autoformat.js';
 import { caseJournal, caseExempt } from './cm-case-journal.js';
 import { emphasisKeymap } from './cm-emphasis.js';
+import { summaryDefault } from './cm-summary-default.js';
+import { linkToItems } from '../linking/link-actions.js';
 import { elementMenu } from './element-menu.js';
-import { readFileAsDataURL } from '../../utils/files.js';
+import { readFileAsDataURL, isBoardMediaFile, BOARD_MEDIA_ACCEPT } from '../../utils/files.js';
 import { imageFromClipboard } from '../../utils/clipboard.js';
 import { openPair } from '../../state/actions.js';
 import { clamp } from '../../utils/format.js';
@@ -36,6 +38,10 @@ import { clamp } from '../../utils/format.js';
 // a structural property rather than something to defend by convention --
 // there is no HTML round-trip step that could corrupt anything.
 export class PandemoniumScriptEditor extends LitElement {
+  // leafId identifies which pane this editor is, so it can show that pane's own
+  // draft (per-pane draft selection, see store.scriptForLeaf).
+  static properties = { leafId: {} };
+
   static styles = css`
     :host{display:block;height:100%}
     .host{height:100%}
@@ -50,7 +56,6 @@ export class PandemoniumScriptEditor extends LitElement {
   #lastPulsed = null;
   #pendingBoardParts = null;
   #reconciling = false;
-  #lastEmittedElement = null;
 
   constructor() {
     super();
@@ -60,7 +65,7 @@ export class PandemoniumScriptEditor extends LitElement {
   firstUpdated() {
     const host = this.renderRoot.querySelector('.host');
     this.#plugin = fountainDecorations((parsed) => this.#getHighlights(parsed));
-    const script = this._store.store.activeScript();
+    const script = this._store.store.scriptForLeaf(this.leafId);
     this.#loadedScriptId = script.id;
     const state = EditorState.create({
       doc: script.text,
@@ -85,12 +90,19 @@ export class PandemoniumScriptEditor extends LitElement {
         // is what stops autoUppercase from immediately undoing that.
         caseJournal,
         caseExempt,
+        // Before autoUppercase: a blank script's first keystroke becomes a
+        // Summary (Fountain synopsis) instead of Action (see cm-summary-default).
+        summaryDefault,
         autoUppercase,
         hoverSectionField,
+        pinnedSectionField,
         sectionAffordances({
           getParsed: (v) => v.plugin(this.#plugin)?.parsed || parseFountain(v.state.doc.toString()),
-          canLink: () => { const s = this._store.store.activeScript(); return !!(s && s.final); },
-          onAct: (act, sec) => this.#onSectionAct(act, sec),
+          canLink: () => { const s = this._store.store.scriptForLeaf(this.leafId); return !!(s && s.final); },
+          onAct: (act, sec, rect) => this.#onSectionAct(act, sec, rect),
+          onLink: (sec, rect) => this.#openLinkMenu(sec, rect),
+          onElement: (sec, rect) => this.#openElementMenu(sec, rect),
+          elementLabelForSection: (sec) => this.#sectionElementLabel(sec),
         }),
         EditorView.domEventHandlers({
           mouseup: () => this.#deferSelectionGesture(),
@@ -116,15 +128,9 @@ export class PandemoniumScriptEditor extends LitElement {
             this._store.store.updateScriptTextLive(this.#loadedScriptId, text);
           }
         }),
-        EditorView.updateListener.of((update) => {
-          // Report the element under the caret so the panel's element picker
-          // (notes.md point 2) can show/track it as you move around.
-          if (update.selectionSet || update.docChanged) this.#emitCaretElement();
-        }),
       ],
     });
     this.#view = new EditorView({ state, parent: host, root: this.renderRoot });
-    this.#emitCaretElement();
   }
 
   disconnectedCallback() {
@@ -141,7 +147,7 @@ export class PandemoniumScriptEditor extends LitElement {
   // against the final script too.
   #getHighlights() {
     const store = this._store.store;
-    const script = store.activeScript();
+    const script = store.scriptForLeaf(this.leafId);
     if (!script || !script.final) return {};
     return store.getFinalState().R.biMap;
   }
@@ -162,7 +168,7 @@ export class PandemoniumScriptEditor extends LitElement {
     if (sel.empty) return;
     const store = this._store.store;
     const ui = store.ui;
-    const script = store.activeScript();
+    const script = store.scriptForLeaf(this.leafId);
     const parsed = this.#view.plugin(this.#plugin).parsed;
     const parts = captureFromSelection(parsed, this.#view.state.doc, sel.from, sel.to);
     if (!parts) return;
@@ -207,7 +213,7 @@ export class PandemoniumScriptEditor extends LitElement {
   // to a passage whenever you like via that card's "Reattach" button).
   async #pasteImage(file) {
     const store = this._store.store;
-    const script = store.activeScript();
+    const script = store.scriptForLeaf(this.leafId);
     if (!script.final) {
       dispatch(this, 'pandemonium-toast', { message: 'Make this the final draft to add boards & research.' });
       return;
@@ -227,9 +233,12 @@ export class PandemoniumScriptEditor extends LitElement {
   // section: the same two outcomes the free-text selection toolbar offers,
   // just anchored to the section's blocks instead of a hand-dragged span, so
   // the common "board/source this beat" case needs no precise selection.
-  #onSectionAct(act, sec) {
+  #onSectionAct(act, sec, rect) {
     const store = this._store.store;
     if (act === 'board') {
+      // Choosing Storyboard opens the boards panel if it is closed, so the
+      // board the user is about to add has somewhere visible to land.
+      store.revealContent('boards');
       this.#pendingBoardParts = sec.parts;
       const input = this.renderRoot.getElementById('secFileImg');
       input.value = '';
@@ -243,8 +252,67 @@ export class PandemoniumScriptEditor extends LitElement {
     }
     if (act === 'comment') {
       const c = store.addComment({ parts: sec.parts });
-      dispatch(this, 'pandemonium-show-comment', { commentId: c.id, anchorRect: this.#sectionRect(sec) });
+      dispatch(this, 'pandemonium-show-comment', { commentId: c.id, anchorRect: rect || this.#sectionRect(sec) });
     }
+  }
+
+  // The "link to" pill's menu (Figma node 86-632): Storyboard, Research, Sound.
+  // Storyboard and Research route into the same section actions the rail used to
+  // trigger directly; Sound is a planned link kind with no backing model yet, so
+  // it says so rather than pretending. Colored to the app's link palette
+  // (storyboard green, research pink) so the menu reads as the same three things
+  // the script highlights already use.
+  #openLinkMenu(sec, rect) {
+    this.#pinHoverForMenu();
+    const items = linkToItems({
+      onStoryboard: () => this.#onSectionAct('board', sec),
+      onResearch: () => this.#onSectionAct('source', sec),
+      onSound: () => dispatch(this, 'pandemonium-toast', { message: 'Sound linking is coming soon.' }),
+    });
+    dispatch(this, 'pandemonium-open-menu', { x: rect.left, y: rect.bottom + 4, items, variant: 'pills' });
+  }
+
+  // Keep the hovered section lit and its rail visible while a rail menu is open,
+  // even though reaching the menu takes the pointer off the row (item 3). The
+  // pin is released on the next click anywhere -- choosing an item or dismissing
+  // the menu both land as a click, and pd-menu closes itself on that same event.
+  #pinHoverForMenu() {
+    const idx = this.#view.state.field(hoverSectionField);
+    if (idx < 0) return;
+    this.#view.dispatch({ effects: setPinnedSection.of(idx) });
+    const clear = () => { if (this.#view) this.#view.dispatch({ effects: setPinnedSection.of(-1) }); };
+    document.addEventListener('mousedown', clear, { once: true, capture: true });
+  }
+
+  // The element type of a hovered section's first line, for the rail's element
+  // pill label. Read from the parser (or a pin at that line) via the same
+  // caretElementFor path the picker uses, so the rail never disagrees with it.
+  #sectionElementLabel(sec) {
+    const parsed = this.#view?.plugin(this.#plugin)?.parsed;
+    const b = parsed && parsed.blocks.find((x) => x.line === sec.firstLine);
+    return ELEMENT_LABELS[elementOfBlock(b)] || 'Element';
+  }
+
+  // Item 6: change the current line's screenplay element straight from the row
+  // hover, the same set the panel header dropdown offers. Applies to the
+  // section's first line; the caret is moved there so applyElementAtCaret (the
+  // one entry point for "make this line an <x>") stays the single code path.
+  #openElementMenu(sec, rect) {
+    const doc = this.#view.state.doc;
+    if (sec.firstLine + 1 > doc.lines) return;
+    this.#pinHoverForMenu();
+    const from = doc.line(sec.firstLine + 1).from;
+    const current = this.#sectionElementLabel(sec);
+    const items = ELEMENT_MENU.map((k) => ({
+      label: ELEMENT_LABELS[k],
+      selected: ELEMENT_LABELS[k] === current,
+      fn: () => {
+        this.#view.dispatch({ selection: { anchor: from } });
+        applyElementAtCaret(this.#view, k);
+        this.#view.focus();
+      },
+    }));
+    dispatch(this, 'pandemonium-open-menu', { x: rect.left, y: rect.bottom + 4, items });
   }
 
   #sectionRect(sec) {
@@ -254,43 +322,11 @@ export class PandemoniumScriptEditor extends LitElement {
     return c ? { left: c.left, right: c.right, top: c.top, bottom: c.bottom, width: 0, height: 0 } : null;
   }
 
-  // Element picker (notes.md point 2). The current element is read straight
-  // from the parser's block type at the caret; setting one rewrites the caret
-  // line with the right Fountain forcing/markup (see element-ops.js). Public:
-  // the script panel's picker calls setLineElement().
-  #caretElementKey() {
-    if (!this.#view) return 'action';
-    const state = this.#view.state;
-    const doc = state.doc;
-    const line0 = doc.lineAt(state.selection.main.head).number - 1;
-    // A pin (Tab, the picker, or the element Enter just moved you into) is
-    // what the next keystroke will produce on this line, so the picker shows
-    // that; without one, the parser's own verdict.
-    const active = state.field(activeElementField, false);
-    if (active && doc.lineAt(Math.min(active.pos, doc.length)).number - 1 === line0) return active.el;
-    const parsed = this.#view.plugin(this.#plugin)?.parsed;
-    const b = parsed && parsed.blocks.find((x) => x.line === line0);
-    return elementOfBlock(b);
-  }
-
-  #emitCaretElement() {
-    const key = this.#caretElementKey();
-    if (key === this.#lastEmittedElement) return;
-    this.#lastEmittedElement = key;
-    dispatch(this, 'pandemonium-caret-element', { key });
-  }
-
-  setLineElement(key) {
-    if (!this.#view) return;
-    applyElementAtCaret(this.#view, key);
-    this.#view.focus();
-  }
-
   // Several images at once, because several boards can attach to one section
   // now. They keep the order they were picked in, which is what their `seq`
   // records.
   async #onSectionImage(e) {
-    const files = [...(e.target.files || [])].filter((f) => f.type.startsWith('image/'));
+    const files = [...(e.target.files || [])].filter(isBoardMediaFile);
     e.target.value = '';
     const parts = this.#pendingBoardParts || [];
     this.#pendingBoardParts = null;
@@ -434,7 +470,7 @@ export class PandemoniumScriptEditor extends LitElement {
   updated() {
     if (!this.#view) return;
     const store = this._store.store;
-    const script = store.activeScript();
+    const script = store.scriptForLeaf(this.leafId);
     if (!script) return;
 
     if (script.id !== this.#loadedScriptId) {
@@ -507,7 +543,7 @@ export class PandemoniumScriptEditor extends LitElement {
   render() {
     return html`
       <div class="host"></div>
-      <input type="file" id="secFileImg" accept="image/*" multiple style="display:none" @change=${(e) => this.#onSectionImage(e)}>
+      <input type="file" id="secFileImg" accept=${BOARD_MEDIA_ACCEPT} multiple style="display:none" @change=${(e) => this.#onSectionImage(e)}>
     `;
   }
 }

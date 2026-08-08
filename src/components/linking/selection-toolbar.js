@@ -3,8 +3,9 @@
 import { LitElement, html, css } from 'lit';
 import { StoreController } from '../../state/store-controller.js';
 import { dispatch } from '../../utils/events.js';
-import { readFileAsDataURL } from '../../utils/files.js';
+import { readFileAsDataURL, isBoardMediaFile, BOARD_MEDIA_ACCEPT } from '../../utils/files.js';
 import { openSourceDialog } from '../research/source-dialog.js';
+import { linkToItems } from './link-actions.js';
 import { clamp } from '../../utils/format.js';
 
 // One instance at app-root. Opened via `pandemonium-show-selection-toolbar`
@@ -32,6 +33,19 @@ export class PandemoniumSelectionToolbar extends LitElement {
     button.b::before{background:var(--board)}
     button.r::before{background:var(--res)}
     button.n::before{background:var(--act)}
+
+    /* The script-selection affordance mirrors the in-editor row rail
+       (cm-sections / cm-theme): the same "link to" and "Comment" pills, so a
+       hand-dragged selection and a whole row offer the identical thing. */
+    .pills{position:fixed;display:flex;gap:6px;pointer-events:auto;font-family:var(--sans)}
+    .pills button{
+      font-size:12px;font-weight:500;line-height:1;padding:6px 12px;min-height:24px;border:0;border-radius:20px;
+      cursor:pointer;white-space:nowrap;text-align:center;
+    }
+    .pills button.linkto{background:var(--overlay);color:var(--overlay-ink)}
+    .pills button.linkto:hover{background:var(--ui)}
+    .pills button.comment{background:var(--act);color:var(--act-ink)}
+    .pills button.comment:hover{background:var(--act-hi)}
   `;
 
   constructor() {
@@ -74,7 +88,7 @@ export class PandemoniumSelectionToolbar extends LitElement {
   }
 
   #position(rect) {
-    const bar = this.renderRoot.querySelector('.bar');
+    const bar = this.renderRoot.querySelector('.bar, .pills');
     if (!bar || !rect) return;
     const bw = bar.offsetWidth, bh = bar.offsetHeight;
     this._x = clamp(rect.left + rect.width / 2 - bw / 2, 8, innerWidth - bw - 8);
@@ -83,72 +97,85 @@ export class PandemoniumSelectionToolbar extends LitElement {
 
   #act(act) {
     const store = this._store.store;
-    const parts = this._parts;
     this.close();
     if (act === 'make-final') {
       store.makeFinal(this._scriptId);
       dispatch(this, 'pandemonium-toast', { message: 'This is now the final draft. Select the passage again to add a board or source.' });
       return;
     }
-    if (act === 'board') {
-      const input = this.renderRoot.getElementById('fileImg');
-      input.value = '';
-      // Multiple, because several boards can attach to one passage now: a
-      // beat that takes four frames should take one trip through the picker,
-      // not four. They keep the order they were picked in.
-      input.onchange = async () => {
-        const files = [...(input.files || [])].filter((f) => f.type.startsWith('image/'));
-        if (!files.length) return;
-        for (const file of files) {
-          store.addBoard({ parts, img: await readFileAsDataURL(file), caption: '' });
-        }
-        dispatch(this, 'pandemonium-toast', {
-          message: files.length === 1 ? 'Board added.' : files.length + ' boards added to this passage.',
-        });
-      };
-      input.click();
-      return;
-    }
-    if (act === 'board-blank') {
-      store.addBlankBoard({ parts });
-      dispatch(this, 'pandemonium-toast', {
-        message: 'Blank board added. Drop an image on it here or during the slideshow. It will not count as boarded until it has one.',
-      });
-      return;
-    }
-    if (act === 'comment') {
-      const c = store.addComment({ parts });
-      dispatch(this, 'pandemonium-show-comment', { commentId: c.id, anchorRect: this._anchorRect });
-      return;
-    }
-    if (act === 'source') {
-      if (!store.project.research.length) { openSourceDialog(this, store, parts, 'link'); return; }
-      store.setUI({ linking: { from: 'script', parts }, openDoc: null });
-      return;
-    }
     if (act === 'tolink') {
-      store.setUI({ linking: { from: 'research', docId: store.ui.openDoc, rParts: parts } });
+      store.setUI({ linking: { from: 'research', docId: store.ui.openDoc, rParts: this._parts } });
     }
+  }
+
+  // The script-selection "link to" menu, identical to the in-editor row rail's
+  // (see link-actions.js). The parts are captured now because picking a target
+  // is a click outside this toolbar, which closes it first.
+  #openLinkMenu(e) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const parts = this._parts;
+    const items = linkToItems({
+      onStoryboard: () => this.#boardFromParts(parts),
+      onResearch: () => this.#sourceFromParts(parts),
+      onSound: () => dispatch(this, 'pandemonium-toast', { message: 'Sound linking is coming soon.' }),
+    });
+    dispatch(this, 'pandemonium-open-menu', { x: rect.left, y: rect.bottom + 4, items, variant: 'pills' });
+  }
+
+  // A transient file input rather than one in the template: the menu that
+  // triggers this closes the toolbar first, so an input rendered by this
+  // component would already be gone by the time the picker returns. Several at
+  // once, because several boards can attach to one passage; they keep pick order.
+  #boardFromParts(parts) {
+    const store = this._store.store;
+    store.revealContent('boards'); // open the boards panel if it is closed
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = BOARD_MEDIA_ACCEPT;
+    input.multiple = true;
+    input.onchange = async () => {
+      const files = [...(input.files || [])].filter(isBoardMediaFile);
+      if (!files.length) return;
+      for (const file of files) store.addBoard({ parts, img: await readFileAsDataURL(file), caption: '' });
+      dispatch(this, 'pandemonium-toast', {
+        message: files.length === 1 ? 'Board added.' : files.length + ' boards added to this passage.',
+      });
+    };
+    input.click();
+  }
+
+  #sourceFromParts(parts) {
+    const store = this._store.store;
+    if (!store.project.research.length) { openSourceDialog(this, store, parts, 'link'); return; }
+    store.setUI({ linking: { from: 'script', parts }, openDoc: null });
+  }
+
+  #commentFromParts(parts) {
+    const store = this._store.store;
+    const anchorRect = this._anchorRect;
+    this.close();
+    const c = store.addComment({ parts });
+    dispatch(this, 'pandemonium-show-comment', { commentId: c.id, anchorRect });
   }
 
   render() {
     if (!this._open) return html``;
-    let buttons;
     if (this._kind === 'non-final') {
-      buttons = html`<button @click=${() => this.#act('make-final')}>Make this the final draft to add boards &amp; research</button>`;
-    } else if (this._kind === 'research') {
-      buttons = html`<button class="r" @click=${() => this.#act('tolink')}>Link to script</button>`;
-    } else {
-      buttons = html`
-        <button class="b" @click=${() => this.#act('board')}>Board</button>
-        <button class="b" title="Claim this passage for a frame you have not drawn yet" @click=${() => this.#act('board-blank')}>Board (blank)</button>
-        <button class="r" @click=${() => this.#act('source')}>Source</button>
-        <button class="n" @click=${() => this.#act('comment')}>Comment</button>
-      `;
+      return html`<div class="bar" style="left:${this._x || 0}px;top:${this._y || 0}px">
+        <button @click=${() => this.#act('make-final')}>Make this the final draft to add boards &amp; research</button>
+      </div>`;
     }
+    if (this._kind === 'research') {
+      return html`<div class="bar" style="left:${this._x || 0}px;top:${this._y || 0}px">
+        <button class="r" @click=${() => this.#act('tolink')}>Link to script</button>
+      </div>`;
+    }
+    // Script selection: the same two pills the row hover offers.
     return html`
-      <div class="bar" style="left:${this._x || 0}px;top:${this._y || 0}px">${buttons}</div>
-      <input type="file" id="fileImg" accept="image/*" multiple style="display:none">
+      <div class="pills" style="left:${this._x || 0}px;top:${this._y || 0}px">
+        <button class="linkto" @click=${(e) => this.#openLinkMenu(e)}>link to</button>
+        <button class="comment" @click=${() => this.#commentFromParts(this._parts)}>Comment</button>
+      </div>
     `;
   }
 }

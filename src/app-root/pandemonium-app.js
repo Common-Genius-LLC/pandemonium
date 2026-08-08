@@ -15,6 +15,7 @@ import { imageFromClipboard } from '../utils/clipboard.js';
 import { readFileAsDataURL } from '../utils/files.js';
 import { BETA } from '../config/beta.js';
 import { bugReporter } from '../utils/bug-report.js';
+import { withGlobalItems } from '../utils/context-menu.js';
 
 import './start-screen.js';
 import './topbar.js';
@@ -127,6 +128,15 @@ export class PandemoniumApp extends LitElement {
     // Account state (signed in/out) changes what the topbar and start screen
     // offer; re-render on it as well as on store changes.
     session.addEventListener('change', () => this.requestUpdate());
+    // Disables the browser's native menu everywhere and offers the global
+    // items (see utils/context-menu.js). Panel leaves handle their own
+    // right-click with more specific items first and stopPropagation() before
+    // it reaches here (panel-layout.js), so this only ever fires for chrome
+    // outside any panel: the topbar, the start screen, dialogs.
+    this.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      dispatch(this, 'pandemonium-open-menu', { x: e.clientX, y: e.clientY, items: withGlobalItems(this) });
+    });
     document.addEventListener('keydown', this.#onKeydown);
     document.addEventListener('paste', this.#onPaste);
     this.#installBeta();
@@ -134,14 +144,16 @@ export class PandemoniumApp extends LitElement {
   }
 
   // BETA is a build-time constant (see config/beta.js), so with beta switched
-  // off Rollup drops this body and the two dynamic imports never become part
-  // of the graph: no badge, no listeners, no beta code in the bundle.
+  // off Rollup drops this body and the dynamic import never becomes part of
+  // the graph: no error capture, no dialog, no beta code in the bundle.
+  // Reporting is reached from the context menu (utils/context-menu.js) rather
+  // than a dedicated badge now, but the dialog and capture themselves are
+  // unchanged.
   #installBeta() {
     if (!BETA) return;
-    // Before the imports: an error thrown while the beta UI is still loading
+    // Before the import: an error thrown while the beta UI is still loading
     // is exactly the kind worth catching.
     bugReporter.install();
-    import('../components/beta/beta-badge.js');
     import('../components/beta/bug-report-dialog.js');
     this.addEventListener('pandemonium-open-bug-report', () => this.#openBugReport());
   }
@@ -332,10 +344,7 @@ export class PandemoniumApp extends LitElement {
       <pd-account-dialog id="accountDialog"></pd-account-dialog>
       <pd-merge-dialog></pd-merge-dialog>
       <pd-share-dialog id="shareDialog"></pd-share-dialog>
-      ${BETA ? html`
-        <pd-beta-badge></pd-beta-badge>
-        <pd-bug-report-dialog id="bugReport"></pd-bug-report-dialog>
-      ` : ''}
+      ${BETA ? html`<pd-bug-report-dialog id="bugReport"></pd-bug-report-dialog>` : ''}
     `;
   }
 }

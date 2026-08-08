@@ -4,12 +4,17 @@ import { LitElement, html, css } from 'lit';
 import { clamp } from '../../utils/format.js';
 
 // One instance at app-root, opened via a bubbling `pandemonium-open-menu`
-// event carrying {anchor: HTMLElement, items: [{label, selected, danger, fn}]}.
-// Positioned off the anchor's own getBoundingClientRect() -- a public DOM
-// method, safe to call across shadow-root boundaries -- so callers never
-// need to pre-compute coordinates for a simple popover like this one.
+// event carrying either {anchor: HTMLElement, items} for a dropdown positioned
+// off the anchor's own getBoundingClientRect() -- a public DOM method, safe to
+// call across shadow-root boundaries -- or {x, y, items} for a menu positioned
+// at a raw viewport point (the right-click context menus in panel-layout.js
+// and pandemonium-app.js use this form, since there is no anchor element for a
+// cursor position). `items` entries are either {label, selected, danger, fn}
+// or {divider: true} for a separator line. Pass variant:'pills' for the
+// "link to" menu (Figma 101-2170): a bare stack of solid colored pills where
+// each item's `accent` is its fill color.
 export class PdMenu extends LitElement {
-  static properties = { _open: { state: true }, _items: { state: true }, _x: { state: true }, _y: { state: true } };
+  static properties = { _open: { state: true }, _items: { state: true }, _x: { state: true }, _y: { state: true }, _variant: { state: true } };
 
   static styles = css`
     :host{position:fixed;inset:0;z-index:70;pointer-events:none}
@@ -27,6 +32,17 @@ export class PdMenu extends LitElement {
        check, so the labels stay a clean column. */
     button.on,button.on:hover{background:var(--res);color:#fff}
     button.danger{color:#ffb3c1}
+    .sep{height:1px;margin:3px 6px;background:rgba(255,255,255,.16);flex:none}
+    /* Pills variant: the "link to" menu (Figma node 101-2170) is a bare,
+       right-aligned stack of solid colored pills (storyboard / research /
+       sound) rather than a dark dropdown. The container drops its own chrome
+       and each item is a full-fill pill in its accent color. */
+    .pop.pills{background:transparent;padding:0;gap:5px;min-width:120px;align-items:stretch}
+    .pop.pills button{
+      color:#fff;font-size:13px;font-weight:500;line-height:1;text-align:center;
+      padding:8px 14px;border-radius:20px;
+    }
+    .pop.pills button:hover{filter:brightness(1.07)}
   `;
 
   constructor() {
@@ -34,6 +50,7 @@ export class PdMenu extends LitElement {
     this._open = false;
     this._items = [];
     this._anchor = null;
+    this._point = null;
   }
 
   connectedCallback() {
@@ -52,10 +69,12 @@ export class PdMenu extends LitElement {
     super.disconnectedCallback();
   }
 
-  open({ anchor, items }) {
-    if (this._open && this._anchor === anchor) { this.close(); return; }
-    this._anchor = anchor;
+  open({ anchor, x, y, items, variant }) {
+    if (anchor && this._open && this._anchor === anchor) { this.close(); return; }
+    this._anchor = anchor || null;
+    this._point = anchor ? null : { x, y };
     this._items = items;
+    this._variant = variant || null;
     this._open = true;
     this.updateComplete.then(() => this.#position());
   }
@@ -63,16 +82,22 @@ export class PdMenu extends LitElement {
   close() {
     this._open = false;
     this._anchor = null;
+    this._point = null;
+    this._variant = null;
   }
 
   #position() {
-    if (!this._anchor) return;
     const pop = this.renderRoot.querySelector('.pop');
     if (!pop) return;
-    const r = this._anchor.getBoundingClientRect();
     const w = pop.offsetWidth, h = pop.offsetHeight;
-    this._x = clamp(r.left, 8, innerWidth - w - 8);
-    this._y = clamp(r.bottom + 6, 8, innerHeight - h - 8);
+    if (this._anchor) {
+      const r = this._anchor.getBoundingClientRect();
+      this._x = clamp(r.left, 8, innerWidth - w - 8);
+      this._y = clamp(r.bottom + 6, 8, innerHeight - h - 8);
+    } else if (this._point) {
+      this._x = clamp(this._point.x, 8, innerWidth - w - 8);
+      this._y = clamp(this._point.y, 8, innerHeight - h - 8);
+    }
   }
 
   #pick(item) {
@@ -82,9 +107,17 @@ export class PdMenu extends LitElement {
 
   render() {
     if (!this._open) return html``;
+    if (this._variant === 'pills') {
+      return html`
+        <div class="pop pills" style="left:${this._x || 0}px;top:${this._y || 0}px">
+          ${this._items.map((it) => html`<button style="background:${it.accent}"
+            @click=${() => this.#pick(it)}>${it.label}</button>`)}
+        </div>
+      `;
+    }
     return html`
       <div class="pop" style="left:${this._x || 0}px;top:${this._y || 0}px">
-        ${this._items.map((it) => html`<button
+        ${this._items.map((it) => it.divider ? html`<div class="sep"></div>` : html`<button
           class="${it.danger ? 'danger' : ''} ${it.selected ? 'on' : ''}"
           @click=${() => this.#pick(it)}>${it.label}</button>`)}
       </div>

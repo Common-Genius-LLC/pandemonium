@@ -24,7 +24,7 @@ export const ELEMENT_LABELS = {
   section: 'Section / Act',
   section2: 'Sequence',
   section3: 'Outline 3',
-  synopsis: 'Synopsis',
+  synopsis: 'Summary',
   note: 'Note',
 };
 

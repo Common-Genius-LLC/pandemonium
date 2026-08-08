@@ -28,17 +28,20 @@ export const dropdownStyles = css`
     font-family:var(--sans);font-size:12px;font-weight:500;line-height:1;
     letter-spacing:-0.12px;color:var(--ink);
     background:rgba(255,255,255,0);
-    border:0;border-radius:var(--r);cursor:pointer;white-space:nowrap;
+    border:0;border-radius:20px;cursor:pointer;white-space:nowrap;
   }
   /* :focus stands in for "menu is open": clicking moves focus to the control,
      and the menu closes on the next click elsewhere, which also blurs it. */
   .pd-dropdown:hover,.pd-dropdown:focus{background:var(--menu-bg)}
+  /* The pane-title header (panel-picker) carries the fill and caret at all
+     times, matching Figma node 101-1095's panel-dropdown pill. The bare
+     no-fill form stays for the in-page element picker. */
+  .pd-dropdown.filled{background:var(--menu-bg)}
   /* The fill is the open-state feedback, so a click does not also need a
      focus ring. Keyboard focus still gets one. */
   .pd-dropdown:focus{outline:none}
   .pd-dropdown:focus-visible{outline:2px solid var(--link);outline-offset:1px}
-  .pd-caret{width:7px;height:10px;flex:none;display:block;visibility:hidden}
-  .pd-dropdown:hover .pd-caret,.pd-dropdown:focus .pd-caret{visibility:visible}
+  .pd-caret{width:7px;height:10px;flex:none;display:block;visibility:visible}
 `;
 
 export const dropdownCaret = svg`<svg class="pd-caret" viewBox="0 0 7 10" fill="none" aria-hidden="true">

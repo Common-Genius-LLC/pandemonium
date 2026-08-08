@@ -4,7 +4,7 @@ import { LitElement, html, css, nothing } from 'lit';
 import { StoreController } from '../../state/store-controller.js';
 import { CONTENT_TYPES } from '../../fountain/blocks.js';
 import { boardOrder } from '../../state/selectors.js';
-import { readFileAsDataURL } from '../../utils/files.js';
+import { readFileAsDataURL, isVideoSrc } from '../../utils/files.js';
 
 // Fullscreen playback: image on top, the linked (or nearest) script excerpt
 // in the bottom fifth. One instance at app-root, opened via
@@ -20,7 +20,7 @@ export class PandemoniumSlideshow extends LitElement {
     :host{position:fixed;inset:0;z-index:85;background:#000;display:none;flex-direction:column;font-family:var(--sans);--sink:#f2f2f2;--smut:#9a9a9a}
     :host([data-open]){display:flex}
     .stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;position:relative}
-    .stage img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+    .stage img,.stage video{max-width:100%;max-height:100%;object-fit:contain;display:block}
     /* An image can be dropped straight onto the slide on screen, so the slide
        has to say when it will accept one. Inset rather than a border so the
        frame does not shift under the presenter mid-drag. */
@@ -235,7 +235,9 @@ export class PandemoniumSlideshow extends LitElement {
         <button class="nav next" title="Next slide (→)" aria-label="Next slide"
           ?disabled=${this._ix === last} @click=${() => this.#step(1)}>›</button>
         ${s.img
-          ? html`<img alt="" src=${s.img}>`
+          ? (isVideoSrc(s.img)
+            ? html`<video src=${s.img} autoplay muted loop playsinline></video>`
+            : html`<img alt="" src=${s.img}>`)
           : html`<div class="noimg">${s.boardId ? 'Drop an image here' : 'No board yet'}</div>`}
       </div>
       <div class="bottom">

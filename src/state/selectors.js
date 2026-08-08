@@ -107,11 +107,34 @@ export function labelScenes(scenes) {
   return scenes;
 }
 
+// How much of the outline is actually written, as opposed to how much of it is
+// boarded or sourced. A scene heading with nothing under it is a plan, not a
+// script (see scenesOf in fountain/blocks.js), and this is the split the
+// timeline draws as filled versus empty blocks.
+//
+// Measured by SCENE COUNT, not by seconds. An unwritten scene has no duration
+// to weight it by, so a seconds-weighted percentage would quietly compute
+// "written / written" and report every script as 100% written. Hard rule 3.
+export function scriptProgress(scenes) {
+  const total = scenes.length;
+  const scripted = scenes.reduce((a, s) => a + (s.scripted ? 1 : 0), 0);
+  return {
+    scenes: total,
+    scripted,
+    planned: total - scripted,
+    pctScripted: total ? Math.round((100 * scripted) / total) : 0,
+  };
+}
+
 // {pctBoarded, pctSourced, estimate, hasContent, totalSeconds} for the
 // timeline panel. Per hard rule 3, callers must render "unknown" rather than a
 // number when hasContent is false: there is no honest estimate for an empty
 // script. pctBoarded excludes blank boards, because coverage() never puts them
 // in bset (see the note there).
+//
+// `estimate` is the running time of what is WRITTEN. Unscripted scenes carry
+// 0 seconds (blocks.js), so they cannot inflate it; scriptProgress() above is
+// what reports how much is still outstanding.
 export function timelineStats(scenes, parsedBlocksLength) {
   const total = scenes.reduce((a, s) => a + s.secs, 0);
   const hasContent = parsedBlocksLength > 0;

@@ -30,63 +30,100 @@ export const hoverSectionField = StateField.define({
   },
 });
 
-// Group parsed blocks into sections. Each section carries the doc line range
-// it spans (0-based, matching block.line) and the anchor `parts` that linking
-// a whole section produces -- one {q, b, s:0} per content block, so it
-// resolves exactly like a hand-made multi-block selection.
+export const setPinnedSection = StateEffect.define();
+
+// While a rail menu (link to / element / comment) is open, the section it was
+// opened from stays lit and its rail stays visible even as the pointer leaves
+// the row to reach the menu (item 3). The editor pins on menu open and clears
+// on the next click. -1 = nothing pinned; when set it wins over the live hover.
+export const pinnedSectionField = StateField.define({
+  create: () => -1,
+  update(value, tr) {
+    if (tr.docChanged) value = -1;
+    for (const e of tr.effects) if (e.is(setPinnedSection)) value = e.value;
+    return value;
+  },
+});
+
+// The section the band/rail should show: a pin (an open menu) wins over the
+// live pointer hover, so the row does not go dark while the menu is being used.
+function effectiveSection(state) {
+  const pinned = state.field(pinnedSectionField);
+  return pinned >= 0 ? pinned : state.field(hoverSectionField);
+}
+
+// One row per parsed block, with one grouping: a character cue and each
+// parenthetical are their own rows (they are separate elements), but the
+// consecutive dialogue lines of a single speech collapse into ONE taller row,
+// the way a wrapped or soft-broken paragraph is one row. Every parser block is
+// exactly one document line (parse.js pushes a block per line), so a multi-line
+// speech is several dialogue blocks in a run; grouping them keeps the speech a
+// single hoverable, linkable paragraph element (Figma node 101-471).
 export function computeSections(parsed) {
   const blocks = parsed.blocks;
+  const has = (b) => b && b.type !== 'page' && b.line != null && b.plain && b.plain.trim();
   const sections = [];
   let i = 0;
   while (i < blocks.length) {
     const b = blocks[i];
-    if (b.type === 'page' || b.line == null) { i++; continue; }
-    const group = [b];
-    if (b.type === 'character') {
+    if (!has(b)) { i++; continue; }
+    if (b.type === 'dialogue') {
+      const group = [b];
       i++;
-      while (i < blocks.length && (blocks[i].type === 'dialogue' || blocks[i].type === 'paren')) { group.push(blocks[i]); i++; }
-    } else {
-      i++;
+      while (i < blocks.length && blocks[i].type === 'dialogue' && has(blocks[i])) { group.push(blocks[i]); i++; }
+      sections.push({
+        firstLine: group[0].line,
+        lastLine: group[group.length - 1].line,
+        kind: 'dialogue',
+        parts: group.map((g) => ({ q: g.plain, b: g.i, s: 0 })),
+      });
+      continue;
     }
-    const contentBlocks = group.filter((g) => g.plain && g.plain.trim());
-    if (!contentBlocks.length) continue;
-    sections.push({
-      firstLine: group[0].line,
-      lastLine: group[group.length - 1].line,
-      kind: b.type,
-      parts: contentBlocks.map((g) => ({ q: g.plain, b: g.i, s: 0 })),
-    });
+    sections.push({ firstLine: b.line, lastLine: b.line, kind: b.type, parts: [{ q: b.plain, b: b.i, s: 0 }] });
+    i++;
   }
   return sections;
 }
 
 // `getParsed(view)` returns the current parseFountain() result (the editor
 // passes the shared fountain plugin's `.parsed` so we never parse twice).
-// `onAct(actName, section)` runs the chosen action. `canLink()` gates the
-// whole thing off when the shown draft is not the final one (only the final
-// draft owns links) or when a text selection is active (the selection toolbar
-// owns that case).
-export function sectionAffordances({ getParsed, onAct, canLink }) {
+// `onAct(actName, section)` runs a direct action (comment). `onLink(section,
+// rect)` opens the "link to" menu (Storyboard / Research / Sound) anchored to
+// the pill. `canLink()` gates the whole thing off when the shown draft is not
+// the final one (only the final draft owns links) or when a text selection is
+// active (the selection toolbar owns that case).
+//
+// The two-pill rail is the Figma "Paragraph Element (Hover)" affordance
+// (node 85-590): a dark "link to" pill and a yellow "Comment" pill at the row's
+// right edge, replacing the older Board/Source/Comment button row. The linkable
+// unit is still a parsed section (a paragraph, or a cue with its speech), which
+// is the honest anchor unit -- the pills just re-dress how it is reached.
+export function sectionAffordances({ getParsed, onAct, onLink, onElement, elementLabelForSection, canLink }) {
   return ViewPlugin.fromClass(class {
     constructor(view) {
       this.view = view;
       this.sections = computeSections(getParsed(view));
       this.decorations = this.build(view);
+      this.elementLabelForSection = elementLabelForSection;
 
       this.acts = document.createElement('div');
       this.acts.className = 'cm-sec-acts';
       this.acts.style.display = 'none';
       this.acts.innerHTML =
-        '<button class="b" data-act="board" title="Attach a storyboard image to this whole section">Board</button>' +
-        '<button class="r" data-act="source" title="Link a source or research passage to this whole section">Source</button>' +
-        '<button class="n" data-act="comment" title="Add a comment on this whole section">Comment</button>';
+        '<button class="elt" data-act="element" title="Change this line\'s screenplay element"></button>' +
+        '<button class="linkto" data-act="link" title="Link this passage to a storyboard, research source, or sound">link to</button>' +
+        '<button class="comment" data-act="comment" title="Add a comment on this passage">Comment</button>';
+      this.eltBtn = this.acts.querySelector('.elt');
       // Keep the editor's selection/focus intact when a rail button is used.
       this.acts.addEventListener('mousedown', (e) => e.preventDefault());
       this.acts.addEventListener('click', (e) => {
         const btn = e.target.closest('[data-act]');
         if (!btn) return;
         const sec = this.sections[view.state.field(hoverSectionField)];
-        if (sec) onAct(btn.dataset.act, sec);
+        if (!sec) return;
+        if (btn.dataset.act === 'link') onLink(sec, btn.getBoundingClientRect());
+        else if (btn.dataset.act === 'element') onElement(sec, btn.getBoundingClientRect());
+        else onAct(btn.dataset.act, sec, btn.getBoundingClientRect());
       });
       view.scrollDOM.appendChild(this.acts);
 
@@ -130,7 +167,7 @@ export function sectionAffordances({ getParsed, onAct, canLink }) {
     }
 
     build(view) {
-      const idx = view.state.field(hoverSectionField);
+      const idx = effectiveSection(view.state);
       const builder = new RangeSetBuilder();
       // While a passage is selected, the selection toolbar owns the surface;
       // don't also paint a section band under it.
@@ -139,8 +176,7 @@ export function sectionAffordances({ getParsed, onAct, canLink }) {
         const doc = view.state.doc;
         for (let ln = sec.firstLine; ln <= sec.lastLine && ln + 1 <= doc.lines; ln++) {
           const line = doc.line(ln + 1);
-          const pos = sec.firstLine === sec.lastLine ? 'solo' : (ln === sec.firstLine ? 'first' : (ln === sec.lastLine ? 'last' : 'mid'));
-          builder.add(line.from, line.from, Decoration.line({ class: 'cm-sec-hover', attributes: { 'data-secpos': pos } }));
+          builder.add(line.from, line.from, Decoration.line({ class: 'cm-sec-hover' }));
         }
       }
       return builder.finish();
@@ -155,7 +191,7 @@ export function sectionAffordances({ getParsed, onAct, canLink }) {
     requestPosition(view) {
       view.requestMeasure({
         read: (v) => {
-          const idx = v.state.field(hoverSectionField);
+          const idx = effectiveSection(v.state);
           const sec = this.sections[idx];
           if (!sec || !this.canLink() || !v.state.selection.main.empty) return { show: false };
           const doc = v.state.doc;
@@ -166,12 +202,14 @@ export function sectionAffordances({ getParsed, onAct, canLink }) {
           return {
             show: true,
             top: Math.max(0, coords.top - scRect.top + v.scrollDOM.scrollTop),
+            label: this.elementLabelForSection ? this.elementLabelForSection(sec) : '',
           };
         },
         write: (data) => {
           if (!data || !data.show) { this.acts.style.display = 'none'; return; }
           this.acts.style.display = 'flex';
           this.acts.style.top = data.top + 'px';
+          if (this.eltBtn) this.eltBtn.textContent = data.label || 'Element';
         },
       });
     }

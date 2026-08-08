@@ -65,3 +65,17 @@ export function isTextShaped(file) {
   if (TEXT_EXTENSIONS.some((ext) => name.endsWith(ext))) return true;
   return /^text\//.test(file.type || '');
 }
+
+// Storyboards accept still frames and moving ones. A GIF is a still <img> as
+// far as rendering goes (it animates itself); only real video needs a <video>
+// element, which we tell apart by the data URL's own MIME. Boards store their
+// media in the same `img` data-URL field, so this is all the type info needed.
+export const BOARD_MEDIA_ACCEPT = 'image/*,video/*';
+
+export function isVideoSrc(src) {
+  return typeof src === 'string' && src.startsWith('data:video/');
+}
+
+export function isBoardMediaFile(file) {
+  return !!file && (/^image\//.test(file.type || '') || /^video\//.test(file.type || ''));
+}
