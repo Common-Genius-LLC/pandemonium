@@ -114,7 +114,7 @@ export class PandemoniumApp extends LitElement {
     this.addEventListener('pandemonium-show-selection-toolbar', (e) => this.renderRoot.getElementById('selToolbar').open(e.detail));
     this.addEventListener('pandemonium-show-board-popover', (e) => this.renderRoot.getElementById('boardPopover').open(e.detail));
     this.addEventListener('pandemonium-show-comment', (e) => this.renderRoot.getElementById('commentPopover').open(e.detail));
-    this.addEventListener('pandemonium-open-slideshow', () => this.renderRoot.getElementById('slideshow').open());
+    this.addEventListener('pandemonium-open-slideshow', (e) => this.renderRoot.getElementById('slideshow').open((e.detail) || {}));
     this.addEventListener('pandemonium-open-project-settings', () => this.#openProjectSettings());
     this.addEventListener('pandemonium-new-project', () => this.#newProject());
     this.addEventListener('pandemonium-open-account', () => this.renderRoot.getElementById('accountDialog').open());

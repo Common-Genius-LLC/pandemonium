@@ -10,7 +10,7 @@ import { readFileAsDataURL, isVideoSrc } from '../../utils/files.js';
 // in the bottom fifth. One instance at app-root, opened via
 // `pandemonium-open-slideshow`.
 export class PandemoniumSlideshow extends LitElement {
-  static properties = { _open: { state: true }, _slides: { state: true }, _ix: { state: true } };
+  static properties = { _open: { state: true }, _slides: { state: true }, _ix: { state: true }, _recording: { state: true }, _sbMode: { state: true } };
 
   // Playback is always dark, whatever the app around it is doing: this is a
   // room-lights-down surface, so the colours are literals here rather than the
@@ -34,6 +34,14 @@ export class PandemoniumSlideshow extends LitElement {
     .nav.prev{left:16px}
     .nav.next{right:16px}
     .bottom{flex:none;height:30%;min-height:200px;background:#0d0d0d;display:flex;flex-direction:column}
+    .sbswitch{position:absolute;top:14px;left:50%;transform:translateX(-50%);z-index:5;display:flex;gap:2px;
+      background:rgba(255,255,255,.12);border-radius:20px;padding:2px}
+    .sbswitch button{font-family:var(--sans);font-size:11px;font-weight:500;color:rgba(255,255,255,.7);
+      background:none;border:0;border-radius:20px;padding:5px 12px;cursor:pointer}
+    .sbswitch button.on{background:#fff;color:#111}
+    .rec{position:absolute;top:14px;left:16px;z-index:5;display:flex;align-items:center;gap:6px;
+      font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+      color:#fff;background:rgba(207,21,158,.9);padding:5px 10px;border-radius:20px}
     .prog{height:3px;background:rgba(255,255,255,.14)}
     .prog i{display:block;height:100%;background:var(--res)}
     .txt{flex:1;min-height:0;display:flex;gap:24px;align-items:flex-start;padding:16px 26px;overflow:hidden}
@@ -71,6 +79,7 @@ export class PandemoniumSlideshow extends LitElement {
     this._open = false;
     this._slides = [];
     this._ix = 0;
+    this._sbMode = 'final';
   }
 
   connectedCallback() {
@@ -79,6 +88,7 @@ export class PandemoniumSlideshow extends LitElement {
       if (!this._open) return;
       if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); this.#step(1); }
       else if (e.key === 'ArrowLeft') { e.preventDefault(); this.#step(-1); }
+      else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); this.#setMode(this._sbMode === 'reference' ? 'final' : 'reference'); }
       else if (e.key === 'Escape') { this.close(); }
     };
     document.addEventListener('keydown', this._onKey);
@@ -95,6 +105,7 @@ export class PandemoniumSlideshow extends LitElement {
     const scenes = state.fscenes, parsed = state.fparsed;
     const byScene = scenes.map(() => []);
     state.R.boards.slice().sort(boardOrder).forEach((o) => {
+      if (!!o.bd.ref !== (this._sbMode === 'reference')) return; // show the selected storyboard (final or reference)
       if (o.ok && byScene[o.sceneIdx]) byScene[o.sceneIdx].push(o);
     });
     // Slide text is kept as [{type, text}], not a flat string: the strip
@@ -142,7 +153,10 @@ export class PandemoniumSlideshow extends LitElement {
     return slides;
   }
 
-  open() {
+  open(opts = {}) {
+    // Which storyboard plays: opening from Reference shows references, from
+    // Final shows finals; switchable in-show (top switch / up-down arrows).
+    this._sbMode = opts.mode === 'reference' ? 'reference' : 'final';
     const slides = this.#buildSlides();
     if (!slides.length) {
       this.dispatchEvent(new CustomEvent('pandemonium-toast', { detail: { message: 'Nothing to play yet. Write the final draft first.' }, bubbles: true, composed: true }));
@@ -151,16 +165,51 @@ export class PandemoniumSlideshow extends LitElement {
     this._slides = slides;
     this._ix = 0;
     this._open = true;
+    // Record mode: time how long each slide holds the screen as the presenter
+    // advances, and save that to the slide's board as its pacing (see #step /
+    // #recordCurrent). This is what turns the timeline and duration from a
+    // word-count estimate into a measured running time.
+    this._recording = !!opts.record;
+    this._slideStart = performance.now();
     this.setAttribute('data-open', '');
   }
 
   close() {
+    if (this._recording) this.#recordCurrent(); // bank the final slide's dwell
+    this._recording = false;
     this._open = false;
     this.removeAttribute('data-open');
   }
 
+  // Save the time spent on the current slide to its board's pacing.
+  #recordCurrent() {
+    const slide = this._slides[this._ix];
+    const secs = (performance.now() - this._slideStart) / 1000;
+    this._slideStart = performance.now();
+    if (slide && slide.boardId && secs >= 0.1 && secs < 3600) {
+      this._store.store.setBoardDuration(slide.boardId, Math.round(secs * 10) / 10);
+    }
+  }
+
   #step(d) {
+    // Advancing forward while recording commits the current slide's pacing.
+    if (this._recording && d > 0) this.#recordCurrent();
     this._ix = Math.max(0, Math.min(this._slides.length - 1, this._ix + d));
+  }
+
+  // Switch between the final and reference storyboard mid-show.
+  #setMode(mode) {
+    if (this._sbMode === mode) return;
+    this._sbMode = mode;
+    const slides = this.#buildSlides();
+    if (!slides.length) {
+      this.dispatchEvent(new CustomEvent('pandemonium-toast', { detail: { message: `No ${mode} storyboard to show yet.` }, bubbles: true, composed: true }));
+      this._sbMode = mode === 'reference' ? 'final' : 'reference';
+      return;
+    }
+    this._slides = slides;
+    this._ix = Math.min(this._ix, slides.length - 1);
+    this._slideStart = performance.now();
   }
 
   // The slide list is a snapshot taken at open(). Dropping an image changes
@@ -230,6 +279,11 @@ export class PandemoniumSlideshow extends LitElement {
         @dragleave=${() => this.#onDragLeave()}
         @drop=${(e) => this.#onDrop(e)}>
         <button class="x" title="Close slideshow (Esc)" aria-label="Close slideshow" @click=${() => this.close()}>×</button>
+        ${this._recording ? html`<div class="rec" title="Recording pacing: click to advance at your intended pace. Each slide's on-screen time is saved.">● REC pacing</div>` : ''}
+        <div class="sbswitch" title="Switch storyboard (Up/Down)">
+          <button class=${this._sbMode !== 'reference' ? 'on' : ''} @click=${(e) => { e.stopPropagation(); this.#setMode('final'); }}>Final</button>
+          <button class=${this._sbMode === 'reference' ? 'on' : ''} @click=${(e) => { e.stopPropagation(); this.#setMode('reference'); }}>Reference</button>
+        </div>
         <button class="nav prev" title="Previous slide (←)" aria-label="Previous slide"
           ?disabled=${this._ix === 0} @click=${() => this.#step(-1)}>‹</button>
         <button class="nav next" title="Next slide (→)" aria-label="Next slide"

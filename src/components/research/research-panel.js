@@ -4,6 +4,8 @@ import { LitElement, html, css } from 'lit';
 import { StoreController } from '../../state/store-controller.js';
 import { panelStyles } from '../../styles/shared.js';
 import { openSourceDialog } from './source-dialog.js';
+import { readFileAsDataURL } from '../../utils/files.js';
+import { dispatch } from '../../utils/events.js';
 import '../ui/button.js';
 import '../ui/panel-picker.js';
 import './research-card.js';
@@ -15,6 +17,7 @@ export class PandemoniumResearchPanel extends LitElement {
   static styles = [panelStyles, css`
     .adds{display:flex;gap:4px;flex-wrap:wrap}
     #researchList{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:12px;align-content:start;padding:10px 10px 24px}
+    .pbody.over{outline:2px solid var(--res);outline-offset:-2px}
   `];
 
   constructor() {
@@ -24,6 +27,28 @@ export class PandemoniumResearchPanel extends LitElement {
 
   #title() {
     return html`<pd-panel-picker current="research" .leafId=${this.leafId}></pd-panel-picker>`;
+  }
+
+  // Dropping a file here makes a new research media from it (an opaque
+  // attachment: viewable, not span-linkable). Images, video, PDFs, anything.
+  #onDragOver(e) {
+    if (![...e.dataTransfer.types].includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    e.currentTarget.classList.add('over');
+  }
+  #onDragLeave(e) { e.currentTarget.classList.remove('over'); }
+  async #onDrop(e) {
+    if (![...e.dataTransfer.types].includes('Files')) return;
+    e.preventDefault();
+    e.currentTarget.classList.remove('over');
+    const files = [...(e.dataTransfer.files || [])];
+    if (!files.length) return;
+    for (const file of files) {
+      const data = await readFileAsDataURL(file);
+      this._store.store.addResearch({ kind: 'file', title: file.name, attachment: { name: file.name, mime: file.type, data } });
+    }
+    dispatch(this, 'pandemonium-toast', { message: files.length === 1 ? 'Research media added.' : files.length + ' research media added.' });
   }
 
   render() {
@@ -43,7 +68,10 @@ export class PandemoniumResearchPanel extends LitElement {
             </div>
           </div>
         </div>
-        <div class="pbody">
+        <div class="pbody"
+          @dragover=${(e) => this.#onDragOver(e)}
+          @dragleave=${(e) => this.#onDragLeave(e)}
+          @drop=${(e) => this.#onDrop(e)}>
           ${openDoc
             ? html`<pandemonium-research-reader .doc=${openDoc}></pandemonium-research-reader>`
             : this.#renderGrid(project)}

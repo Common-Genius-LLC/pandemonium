@@ -2,33 +2,42 @@
 
 import { LitElement, html, css } from 'lit';
 import { StoreController } from '../state/store-controller.js';
-import { timelineStats } from '../state/selectors.js';
 import { sectionsOf } from '../fountain/blocks.js';
 import { fmtT } from '../utils/format.js';
 import { dispatch } from '../utils/events.js';
+import { readFileAsDataURL } from '../utils/files.js';
 import { panelStyles } from '../styles/shared.js';
 import '../components/ui/panel-picker.js';
 import '../components/ui/button.js';
 
 // Timeline (Figma node 100-208): a "torrent" coverage view. Two rows,
-// Storyboarded and Sourced, run the length of the written script. Each is one
-// even-celled bar, filled where that stretch of script is boarded / sourced and
-// grey where it is not, so at a glance it reads like a download's received
+// Storyboarded and Sourced, run the length of the written script. Every
+// paragraph element (a scene heading, an action line, a cue, a speech) is one
+// bar; its width is that element's estimated screen time (word count over a
+// reading pace). A bar is coloured where that specific element is linked (a
+// board with an image on the Storyboarded row, a source on the Sourced row) and
+// left grey where it is not, so at a glance it reads like a download's received
 // chunks. Act boundaries (top-level Fountain sections) are marked with a
 // labelled divider through both rows. The overall boarded/sourced PERCENTAGES
 // moved to the Project Status panel; this panel is the where, not the how much.
 //
-// Honest math (hard rule 3): the x-axis is the running time of what is WRITTEN
-// (unscripted scenes carry 0 seconds and show as a thin grey unwritten slot,
-// never a fabricated duration), and a cell is filled only where a scene really
-// has a board with an image / a source -- coverage()'s fb/fr fractions.
+// Honest math (hard rule 3): a bar is only coloured where an anchor actually
+// resolves onto that element, and the width is the reading-pace estimate, not a
+// guess -- when pacing is recorded (slideshow) it can replace this estimate
+// per element.
+const BAR_TYPES = new Set(['scene', 'action', 'character', 'dialogue', 'paren', 'transition', 'centered', 'lyric']);
+const SPOKEN = new Set(['dialogue', 'paren', 'lyric']);
+
+// One element's estimated screen time from its word count: spoken lines read
+// slower than action description. A floor keeps a near-wordless element (a scene
+// heading, a cue) a visible sliver rather than a zero-width bar.
+function elementSeconds(b) {
+  const w = b.words || 0;
+  return Math.max(0.4, SPOKEN.has(b.type) ? w / 2.4 : w / 4.5);
+}
+
 export class PandemoniumTimeline extends LitElement {
   static properties = { leafId: {} };
-
-  // A scene with no running time still needs to be visible (it exists in the
-  // outline, just unwritten), so it gets this fixed sliver rather than a share
-  // of the duration it does not have.
-  static UNWRITTEN_PX = 10;
 
   static styles = [panelStyles, css`
     .chrome .est{align-self:center;margin-left:auto;padding-right:10px;font-size:11px;color:var(--mut);white-space:nowrap}
@@ -38,7 +47,7 @@ export class PandemoniumTimeline extends LitElement {
     /* overflow:hidden (panelStyles sets auto): the bars thin as the pane
        shrinks instead of scrolling. Extra bottom padding leaves room for the
        act labels that hang below the lower bar. */
-    .pbody{display:flex;flex-direction:column;padding:8px 10px 20px;overflow:hidden}
+    .pbody{display:flex;flex-direction:column;padding:10px 10px 20px;overflow:hidden}
     .tlbody{flex:1;min-height:0;display:flex;align-items:center;gap:12px}
 
     .labels{flex:none;display:flex;flex-direction:column;gap:4px}
@@ -47,22 +56,19 @@ export class PandemoniumTimeline extends LitElement {
     .lab.r{color:var(--res)}
 
     .strip{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
-    .track{position:relative;height:22px;display:flex;background:var(--ph);overflow:hidden}
-    .seg{position:relative;min-width:2px}
-    .seg.scripted{cursor:pointer}
-    .seg.unwritten{flex:none;opacity:.4}
-    .seg .fill{position:absolute;inset:0 auto 0 0}
-    .track.b .seg .fill{background:var(--board-strong)}
-    .track.r .seg .fill{background:var(--res)}
-    .seg.scripted:hover{outline:1px solid var(--ui);outline-offset:-1px;z-index:2}
-    .seg.flash{background:var(--act)}
-    .seg.flash .fill{background:var(--act)}
-    /* Even vertical cell lines over the whole bar (the torrent chunks). Painted
-       as a repeating gradient, not nodes, so a long script adds nothing to
-       re-render. */
-    .track::after{content:"";position:absolute;inset:0;pointer-events:none;
-      background-image:linear-gradient(to right, var(--bg) 0 1px, transparent 1px);
-      background-size:11px 100%;opacity:.6}
+    /* One bar per paragraph element, sized by its estimated seconds (flex-grow).
+       The 1px gap shows the track's grey through, which is what separates the
+       chunks; an unlinked element is transparent (reads as the grey track), a
+       linked one takes its row colour. */
+    .track{position:relative;height:22px;display:flex;gap:1px;background:var(--ph);overflow:hidden}
+    .seg{position:relative;min-width:2px;cursor:pointer;background:transparent}
+    .track.b .seg.on{background:var(--board-strong)}
+    /* Reference-only frames read as a hatched fill, final as solid. */
+    .track.b .seg.ref{background:repeating-linear-gradient(45deg,var(--board-strong) 0 3px,transparent 3px 6px)}
+    .track.r .seg.on{background:var(--res)}
+    .seg:hover{outline:1px solid var(--ui);outline-offset:-1px;z-index:2}
+    .seg.dragover{outline:2px solid var(--res);outline-offset:-1px;z-index:3}
+    .track .seg.flash{background:var(--act)}
     .none{flex:1;background:var(--ph);opacity:.45}
 
     /* Act markers span both bars, label hanging under the lower one. */
@@ -77,59 +83,126 @@ export class PandemoniumTimeline extends LitElement {
     this._store = new StoreController(this);
   }
 
-  #jump(sc, el) {
-    if (!sc.scripted) return;
+  #jump(bi, el) {
     const store = this._store.store;
     const fsc = store.getFinalState().fsc;
-    const patch = { scrollToBlock: sc.start };
+    const patch = { scrollToBlock: bi };
     if (store.activeScript().id !== fsc.id) patch.draftId = fsc.id;
     store.setUI(patch);
     el.classList.add('flash');
     setTimeout(() => el.classList.remove('flash'), 700);
   }
 
-  #recordPacing() {
-    // Pacing is recorded by stepping the slideshow; that flow lands with the
-    // slideshow work. Until then this says so rather than silently doing nothing.
-    dispatch(this, 'pandemonium-toast', { message: 'Record pacing: step through the slideshow to time each beat. Coming soon.' });
+  // Every drawable paragraph element as a bar, with its estimated seconds and
+  // whether it is boarded / sourced (an anchor resolves onto its block index).
+  #elements(state) {
+    // Final boards draw solid; reference-only boards draw hatched. An element
+    // with a final board is "final" even if it also has a reference one.
+    const finalSet = new Set();
+    const refSet = new Set();
+    const durByBi = new Map(); // recorded pacing (board.dur) mapped onto the element it lands on
+    for (const it of state.R.boards) {
+      if (!it.ok || !it.bd.img) continue;
+      (it.res || []).forEach((r) => {
+        if (!r) return;
+        (it.bd.ref ? refSet : finalSet).add(r.bi);
+        if (it.bd.dur) durByBi.set(r.bi, Math.max(durByBi.get(r.bi) || 0, it.bd.dur));
+      });
+    }
+    const sourced = new Set();
+    for (const it of state.R.links) if (it.ok) (it.res || []).forEach((r) => r && sourced.add(r.bi));
+    return state.fparsed.blocks
+      .filter((b) => b.line != null && BAR_TYPES.has(b.type) && b.plain && b.plain.trim())
+      .map((b) => ({
+        bi: b.i, type: b.type,
+        secs: durByBi.get(b.i) || elementSeconds(b),
+        paced: durByBi.has(b.i),
+        boarded: finalSet.has(b.i) || refSet.has(b.i),
+        refOnly: !finalSet.has(b.i) && refSet.has(b.i),
+        sourced: sourced.has(b.i),
+      }));
   }
 
-  // Top-level act (section level 1) boundaries as x-percentages of the written
-  // running time, each at the start of the first scene at or after the section.
-  #markers(scenes, parsed, total) {
+  #segDragOver(e) {
+    if (!(e.dataTransfer && [...e.dataTransfer.types].includes('Files'))) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    e.currentTarget.classList.add('dragover');
+  }
+
+  // Dropping an image on a timeline bar boards that element (reference by
+  // default, like the script editor), replacing an existing frame after confirm.
+  async #segDrop(e, bi) {
+    e.currentTarget.classList.remove('dragover');
+    const file = [...((e.dataTransfer && e.dataTransfer.files) || [])].find((f) => f.type.startsWith('image/') || f.type.startsWith('video/'));
+    if (!file) return;
+    e.preventDefault();
+    const store = this._store.store;
+    const state = store.getFinalState();
+    const b = state.fparsed.blocks[bi];
+    if (!b) return;
+    const img = await readFileAsDataURL(file);
+    store.revealContent('boards');
+    const existing = state.R.boards.find((o) => o.ok && o.firstBi === bi);
+    if (existing) {
+      dispatch(this, 'pandemonium-open-dialog', {
+        title: 'Replace storyboard frame?',
+        body: html`<p>This beat already has a storyboard frame. Replace its image?</p>`,
+        okLabel: 'Replace',
+        onOk: () => { store.replaceBoardImage(existing.bd.id, img); dispatch(this, 'pandemonium-toast', { message: 'Frame replaced.' }); },
+      });
+      return;
+    }
+    const ref = store.project.dropToReference !== false;
+    store.addBoard({ parts: [{ q: b.plain, b: bi, s: 0 }], img, caption: '', ref });
+    dispatch(this, 'pandemonium-toast', { message: `Added to the ${ref ? 'reference' : 'final'} storyboard.` });
+  }
+
+  #recordPacing() {
+    // Opens the slideshow in record mode: stepping through it times each beat
+    // and saves the pacing, which then drives these bars and the duration.
+    dispatch(this, 'pandemonium-open-slideshow', { record: true });
+  }
+
+  // Top-level act (section level 1) boundaries as x-percentages of the running
+  // time, each at the start of the first element at or after the section.
+  #markers(els, parsed, total) {
     if (!total) return [];
     const cum = [];
     let acc = 0;
-    scenes.forEach((sc, i) => { cum[i] = acc; acc += sc.secs; });
+    els.forEach((el, i) => { cum[i] = acc; acc += el.secs; });
     return sectionsOf(parsed)
       .filter((s) => (s.level || 1) === 1)
       .map((sec) => {
-        const si = scenes.findIndex((sc) => sc.start >= sec.start);
-        if (si < 0) return null;
-        return { x: (cum[si] / total) * 100, name: sec.name };
+        const ei = els.findIndex((el) => el.bi >= sec.start);
+        if (ei < 0) return null;
+        return { x: (cum[ei] / total) * 100, name: sec.name };
       })
       .filter((m) => m && m.x > 0.5 && m.x < 99.5);
   }
 
-  #segTitle(sc) {
-    const where = sc.pre ? 'Opening' : 'Sc ' + sc.label;
-    if (!sc.scripted) return `${where} · ${sc.name} · not written yet`;
-    const boards = sc.nb === 1 ? '1 board' : sc.nb + ' boards';
-    const pending = sc.nbPending ? `, ${sc.nbPending} awaiting an image` : '';
-    const sources = sc.nr === 1 ? '1 source' : sc.nr + ' sources';
-    return `${where} · ${sc.name} · ~${fmtT(sc.secs)} · ${boards}${pending} · ${sources}`;
+  #barTitle(el, kind) {
+    if (kind === 'b') {
+      const status = el.refOnly ? 'reference only' : el.boarded ? 'storyboarded' : 'not storyboarded yet';
+      return `${el.type} · ~${fmtT(el.secs)} · ${status}`;
+    }
+    return `${el.type} · ~${fmtT(el.secs)} · ${el.sourced ? 'sourced' : 'not sourced yet'}`;
   }
 
-  #track(kind, scenes) {
-    const fillKey = kind === 'b' ? 'fb' : 'fr';
+  #track(kind, els) {
     return html`<div class="track ${kind}">
-      ${scenes.map((sc) => html`
-        <div class="seg ${sc.scripted ? 'scripted' : 'unwritten'}"
-          style=${sc.scripted ? `flex-grow:${Math.max(0.001, sc.secs)}` : `flex-basis:${PandemoniumTimeline.UNWRITTEN_PX}px`}
-          title=${this.#segTitle(sc)}
-          @click=${(e) => this.#jump(sc, e.currentTarget)}>
-          <div class="fill" style="width:${((sc[fillKey] || 0) * 100).toFixed(1)}%"></div>
-        </div>`)}
+      ${els.map((el) => {
+        const on = kind === 'b' ? el.boarded : el.sourced;
+        const refOnly = kind === 'b' && el.refOnly;
+        return html`
+        <div class="seg ${on ? 'on' : ''} ${refOnly ? 'ref' : ''}"
+          style="flex-grow:${el.secs}"
+          title=${this.#barTitle(el, kind)}
+          @click=${(e) => this.#jump(el.bi, e.currentTarget)}
+          @dragover=${(e) => this.#segDragOver(e)}
+          @dragleave=${(e) => e.currentTarget.classList.remove('dragover')}
+          @drop=${(e) => this.#segDrop(e, el.bi)}></div>`;
+      })}
     </div>`;
   }
 
@@ -137,16 +210,19 @@ export class PandemoniumTimeline extends LitElement {
     const project = this._store.project;
     if (!project) return html``;
     const state = this._store.store.getFinalState();
-    const scenes = state.fscenes;
-    const stats = timelineStats(scenes, state.fparsed.blocks.length);
-    const markers = stats.hasContent ? this.#markers(scenes, state.fparsed, stats.totalSeconds) : [];
+    const els = this.#elements(state);
+    const total = els.reduce((a, e) => a + e.secs, 0);
+    const hasContent = els.length > 0;
+    const paced = els.some((e) => e.paced);
+    const estimate = hasContent ? fmtT(total) : 'unknown';
+    const markers = total ? this.#markers(els, state.fparsed, total) : [];
 
     return html`
       <div class="shell" style="--pane-bg:var(--bg)">
         <div class="chrome">
           <pd-panel-picker current="timeline" .leafId=${this.leafId}></pd-panel-picker>
-          <span class="est" title="Estimated running time of the written final draft">
-            estimated duration : <b>~${stats.hasContent ? stats.estimate : 'unknown'}</b>${project.targetMins ? html` of ${project.targetMins}:00` : ''}
+          <span class="est" title=${paced ? 'Running time from recorded pacing' : 'Estimated running time (reading pace). Record pacing for a measured figure.'}>
+            ${paced ? 'duration' : 'estimated duration'} : <b>~${estimate}</b>${project.targetMins ? html` of ${project.targetMins}:00` : ''}
           </span>
           <div class="tools">
             <pd-button @click=${() => this.#recordPacing()}>Record Pacing</pd-button>
@@ -159,11 +235,11 @@ export class PandemoniumTimeline extends LitElement {
               <div class="lab r">Sourced</div>
             </div>
             <div class="strip">
-              ${!stats.hasContent
+              ${!els.length
                 ? html`<div class="track"><div class="none"></div></div><div class="track"><div class="none"></div></div>`
                 : html`
-                  ${this.#track('b', scenes)}
-                  ${this.#track('r', scenes)}
+                  ${this.#track('b', els)}
+                  ${this.#track('r', els)}
                   <div class="markers">
                     ${markers.map((m) => html`<div class="mark" style="left:${m.x}%"><span>${m.name}</span></div>`)}
                   </div>`}

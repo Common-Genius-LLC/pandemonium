@@ -102,6 +102,7 @@ export class PandemoniumScriptEditor extends LitElement {
           onAct: (act, sec, rect) => this.#onSectionAct(act, sec, rect),
           onLink: (sec, rect) => this.#openLinkMenu(sec, rect),
           onElement: (sec, rect) => this.#openElementMenu(sec, rect),
+          onDropImage: (sec, file) => this.#dropImageOnSection(sec, file),
           elementLabelForSection: (sec) => this.#sectionElementLabel(sec),
         }),
         EditorView.domEventHandlers({
@@ -239,7 +240,7 @@ export class PandemoniumScriptEditor extends LitElement {
       // Choosing Storyboard opens the boards panel if it is closed, so the
       // board the user is about to add has somewhere visible to land.
       store.revealContent('boards');
-      this.#pendingBoardParts = sec.parts;
+      this.#pendingBoardParts = this.#boardParts(sec);
       const input = this.renderRoot.getElementById('secFileImg');
       input.value = '';
       input.click();
@@ -313,6 +314,52 @@ export class PandemoniumScriptEditor extends LitElement {
       },
     }));
     dispatch(this, 'pandemonium-open-menu', { x: rect.left, y: rect.bottom + 4, items });
+  }
+
+  // Board anchors pair a cue with its speech: boarding a character cue also
+  // covers its dialogue run, and boarding a speech also covers the cue above
+  // it, so a storyboard frame is always tied to who is speaking. Only for
+  // boards -- research and comments anchor to exactly what was chosen.
+  #boardParts(sec) {
+    const parsed = this.#view?.plugin(this.#plugin)?.parsed;
+    if (!parsed || (sec.kind !== 'character' && sec.kind !== 'dialogue')) return sec.parts;
+    const byI = new Map(parsed.blocks.map((b) => [b.i, b]));
+    const wanted = new Set(sec.parts.map((p) => p.b));
+    const isSpeech = (b) => b && (b.type === 'dialogue' || b.type === 'paren');
+    if (sec.kind === 'character') {
+      let j = Math.min(...wanted) + 1; // blocks are consecutive non-blank lines
+      while (isSpeech(byI.get(j))) { wanted.add(j); j++; }
+    } else {
+      let j = Math.min(...wanted) - 1;
+      while (isSpeech(byI.get(j))) j--; // back over the speech run
+      if (byI.get(j) && byI.get(j).type === 'character') wanted.add(j);
+    }
+    return [...wanted].sort((a, b) => a - b).map((i) => { const b = byI.get(i); return { q: b.plain, b: b.i, s: 0 }; });
+  }
+
+  // Dropping an image onto a paragraph boards it. External drops (from outside
+  // the storyboard panel) default to the REFERENCE storyboard. If the passage
+  // already has a frame, the image replaces it after a confirm; otherwise a new
+  // reference board is created (with cue/dialogue pairing, see #boardParts).
+  async #dropImageOnSection(sec, file) {
+    const store = this._store.store;
+    store.revealContent('boards');
+    const parts = this.#boardParts(sec);
+    const firstBlock = parts[0] && parts[0].b;
+    const existing = store.getFinalState().R.boards.find((o) => o.ok && o.firstBi === firstBlock);
+    const img = await readFileAsDataURL(file);
+    if (existing) {
+      dispatch(this, 'pandemonium-open-dialog', {
+        title: 'Replace storyboard frame?',
+        body: html`<p>This passage already has a storyboard frame. Replace its image with the one you dropped?</p>`,
+        okLabel: 'Replace',
+        onOk: () => { store.replaceBoardImage(existing.bd.id, img); dispatch(this, 'pandemonium-toast', { message: 'Frame replaced.' }); },
+      });
+      return;
+    }
+    const ref = store.project.dropToReference !== false;
+    store.addBoard({ parts, img, caption: '', ref });
+    dispatch(this, 'pandemonium-toast', { message: `Added to the ${ref ? 'reference' : 'final'} storyboard.` });
   }
 
   #sectionRect(sec) {

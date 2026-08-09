@@ -221,6 +221,11 @@ export class PandemoniumStore extends EventTarget {
     if (Object.keys(patch).length) this.setUI(patch);
   }
   makeFinal(id) { this.#applyProject(model.makeFinal(this.#project, id)); }
+  setBoardDuration(id, secs) { this.#applyProject(model.setBoardDuration(this.#project, id, secs)); }
+  setBoardRef(id, ref) { this.#applyProject(model.setBoardRef(this.#project, id, ref)); }
+  // Where image drops from the editor/timeline land: the reference storyboard
+  // (default) or the final one. Persisted with the project.
+  setDropToReference(v) { this.#applyProject({ ...this.#project, dropToReference: !!v }); }
   updateScriptText(id, text) { this.#applyProject(model.updateScriptText(this.#project, id, text)); }
   importFountain(name, text) {
     const { project, script } = model.importFountain(this.#project, name, text);

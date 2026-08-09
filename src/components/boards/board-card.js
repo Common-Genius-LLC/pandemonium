@@ -20,7 +20,12 @@ export class PandemoniumBoardCard extends LitElement {
   // its passage. Computed by the panel (project-model.boardRuns).
   static properties = {
     resolved: { type: Object }, sceneLabel: { type: String }, run: { type: Object },
+    // The id of a board on the same section in the other mode (a final beside
+    // this reference, or vice versa), if it has an image: when present the
+    // marker offers a swap instead of a move.
+    counterpartId: {},
     _overlay: { state: true }, // null | 'edit' | 'delete'
+    _dropfb: { state: true }, // showing the pink drop caption
   };
 
   static styles = css`
@@ -33,12 +38,24 @@ export class PandemoniumBoardCard extends LitElement {
     .frame.lost{outline:2px solid var(--warn);outline-offset:-2px}
     .await{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
       font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);text-align:center;padding:0 10px}
-    .frame.over::after{content:"";position:absolute;inset:4px;outline:2px dashed var(--res);border-radius:2px;pointer-events:none}
+    /* Drop feedback: the app pink with a caption (replace vs add). */
+    .dropfb{position:absolute;inset:0;z-index:6;display:flex;align-items:center;justify-content:center;text-align:center;
+      padding:0 10px;background:var(--res);color:#fff;font-family:var(--sans);font-size:12px;font-weight:500;pointer-events:none}
 
-    /* Hover menu: white pills top-right, revealed on frame hover. */
-    .menu{position:absolute;top:6px;right:6px;z-index:3;display:flex;flex-direction:column;gap:4px;align-items:flex-end;
+    /* Hover menu: white pills bottom-right (top-left holds the Final/Reference
+       marker), revealed on frame hover. */
+    .menu{position:absolute;bottom:6px;right:6px;z-index:3;display:flex;gap:4px;align-items:flex-end;
       opacity:0;transition:opacity .12s;pointer-events:none}
     .frame:hover .menu{opacity:1;pointer-events:auto}
+    /* Final / Reference marker: a dropdown pill at the top-left, revealed on
+       hover, letting each frame be set independently. */
+    .marker{position:absolute;top:6px;left:6px;z-index:3;opacity:0;transition:opacity .12s;pointer-events:none}
+    .frame:hover .marker{opacity:1;pointer-events:auto}
+    .marker.ref{background:var(--res);color:#fff}
+    /* Label shows the current state; the action (move/swap) shows on hover. */
+    .marker .act{display:none}
+    .marker:hover .rest{display:none}
+    .marker:hover .act{display:inline}
     .pill{font-family:var(--sans);font-size:11px;font-weight:500;line-height:1;padding:5px 9px;border:0;border-radius:20px;
       cursor:pointer;background:#fff;color:#161719;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.25)}
     .pill:hover{background:#f0f0f0}
@@ -109,14 +126,14 @@ export class PandemoniumBoardCard extends LitElement {
     if (![...e.dataTransfer.types].includes('Files')) return;
     e.preventDefault(); e.stopPropagation();
     e.dataTransfer.dropEffect = 'copy';
-    e.currentTarget.classList.add('over');
+    this._dropfb = true;
   }
-  #onDragLeave(e) { e.currentTarget.classList.remove('over'); }
+  #onDragLeave() { this._dropfb = false; }
   async #onDrop(e) {
+    this._dropfb = false;
     const file = [...(e.dataTransfer.files || [])].find((f) => f.type.startsWith('image/') || f.type.startsWith('video/'));
     if (!file) return;
     e.preventDefault(); e.stopPropagation();
-    e.currentTarget.classList.remove('over');
     await this.#setImage(file);
   }
 
@@ -129,6 +146,24 @@ export class PandemoniumBoardCard extends LitElement {
   }
 
   #replace() { this.renderRoot.querySelector('input[type=file]').click(); }
+
+  // Move this frame to the other mode, or -- when the section already has a
+  // frame in that mode -- swap the two so this one takes the other's role.
+  #refAction(e) {
+    e.stopPropagation();
+    const store = this._store.store;
+    const bd = this.resolved.bd;
+    store.setBoardRef(bd.id, !bd.ref);
+    if (this.counterpartId) store.setBoardRef(this.counterpartId, bd.ref);
+  }
+
+  #markerLabels(bd) {
+    const rest = bd.ref ? 'Reference' : 'Final';
+    const act = this.counterpartId
+      ? (bd.ref ? 'Swap with final' : 'Swap with reference')
+      : (bd.ref ? 'Move to final' : 'Move to reference');
+    return { rest, act };
+  }
 
   #frameBackdrop(bd) {
     // The blurred image behind the overlay: real WebGL bokeh for a still, a CSS
@@ -203,11 +238,14 @@ export class PandemoniumBoardCard extends LitElement {
             : html`<img alt="" src=${bd.img} @click=${() => o.ok && this.#jump()}>`)
           : html`<span class="await">drop an image here</span>`}
 
+        ${this._dropfb ? html`<div class="dropfb">${bd.img ? 'Replace image for this board' : 'Add image to this board'}</div>` : ''}
+
         ${this._overlay
           ? html`<div class="overlay">${this.#frameBackdrop(bd)}${this.#overlayOptions(o)}</div>`
-          : (o.ok
-            ? menu
-            : html`<div class="linkhere"><button class="pill" @click=${() => this.#relink()}>Link here</button></div>${menu}`)}
+          : html`
+            <button class="pill marker ${bd.ref ? 'ref' : ''}" @click=${(e) => this.#refAction(e)}
+              ><span class="rest">${this.#markerLabels(bd).rest}</span><span class="act">${this.#markerLabels(bd).act}</span></button>
+            ${o.ok ? menu : html`<div class="linkhere"><button class="pill" @click=${() => this.#relink()}>Link here</button></div>${menu}`}`}
       </div>
       <input type="file" accept=${BOARD_MEDIA_ACCEPT} style="display:none" @change=${(e) => this.#pickImage(e)}>
     `;

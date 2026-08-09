@@ -167,6 +167,10 @@ export const fountainTheme = EditorView.theme({
     content: '""', position: 'absolute', top: '0', bottom: '0', left: '-50vw', right: '-50vw',
     background: 'var(--row-hover)', zIndex: '-1', pointerEvents: 'none',
   },
+  // While an image is being dragged over the editor, the row it would board
+  // lights the app pink with white script text (drop to board it).
+  '.cm-scroller.img-drag .cm-sec-hover::before': { background: 'var(--res)', opacity: '1' },
+  '.cm-scroller.img-drag .cm-sec-hover': { color: '#fff' },
   '.cm-sec-acts': {
     position: 'absolute', right: '10px', zIndex: '6', display: 'flex', gap: '6px', fontFamily: 'var(--sans)',
   },

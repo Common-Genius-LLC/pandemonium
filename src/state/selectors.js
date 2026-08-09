@@ -28,6 +28,8 @@ export function computeResolved(parsed, scenes, project, ui) {
     const ok = res.some(Boolean);
     let firstBi = Infinity;
     res.forEach((r) => { if (r && r.bi < firstBi) firstBi = r.bi; });
+    // Final and reference boards both count as boarded and both paint the
+    // highlight; they differ only in how the timeline draws them (see below).
     res.forEach((r) => add(r, 'hb', bd.id, 'b'));
     return { bd, res, ok, firstBi: ok ? firstBi : Infinity, sceneIdx: ok ? sceneIndexOf(scenes, firstBi) : -1 };
   });
@@ -72,7 +74,7 @@ export function coverage(scenes, R) {
   // 3 the boarded percentage may never include work that has not happened,
   // and "a placeholder exists" is not the work.
   for (const it of R.boards) {
-    if (!it.ok) continue;
+    if (!it.ok) continue; // final and reference both count as boarded
     const sc = scenes[it.sceneIdx];
     if (!it.bd.img) { if (sc) sc.nbPending++; continue; }
     if (sc) sc.nb++;

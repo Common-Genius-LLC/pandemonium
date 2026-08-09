@@ -13,6 +13,7 @@ import '../components/boards/boards-panel.js';
 import '../components/research/research-panel.js';
 import '../components/editor/script-panel.js';
 import './timeline.js';
+import './project-status.js';
 
 // Blender-style window division (see data/layout-tree.js). The panels are laid
 // out by recursively rendering a binary split tree from project.layout: each
@@ -58,7 +59,7 @@ export class PandemoniumPanelLayout extends LitElement {
        its content. The shell does its own clipping (styles/shared.js). */
     .pane{display:flex;min-width:0;min-height:0}
     .leaf{position:relative;flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
-    pandemonium-boards-panel,pandemonium-research-panel,pandemonium-script-panel,pandemonium-timeline{
+    pandemonium-boards-panel,pandemonium-research-panel,pandemonium-script-panel,pandemonium-timeline,pandemonium-project-status{
       flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;
     }
 
@@ -175,6 +176,7 @@ export class PandemoniumPanelLayout extends LitElement {
     if (node.content === 'boards') return html`<pandemonium-boards-panel .leafId=${node.id}></pandemonium-boards-panel>`;
     if (node.content === 'research') return html`<pandemonium-research-panel .leafId=${node.id}></pandemonium-research-panel>`;
     if (node.content === 'timeline') return html`<pandemonium-timeline .leafId=${node.id}></pandemonium-timeline>`;
+    if (node.content === 'status') return html`<pandemonium-project-status .leafId=${node.id}></pandemonium-project-status>`;
     return html`<pandemonium-script-panel .leafId=${node.id}></pandemonium-script-panel>`;
   }
 

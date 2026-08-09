@@ -98,7 +98,7 @@ export function computeSections(parsed) {
 // right edge, replacing the older Board/Source/Comment button row. The linkable
 // unit is still a parsed section (a paragraph, or a cue with its speech), which
 // is the honest anchor unit -- the pills just re-dress how it is reached.
-export function sectionAffordances({ getParsed, onAct, onLink, onElement, elementLabelForSection, canLink }) {
+export function sectionAffordances({ getParsed, onAct, onLink, onElement, onDropImage, elementLabelForSection, canLink }) {
   return ViewPlugin.fromClass(class {
     constructor(view) {
       this.view = view;
@@ -132,26 +132,62 @@ export function sectionAffordances({ getParsed, onAct, onLink, onElement, elemen
       view.scrollDOM.addEventListener('mousemove', this.onMove);
       view.scrollDOM.addEventListener('mouseleave', this.onLeave);
 
+      // Dropping an image onto a paragraph boards it (see onDropImage). The
+      // hovered row lights pink during the drag (cm-theme .img-drag rule).
+      this.onDragOver = (e) => {
+        if (!onDropImage || !this.canLink() || !(e.dataTransfer && [...e.dataTransfer.types].includes('Files'))) return;
+        const idx = this.sectionAt(e.clientX, e.clientY);
+        if (idx < 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'copy';
+        view.scrollDOM.classList.add('img-drag');
+        this.setHover(idx);
+      };
+      this.onDragLeave = (e) => {
+        if (e.relatedTarget && view.scrollDOM.contains(e.relatedTarget)) return;
+        view.scrollDOM.classList.remove('img-drag');
+      };
+      this.onDrop = (e) => {
+        view.scrollDOM.classList.remove('img-drag');
+        if (!onDropImage || !this.canLink()) return;
+        const file = [...((e.dataTransfer && e.dataTransfer.files) || [])].find((f) => f.type.startsWith('image/') || f.type.startsWith('video/'));
+        if (!file) return;
+        const idx = this.sectionAt(e.clientX, e.clientY);
+        const sec = this.sections[idx];
+        if (!sec) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onDropImage(sec, file);
+      };
+      view.scrollDOM.addEventListener('dragover', this.onDragOver);
+      view.scrollDOM.addEventListener('dragleave', this.onDragLeave);
+      view.scrollDOM.addEventListener('drop', this.onDrop);
+
       this.canLink = canLink;
       this.getParsed = getParsed;
+    }
+
+    // The section index under a viewport point, or -1. Shared by hover and the
+    // image-drop drag feedback.
+    sectionAt(clientX, clientY) {
+      const pos = this.view.posAtCoords({ x: clientX, y: clientY }, false);
+      if (pos == null) return -1;
+      const line = this.view.state.doc.lineAt(pos).number - 1;
+      const idx = this.sections.findIndex((s) => line >= s.firstLine && line <= s.lastLine);
+      if (idx < 0) return -1;
+      const sec = this.sections[idx];
+      const top = this.lineCoords(sec.firstLine, 'top');
+      const bottom = this.lineCoords(sec.lastLine, 'bottom');
+      if (top == null || bottom == null || clientY < top - 2 || clientY > bottom + 2) return -1;
+      return idx;
     }
 
     onMouseMove(e) {
       // Over the rail itself: hold the current section so the click lands.
       if (this.acts.contains(e.target)) return;
       if (!this.canLink() || !this.view.state.selection.main.empty) { this.setHover(-1); return; }
-      const pos = this.view.posAtCoords({ x: e.clientX, y: e.clientY }, false);
-      if (pos == null) { this.setHover(-1); return; }
-      const line = this.view.state.doc.lineAt(pos).number - 1;
-      const idx = this.sections.findIndex((s) => line >= s.firstLine && line <= s.lastLine);
-      if (idx < 0) { this.setHover(-1); return; }
-      // Guard against posAtCoords snapping to the nearest line when the pointer
-      // is in the tall bottom padding: require the pointer inside the band.
-      const sec = this.sections[idx];
-      const top = this.lineCoords(sec.firstLine, 'top');
-      const bottom = this.lineCoords(sec.lastLine, 'bottom');
-      if (top == null || bottom == null || e.clientY < top - 2 || e.clientY > bottom + 2) { this.setHover(-1); return; }
-      this.setHover(idx);
+      this.setHover(this.sectionAt(e.clientX, e.clientY));
     }
 
     setHover(idx) {
@@ -217,6 +253,9 @@ export function sectionAffordances({ getParsed, onAct, onLink, onElement, elemen
     destroy() {
       this.view.scrollDOM.removeEventListener('mousemove', this.onMove);
       this.view.scrollDOM.removeEventListener('mouseleave', this.onLeave);
+      this.view.scrollDOM.removeEventListener('dragover', this.onDragOver);
+      this.view.scrollDOM.removeEventListener('dragleave', this.onDragLeave);
+      this.view.scrollDOM.removeEventListener('drop', this.onDrop);
       this.acts.remove();
     }
   }, { decorations: (v) => v.decorations });

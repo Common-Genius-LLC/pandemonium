@@ -98,8 +98,12 @@ export const tabStyles = css`
   .tab{
     box-sizing:border-box;
     flex:none;min-width:88px;max-width:140px;height:30px;padding:0 10px;
-    display:inline-flex;align-items:center;justify-content:center;gap:6px;
-    font-family:var(--sans);font-size:12px;line-height:12px;letter-spacing:-0.12px;
+    /* Left-aligned with a trailing ellipsis: a long draft name shows its start
+       and "..." rather than centering and clipping both ends (which hid the
+       part that tells drafts apart). display:block + line-height centers the
+       text vertically while letting text-overflow work on the text run. */
+    display:block;text-align:left;line-height:30px;
+    font-family:var(--sans);font-size:12px;letter-spacing:-0.12px;
     color:var(--mut);background:var(--chrome-panel);
     border:0;border-radius:0;cursor:pointer;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis;
