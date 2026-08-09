@@ -33,10 +33,13 @@ export class PandemoniumBoardsPanel extends LitElement {
     .pbody.over{outline:2px solid var(--res);outline-offset:-2px}
     /* Final / Reference switch: the beat's chosen frames vs inspiration for it.
        Reference boards never count as boarded (see coverage). */
-    .modes{display:flex;gap:2px;align-self:center;margin-right:6px}
+    .modes{display:flex;gap:2px;align-self:center;margin-left:8px;margin-right:6px}
     .modes button{height:22px;padding:0 10px;font-size:11px;font-weight:500;color:var(--mut);
       background:var(--panel);border:0;border-radius:20px;cursor:pointer;font-family:var(--sans)}
     .modes button.on{background:var(--overlay);color:var(--overlay-ink)}
+    /* Match the Final/Reference pill shape so the whole toolbar reads as one
+       family of buttons instead of two different corner radii. */
+    .tools pd-button::part(button){border-radius:20px}
     #boardsList{display:flex;flex-direction:column;gap:6px;padding:10px 10px 24px}
     /* Rendered-script view (Figma 82-34): the final draft's elements shown as
        formatted lines with the frames embedded at their linked positions. The

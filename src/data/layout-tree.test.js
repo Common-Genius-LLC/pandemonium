@@ -19,15 +19,15 @@ function findLeaf(node, content) {
 }
 
 describe('absorbAcross', () => {
-  // defaultLayout() = col(.82){ a: col(.68){ a: row(boards,script), b: research }, b: timeline }.
-  // research's immediate sibling is the whole (boards,script) row, so the old
-  // single-level absorbSibling could never reach timeline from research at
-  // all. absorbAcross, walked to the root (their actual common ancestor),
-  // must keep everything on the 'a' side intact and drop only 'b'.
+  // defaultLayout() = col(.82){ a: col(.68){ a: boards, b: research }, b: timeline }.
+  // research's immediate sibling is boards, so the old single-level
+  // absorbSibling could never reach timeline from research at all.
+  // absorbAcross, walked to the root (their actual common ancestor), must
+  // keep everything on the 'a' side intact and drop only 'b'.
   it('collapsing to the a side keeps every pane on that side and drops only the far side', () => {
     const root = defaultLayout();
     const collapsed = absorbAcross(root, root.id, 'a');
-    expect(collectContents(collapsed).sort()).toEqual(['boards', 'research', 'script']);
+    expect(collectContents(collapsed).sort()).toEqual(['boards', 'research']);
     expect(findLeaf(collapsed, 'timeline')).toBeNull();
   });
 

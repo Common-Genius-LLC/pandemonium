@@ -24,16 +24,17 @@ export const PANEL_LABELS = { script: 'Script Editor', boards: 'Storyboards', re
 
 export function leaf(content) { return { id: uid(), type: 'leaf', content }; }
 
-// Default arrangement: boards | script across the top, research beneath them,
-// and the timeline across the foot. The timeline used to be fixed chrome above
-// the whole layout, which meant it could not be closed, moved, or given more
-// room when it was the thing being read.
+// Default arrangement: boards across the top, research beneath it, and the
+// timeline across the foot. The script editor is not shown by default, it is
+// one picker choice away from any pane. The timeline used to be fixed chrome
+// above the whole layout, which meant it could not be closed, moved, or given
+// more room when it was the thing being read.
 export function defaultLayout() {
   return {
     id: uid(), type: 'split', dir: 'col', ratio: 0.82,
     a: {
       id: uid(), type: 'split', dir: 'col', ratio: 0.68,
-      a: { id: uid(), type: 'split', dir: 'row', ratio: 0.42, a: leaf('boards'), b: leaf('script') },
+      a: leaf('boards'),
       b: leaf('research'),
     },
     b: leaf('timeline'),

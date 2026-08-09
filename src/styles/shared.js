@@ -52,11 +52,11 @@ export const panelStyles = css`
   .chrome{
     flex:none;height:30px;display:flex;align-items:stretch;
     background:var(--pane-bg,var(--bg));
-    padding-left:6px;gap:0;
+    padding:6px 8px;gap:0;
   }
   .chrome pd-panel-picker{align-self:center}
   .chrome .sub{align-self:center;color:var(--mut);font-size:11px;margin-left:6px}
-  .chrome .tools{margin-left:auto;align-self:center;display:flex;align-items:center;gap:4px;padding-right:6px}
+  .chrome .tools{margin-left:auto;align-self:center;display:flex;align-items:center;gap:4px}
   .pbody{
     flex:1;min-height:0;overflow:auto;background:var(--pane-bg,var(--bg));
     scrollbar-width:thin;scrollbar-color:var(--ph) transparent;
