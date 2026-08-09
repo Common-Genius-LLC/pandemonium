@@ -5,7 +5,6 @@ import { StoreController } from '../state/store-controller.js';
 import { sectionsOf } from '../fountain/blocks.js';
 import { fmtT } from '../utils/format.js';
 import { dispatch } from '../utils/events.js';
-import { readFileAsDataURL } from '../utils/files.js';
 import { panelStyles } from '../styles/shared.js';
 import '../components/ui/panel-picker.js';
 import '../components/ui/button.js';
@@ -67,7 +66,6 @@ export class PandemoniumTimeline extends LitElement {
     .track.b .seg.ref{background:repeating-linear-gradient(45deg,var(--board-strong) 0 3px,transparent 3px 6px)}
     .track.r .seg.on{background:var(--res)}
     .seg:hover{outline:1px solid var(--ui);outline-offset:-1px;z-index:2}
-    .seg.dragover{outline:2px solid var(--res);outline-offset:-1px;z-index:3}
     .track .seg.flash{background:var(--act)}
     .none{flex:1;background:var(--ph);opacity:.45}
 
@@ -123,41 +121,6 @@ export class PandemoniumTimeline extends LitElement {
       }));
   }
 
-  #segDragOver(e) {
-    if (!(e.dataTransfer && [...e.dataTransfer.types].includes('Files'))) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
-    e.currentTarget.classList.add('dragover');
-  }
-
-  // Dropping an image on a timeline bar boards that element (reference by
-  // default, like the script editor), replacing an existing frame after confirm.
-  async #segDrop(e, bi) {
-    e.currentTarget.classList.remove('dragover');
-    const file = [...((e.dataTransfer && e.dataTransfer.files) || [])].find((f) => f.type.startsWith('image/') || f.type.startsWith('video/'));
-    if (!file) return;
-    e.preventDefault();
-    const store = this._store.store;
-    const state = store.getFinalState();
-    const b = state.fparsed.blocks[bi];
-    if (!b) return;
-    const img = await readFileAsDataURL(file);
-    store.revealContent('boards');
-    const existing = state.R.boards.find((o) => o.ok && o.firstBi === bi);
-    if (existing) {
-      dispatch(this, 'pandemonium-open-dialog', {
-        title: 'Replace storyboard frame?',
-        body: html`<p>This beat already has a storyboard frame. Replace its image?</p>`,
-        okLabel: 'Replace',
-        onOk: () => { store.replaceBoardImage(existing.bd.id, img); dispatch(this, 'pandemonium-toast', { message: 'Frame replaced.' }); },
-      });
-      return;
-    }
-    const ref = store.project.dropToReference !== false;
-    store.addBoard({ parts: [{ q: b.plain, b: bi, s: 0 }], img, caption: '', ref });
-    dispatch(this, 'pandemonium-toast', { message: `Added to the ${ref ? 'reference' : 'final'} storyboard.` });
-  }
-
   #recordPacing() {
     // Opens the slideshow in record mode: stepping through it times each beat
     // and saves the pacing, which then drives these bars and the duration.
@@ -198,10 +161,7 @@ export class PandemoniumTimeline extends LitElement {
         <div class="seg ${on ? 'on' : ''} ${refOnly ? 'ref' : ''}"
           style="flex-grow:${el.secs}"
           title=${this.#barTitle(el, kind)}
-          @click=${(e) => this.#jump(el.bi, e.currentTarget)}
-          @dragover=${(e) => this.#segDragOver(e)}
-          @dragleave=${(e) => e.currentTarget.classList.remove('dragover')}
-          @drop=${(e) => this.#segDrop(e, el.bi)}></div>`;
+          @click=${(e) => this.#jump(el.bi, e.currentTarget)}></div>`;
       })}
     </div>`;
   }
