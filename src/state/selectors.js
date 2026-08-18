@@ -11,6 +11,7 @@
 import { resolvePart } from '../fountain/resolve.js';
 import { sceneIndexOf } from '../fountain/blocks.js';
 import { clamp, fmtT } from '../utils/format.js';
+import { anchorKey } from '../data/project-model.js';
 
 // Resolves every board/link anchor against the final draft's freshly parsed
 // blocks, plus (if a link-in-progress exists) the pending selection as its
@@ -73,8 +74,13 @@ export function coverage(scenes, R) {
   // is counted into nbPending and contributes nothing to bset. Per hard rule
   // 3 the boarded percentage may never include work that has not happened,
   // and "a placeholder exists" is not the work.
+  //
+  // Reference boards sit out of this entirely: a reference frame is
+  // inspiration for a beat, not the final chosen one (see addBoard in
+  // project-model.js), so it is neither boarded nor pending here. Only the
+  // final storyboard is what "the section is drawn" means.
   for (const it of R.boards) {
-    if (!it.ok) continue; // final and reference both count as boarded
+    if (!it.ok || it.bd.ref) continue;
     const sc = scenes[it.sceneIdx];
     if (!it.bd.img) { if (sc) sc.nbPending++; continue; }
     if (sc) sc.nb++;
@@ -101,6 +107,36 @@ export function coverage(scenes, R) {
 // a storyboard sequence with undefined order is not a sequence.
 export function boardOrder(a, b) {
   return (a.firstBi - b.firstBi) || ((a.bd.seq || 0) - (b.bd.seq || 0));
+}
+
+// Resolved, ok boards grouped into shared slots: one entry per (anchor, seq),
+// carrying whichever board exists there in either mode. A slot with only a
+// reference board still gets a place when reading the final storyboard (see
+// slotBoard), and vice versa, so switching final/reference never changes how
+// many frames a passage has, only which image fills them -- the same anchor,
+// the same seq, is the same beat either way. Ordered like boardOrder: by
+// document position, then seq within a shared passage.
+export function boardSlots(resolvedBoards) {
+  const byKey = new Map();
+  for (const o of resolvedBoards) {
+    if (!o.ok) continue;
+    const seq = o.bd.seq || 0;
+    const key = anchorKey(o.bd.anchor.parts || []) + '\x1F' + seq;
+    let slot = byKey.get(key);
+    if (!slot) {
+      slot = { parts: o.bd.anchor.parts, seq, firstBi: o.firstBi, sceneIdx: o.sceneIdx, final: null, ref: null };
+      byKey.set(key, slot);
+    }
+    if (o.bd.ref) slot.ref = o; else slot.final = o;
+  }
+  return [...byKey.values()].sort((a, b) => (a.firstBi - b.firstBi) || (a.seq - b.seq));
+}
+
+// The resolved board a slot shows for a given mode, or null when that mode
+// has not filled this slot -- the other mode has, which is the only reason
+// the slot exists at all.
+export function slotBoard(slot, reference) {
+  return reference ? slot.ref : slot.final;
 }
 
 export function labelScenes(scenes) {

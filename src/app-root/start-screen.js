@@ -5,17 +5,34 @@ import { StoreController } from '../state/store-controller.js';
 import { emptyProject } from '../data/schema.js';
 import { openProjectFile } from '../data/db.js';
 import { session } from '../data/session.js';
+import { listProjectsRemote } from '../data/remote-api-adapter.js';
 import { dispatch } from '../utils/events.js';
 import '../components/ui/logo.js';
 import '../components/ui/button.js';
 import '../components/ui/project-card.js';
 
-// Figma "Create New Project" (node 7:88, frame 1280x832). The frame's fixed y
-// positions become a centered column with the measured gaps between blocks and
-// a footer pinned to the bottom, which reproduces the frame at 832px tall and
-// degrades sensibly at other viewport heights. The clapperboard card itself is
-// <pd-project-card>, shared with the project settings dialog.
+// Home. Figma "Create New Project" (node 7:88, frame 1280x832) for the
+// create column; the recent-projects row beneath it is new. The frame's
+// fixed y positions become a centered column with the measured gaps between
+// blocks and a footer pinned to the bottom, which reproduces the frame at
+// 832px tall and degrades sensibly at other viewport heights. The
+// clapperboard card itself is <pd-project-card>, shared with the project
+// settings dialog; the recent tiles are the same component in `compact
+// closed` mode.
+//
+// Recents are cloud projects only: signed-in users already have a real,
+// server-backed project list (listProjectsRemote, the same one the account
+// dialog's picker uses); local/signed-out projects are a single
+// browser-resident slot with no history to list, so there is nothing honest
+// to show there yet (see local-db.js). Signed-out users just see Create/Open,
+// no row at all. Signed-in users always see the row once a load attempt has
+// settled, honestly distinguishing "no projects yet" from "could not load
+// them" (_recentsError) rather than collapsing a failed fetch into looking
+// like an empty account, which would silently misreport a connection problem
+// as "you have nothing here."
 export class PandemoniumStartScreen extends LitElement {
+  static properties = { _recents: { state: true }, _recentsError: { state: true } };
+
   static styles = css`
     :host{
       position:fixed;inset:0;z-index:60;
@@ -43,12 +60,20 @@ export class PandemoniumStartScreen extends LitElement {
       text-align:center;color:var(--ink);
     }
 
-    pd-project-card{margin-top:134px;flex:none}
+    /* Scoped to the create card specifically: a bare pd-project-card selector
+       would also catch the compact recent tiles below and shove each of them
+       down 134px inside their row. */
+    #newCard{margin-top:134px;flex:none}
 
     /* "Open" is not on the Figma frame, but opening a saved project is the
        only other way into the app, so it sits beside the primary action in
        the same Button-Standard treatment. */
     .actions{margin-top:22px;flex:none;display:flex;align-items:center;gap:8px}
+
+    .recents{margin-top:52px;flex:none;width:min(760px,92vw);display:flex;flex-direction:column;align-items:center;gap:16px}
+    .recents-h{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);opacity:.7}
+    .recents-row{display:flex;flex-wrap:wrap;justify-content:center;gap:22px 26px}
+    .recents-msg{font-size:12px;color:var(--ink);opacity:.6;text-align:center}
 
     .foot{
       margin-top:auto;padding-top:40px;flex:none;
@@ -60,12 +85,15 @@ export class PandemoniumStartScreen extends LitElement {
   constructor() {
     super();
     this._store = new StoreController(this);
-    this._onSession = () => this.requestUpdate();
+    this._recents = null; // null = signed out, or signed in and still loading
+    this._recentsError = false;
+    this._onSession = () => this.#onSessionChange();
   }
 
   connectedCallback() {
     super.connectedCallback();
     session.addEventListener('change', this._onSession);
+    if (session.isAuthed()) this.#loadRecents();
   }
 
   disconnectedCallback() {
@@ -73,8 +101,24 @@ export class PandemoniumStartScreen extends LitElement {
     super.disconnectedCallback();
   }
 
+  #onSessionChange() {
+    if (session.isAuthed()) this.#loadRecents();
+    else { this._recents = null; this._recentsError = false; }
+    this.requestUpdate();
+  }
+
+  async #loadRecents() {
+    this._recents = null;
+    this._recentsError = false;
+    try {
+      this._recents = await listProjectsRemote();
+    } catch (err) {
+      this._recentsError = true;
+    }
+  }
+
   #card() {
-    return this.renderRoot.querySelector('pd-project-card');
+    return this.renderRoot.getElementById('newCard');
   }
 
   #create() {
@@ -94,6 +138,13 @@ export class PandemoniumStartScreen extends LitElement {
     }
   }
 
+  // Same event the account dialog's own project list dispatches: app-root
+  // owns cancelling the outgoing autosave and adopting the loaded project, so
+  // this screen does not need to know how to open a remote project itself.
+  #openRecent(id) {
+    dispatch(this, 'pandemonium-open-remote-project', { id });
+  }
+
   render() {
     return html`
       <div class="stage">
@@ -103,7 +154,7 @@ export class PandemoniumStartScreen extends LitElement {
           manage and streamline pre-production
         </div>
 
-        <pd-project-card></pd-project-card>
+        <pd-project-card id="newCard"></pd-project-card>
 
         <div class="actions">
           <pd-button @click=${() => this.#create()}>Create Project</pd-button>
@@ -112,6 +163,25 @@ export class PandemoniumStartScreen extends LitElement {
             ? html`<pd-button @click=${() => dispatch(this, 'pandemonium-open-account', {})}>Open from cloud</pd-button>`
             : html`<pd-button variant="pink" @click=${() => dispatch(this, 'pandemonium-open-account', {})}>Sign in</pd-button>`}
         </div>
+
+        ${session.isAuthed() ? html`
+          <div class="recents">
+            <div class="recents-h">Recent projects</div>
+            ${this._recentsError
+              ? html`<div class="recents-msg">Could not load your recent projects. Check your connection and reopen this screen to retry.</div>`
+              : this._recents === null
+                ? html`<div class="recents-msg">Loading…</div>`
+                : this._recents.length === 0
+                  ? html`<div class="recents-msg">No cloud projects yet. Anything you create while signed in will show up here.</div>`
+                  : html`<div class="recents-row">
+                      ${this._recents.map((p) => html`
+                        <pd-project-card compact closed .scale=${0.62}
+                          .projectName=${p.name || 'Untitled'} .workspace=${p.workspace || ''}
+                          @click=${() => this.#openRecent(p.id)}></pd-project-card>
+                      `)}
+                    </div>`}
+          </div>
+        ` : ''}
 
         <div class="foot">A Project by <i>Common Genius</i></div>
       </div>

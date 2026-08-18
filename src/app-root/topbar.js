@@ -39,6 +39,11 @@ export class PandemoniumTopbar extends LitElement {
       background:linear-gradient(180deg,var(--chrome-a) 0%,var(--chrome-b) 100%);
     }
     #brand{justify-self:start;display:flex;align-items:center;gap:12px;min-width:0}
+    /* The one way back to the home screen used to be buried in the File
+       menu's "New project" item, which nobody reads a whole menu to find.
+       The wordmark is the standard place a web app puts that. */
+    #homeBtn{display:flex;align-items:center;background:none;border:0;padding:4px;border-radius:var(--r);cursor:pointer;flex:none}
+    #homeBtn:hover{background:rgba(255,255,255,.16)}
     pd-logo{font-size:19.824px;color:#fff}
     #projName{
       font-size:14px;color:rgba(255,255,255,.88);background:none;border:0;padding:3px 6px;
@@ -142,14 +147,10 @@ export class PandemoniumTopbar extends LitElement {
     dispatch(this, 'pandemonium-open-project-settings', {});
   }
 
+  // pandemonium-app owns the autosave timer: it flushes the outgoing
+  // project's latest state to storage before doing anything else (see
+  // #flushAutosave there), so this does not need to ask first.
   #newProject() {
-    const msg = session.isAuthed()
-      ? 'Start a new project? The one open now stays saved in your account (find it under Account), and you can also export a copy first (Export > Project file).'
-      : 'Start a new project? Your work here autosaves locally, but this browser will forget it once you start a new project unless you export a copy first (Export > Project file).';
-    if (!confirm(msg)) return;
-    // pandemonium-app owns the autosave timer and must cancel any pending
-    // write before clearing the slot, or a write already in flight for the
-    // project being replaced can land after the clear and resurrect it.
     dispatch(this, 'pandemonium-new-project', {});
   }
 
@@ -240,7 +241,7 @@ export class PandemoniumTopbar extends LitElement {
     const isMac = /mac/i.test(navigator.platform || '');
     return html`
       <div id="brand">
-        <pd-logo></pd-logo>
+        <button id="homeBtn" title="Home" @click=${() => this.#newProject()}><pd-logo></pd-logo></button>
         <button id="projName" title="Project settings" @click=${() => this.#openSettings()}>${project.name || 'Untitled'}</button>
       </div>
       <div id="searchBox">

@@ -201,11 +201,34 @@ export class PandemoniumApp extends LitElement {
     return true;
   }
 
-  // Opening a cloud project: cancel any pending autosave for the outgoing
-  // project first, or a write already scheduled against the old id can land
-  // after the switch (same hazard as #newProject).
-  async #openRemoteProject(id) {
+  // Leaving the open project (for the home screen, a new project, or another
+  // one entirely): flushes the outgoing project's latest state to storage
+  // right now, rather than merely cancelling the pending debounced write and
+  // letting whatever changed in the last second or two evaporate. This is
+  // what lets #newProject and #openRemoteProject act immediately with no
+  // "are you sure?" gate -- the answer is always "yes, and it is saved
+  // first." A signed-in save reaches the account; a signed-out one reaches
+  // this browser's local slot (see clearAutosavedProject's own note on why
+  // that slot, specifically, is always safe to clear next).
+  async #flushAutosave() {
     this.#debouncedAutosave.cancel();
+    if (!this.store.project) return;
+    try {
+      await autosaveProject(this.store.project);
+      syncStatus.markSynced();
+    } catch (err) {
+      syncStatus.markFailed(err && err.message);
+      console.warn('Could not save before leaving:', err);
+      dispatch(this, 'pandemonium-toast', { message: 'Your last changes could not be saved. They may be lost if you continue.' });
+    }
+  }
+
+  async #openRemoteProject(id) {
+    await this.#flushAutosave();
+    // A conflict during the flush opens the merge dialog (setConflictHandler
+    // in the constructor); switching projects out from under it would wipe
+    // ui.merge and strand that conflict unresolved, so let it take over.
+    if (this.store.ui && this.store.ui.merge) return;
     try {
       const project = await loadRemoteProject(id);
       this.store.loadProject(project);
@@ -231,11 +254,9 @@ export class PandemoniumApp extends LitElement {
     super.disconnectedCallback();
   }
 
-  #newProject() {
-    // Cancel first: a debounced write already scheduled for the project
-    // being replaced must not land after clearAutosavedProject() runs, or
-    // it silently resurrects the "closed" project on next load.
-    this.#debouncedAutosave.cancel();
+  async #newProject() {
+    await this.#flushAutosave();
+    if (this.store.ui && this.store.ui.merge) return; // see #openRemoteProject
     this.store.closeProject();
     clearAutosavedProject().catch((err) => console.warn('Could not clear autosaved project:', err));
   }

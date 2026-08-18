@@ -10,14 +10,19 @@ import { panelStyles, tabStyles } from '../../styles/shared.js';
 import '../ui/button.js';
 import '../ui/panel-picker.js';
 import '../../app-root/draft-chip.js';
-import './script-editor.js';
+
+const EDITOR_TAG = 'pandemonium-script-editor';
 
 // Panel chrome only: header, draft tabs, word count. All editing and
 // selection/linking behavior lives in <pandemonium-script-editor> (see
-// script-editor.js). The per-line element type is set from the row hover rail
-// now (cm-sections), so there is no top-right element switcher here.
+// script-editor.js), loaded on demand rather than imported here at module
+// scope: it pulls in CodeMirror, and the default layout (layout-tree.js)
+// has no script leaf at all, so most sessions never need it. Same lazy
+// pattern as the beta bug-report dialog in pandemonium-app.js. The per-line
+// element type is set from the row hover rail now (cm-sections), so there
+// is no top-right element switcher here.
 export class PandemoniumScriptPanel extends LitElement {
-  static properties = { leafId: {} };
+  static properties = { leafId: {}, _editorReady: { state: true } };
 
   static styles = [panelStyles, tabStyles, css`
     /* The working area is the final draft's blue only while the final draft is
@@ -36,6 +41,7 @@ export class PandemoniumScriptPanel extends LitElement {
     }
     .addtab:hover{color:var(--ui)}
     pandemonium-script-editor{flex:1;min-height:0}
+    .loading{flex:1;min-height:0}
     @media (max-width:760px){
       .wc{font-size:9px}
     }
@@ -44,6 +50,11 @@ export class PandemoniumScriptPanel extends LitElement {
   constructor() {
     super();
     this._store = new StoreController(this);
+    // A second script pane opened after the first already resolved this import
+    // (module imports are cached, so the second call is free either way) skips
+    // the loading placeholder entirely instead of flashing it needlessly.
+    this._editorReady = !!customElements.get(EDITOR_TAG);
+    if (!this._editorReady) import('./script-editor.js').then(() => { this._editorReady = true; });
   }
 
   #title() {
@@ -80,7 +91,9 @@ export class PandemoniumScriptPanel extends LitElement {
         </div>
         <div class="pbody">
           <span class="wc">${wc}</span>
-          <pandemonium-script-editor .leafId=${this.leafId}></pandemonium-script-editor>
+          ${this._editorReady
+            ? html`<pandemonium-script-editor .leafId=${this.leafId}></pandemonium-script-editor>`
+            : html`<div class="loading"></div>`}
         </div>
       </div>
     `;

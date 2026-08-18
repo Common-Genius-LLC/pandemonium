@@ -2,7 +2,7 @@
 
 import { LitElement, html, css } from 'lit';
 import { StoreController } from '../../state/store-controller.js';
-import { boardOrder } from '../../state/selectors.js';
+import { boardOrder, boardSlots, slotBoard } from '../../state/selectors.js';
 import { boardRuns } from '../../data/project-model.js';
 import { dispatch } from '../../utils/events.js';
 import { readFileAsDataURL, isBoardMediaFile, BOARD_MEDIA_ACCEPT } from '../../utils/files.js';
@@ -79,7 +79,9 @@ export class PandemoniumBoardsPanel extends LitElement {
     super();
     this._store = new StoreController(this);
     this._mode = 'final';
-    this._showScript = true;
+    // Frames only by default: the script text between them is a toggle away,
+    // not the first thing a storyboard pane shows.
+    this._showScript = false;
   }
 
   #title() {
@@ -153,98 +155,92 @@ export class PandemoniumBoardsPanel extends LitElement {
     await this.#addImages(e.dataTransfer.files || []);
   }
 
+  // A board just added or jumped to from elsewhere (a drop on the script, a
+  // search result, a highlight popover) scrolls into view and flashes pink.
+  // If it belongs to the mode this panel isn't currently showing, the panel
+  // switches to that mode first -- the whole point of the highlight is "look,
+  // here's what just happened," which a filtered-out card can't show.
   updated() {
     const ui = this._store.ui;
     if (!ui || !ui.highlightBoard) return;
     const id = ui.highlightBoard;
     this._store.store.setUI({ highlightBoard: null });
+    const project = this._store.project;
+    const board = project && project.boards.find((b) => b.id === id);
+    if (board) this._mode = board.ref ? 'reference' : 'final';
     requestAnimationFrame(() => {
       const card = this.renderRoot.querySelector(`pandemonium-board-card[data-board-id="${id}"]`);
       if (!card) return;
       card.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      card.style.outline = '2px solid var(--board)';
-      setTimeout(() => { card.style.outline = ''; }, 1200);
+      card.style.outline = '2px solid var(--res)';
+      setTimeout(() => { card.style.outline = ''; }, 2000);
     });
   }
 
-  #frameCard(o, runs, state) {
-    // A counterpart is the same section's frame in the other mode, if it has an
-    // image -- that is when the marker offers a swap rather than a move.
-    let counterpart = null;
-    if (o.ok && state) {
-      const c = state.R.boards.find((x) => x.ok && x.bd.id !== o.bd.id && x.firstBi === o.firstBi && !!x.bd.ref !== !!o.bd.ref && x.bd.img);
-      counterpart = c ? c.bd.id : null;
-    }
-    return html`<div class="frame-wrap"><pandemonium-board-card .resolved=${o} .run=${runs.get(o.bd.id)} .counterpartId=${counterpart}></pandemonium-board-card></div>`;
+  // A slot with a board in the current mode renders it (with its counterpart
+  // in the other mode, if any, offering the marker a swap rather than a
+  // move); a slot only the other mode has filled renders a placeholder.
+  #frameCard(slot, runs, reference) {
+    const mine = slotBoard(slot, reference);
+    if (!mine) return this.#placeholder(slot);
+    const other = reference ? slot.final : slot.ref;
+    const counterpart = other && other.bd.img ? other.bd.id : null;
+    return html`<div class="frame-wrap"><pandemonium-board-card .resolved=${mine} .run=${runs.get(mine.bd.id)} .counterpartId=${counterpart}></pandemonium-board-card></div>`;
   }
 
-  #byBi(arr) {
+  #byBi(slots) {
     const m = new Map();
-    for (const o of arr) { if (!o.ok) continue; if (!m.has(o.firstBi)) m.set(o.firstBi, []); m.get(o.firstBi).push(o); }
-    return m;
-  }
-
-  // Sections boarded in the OTHER mode but not this one, keyed by the block the
-  // board anchors to, carrying that board's anchor parts so a placeholder frame
-  // can create the missing counterpart (final beside a reference, or vice versa).
-  #otherModeAnchors(state) {
-    const reference = this._mode === 'reference';
-    const m = new Map();
-    for (const o of state.R.boards) {
-      if (!o.ok || !!o.bd.ref === reference) continue;
-      if (!m.has(o.firstBi)) m.set(o.firstBi, o.bd.anchor.parts);
-    }
+    for (const slot of slots) { if (!m.has(slot.firstBi)) m.set(slot.firstBi, []); m.get(slot.firstBi).push(slot); }
     return m;
   }
 
   // The rendered-script view: walk the final draft's blocks, printing each
-  // element as a formatted line and dropping this mode's frame in right after
-  // the element it is anchored to. Where the other mode boarded a section this
-  // one has not, a blank placeholder frame stands in. Boards that no longer
-  // resolve are collected under an "Unlinked frames" heading at the foot.
-  #scriptView(state, arr, runs) {
-    const byBi = this.#byBi(arr);
-    const other = this.#otherModeAnchors(state);
+  // element as a formatted line and dropping this mode's frame (or a blank
+  // placeholder, where only the other mode has boarded that slot) in right
+  // after the element it is anchored to. Boards that no longer resolve are
+  // collected under an "Unlinked frames" heading at the foot.
+  #scriptView(state, arr, slots, runs) {
+    const reference = this._mode === 'reference';
+    const byBi = this.#byBi(slots);
     const rows = [];
     for (const b of state.fparsed.blocks) {
       if (b.line != null && b.plain && b.plain.trim() && DOC_TYPES.has(b.type)) {
         rows.push(html`<div class="el ${b.type}">${b.plain}</div>`);
       }
-      if (byBi.has(b.i)) for (const o of byBi.get(b.i)) rows.push(this.#frameCard(o, runs, state));
-      else if (other.has(b.i)) rows.push(this.#placeholder(other.get(b.i)));
+      if (byBi.has(b.i)) for (const slot of byBi.get(b.i)) rows.push(this.#frameCard(slot, runs, reference));
     }
-    return html`<div class="doc">${rows}${this.#unlinked(arr, runs, state)}</div>`;
+    return html`<div class="doc">${rows}${this.#unlinked(arr, runs)}</div>`;
   }
 
   // Frames only (script hidden): the same frames and placeholders in script
   // order, without the element text between them.
-  #framesOnly(state, arr, runs) {
-    const byBi = this.#byBi(arr);
-    const other = this.#otherModeAnchors(state);
+  #framesOnly(state, arr, slots, runs) {
+    const reference = this._mode === 'reference';
+    const byBi = this.#byBi(slots);
     const rows = [];
     for (const b of state.fparsed.blocks) {
-      if (byBi.has(b.i)) for (const o of byBi.get(b.i)) rows.push(this.#frameCard(o, runs, state));
-      else if (other.has(b.i)) rows.push(this.#placeholder(other.get(b.i)));
+      if (byBi.has(b.i)) for (const slot of byBi.get(b.i)) rows.push(this.#frameCard(slot, runs, reference));
     }
-    return html`<div id="boardsList">${rows}${this.#unlinked(arr, runs, state)}</div>`;
+    return html`<div id="boardsList">${rows}${this.#unlinked(arr, runs)}</div>`;
   }
 
-  #unlinked(arr, runs, state) {
+  #unlinked(arr, runs) {
     const unlinked = arr.filter((o) => !o.ok);
     if (!unlinked.length) return '';
-    return html`<div class="unlinked-h">Unlinked frames</div>${unlinked.map((o) => this.#frameCard(o, runs, state))}`;
+    return html`<div class="unlinked-h">Unlinked frames</div>${unlinked.map((o) => html`<div class="frame-wrap"><pandemonium-board-card .resolved=${o} .run=${runs.get(o.bd.id)}></pandemonium-board-card></div>`)}`;
   }
 
-  // A blank frame for a section this mode has not boarded yet; drop or click
-  // fills it as a board of the current mode at the other mode's anchor.
-  #placeholder(parts) {
+  // A blank frame for a slot this mode has not filled yet; drop or click
+  // fills it as a board of the current mode, taking the slot's own seq so it
+  // pairs with the frame that already claimed the position.
+  #placeholder(slot) {
     const label = this._mode === 'reference' ? 'Add reference frame' : 'Add final frame';
     return html`<div class="frame-wrap"><div class="placeholder"
       title="Drop or click to add this frame"
-      @click=${() => this.#addToAnchor(parts)}
+      @click=${() => this.#addToAnchor(slot)}
       @dragover=${(e) => this.#phOver(e)}
       @dragleave=${(e) => this.#phLeave(e)}
-      @drop=${(e) => this.#phDrop(e, parts)}>${label}</div></div>`;
+      @drop=${(e) => this.#phDrop(e, slot)}>${label}</div></div>`;
   }
 
   #phOver(e) {
@@ -254,22 +250,23 @@ export class PandemoniumBoardsPanel extends LitElement {
     e.currentTarget.classList.add('over');
   }
   #phLeave(e) { e.currentTarget.classList.remove('over'); }
-  async #phDrop(e, parts) {
+  async #phDrop(e, slot) {
     e.preventDefault(); e.stopPropagation();
     e.currentTarget.classList.remove('over');
     const file = [...(e.dataTransfer.files || [])].find(isBoardMediaFile);
-    if (file) await this.#fillAnchor(parts, file);
+    if (file) await this.#fillAnchor(slot, file);
   }
-  #addToAnchor(parts) {
+  #addToAnchor(slot) {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = BOARD_MEDIA_ACCEPT;
-    input.onchange = () => { const f = input.files && input.files[0]; if (f) this.#fillAnchor(parts, f); };
+    input.onchange = () => { const f = input.files && input.files[0]; if (f) this.#fillAnchor(slot, f); };
     input.click();
   }
-  async #fillAnchor(parts, file) {
+  async #fillAnchor(slot, file) {
     const img = await readFileAsDataURL(file);
-    this._store.store.addBoard({ parts, img, caption: '', ref: this._mode === 'reference' });
+    const board = this._store.store.addBoard({ parts: slot.parts, img, caption: '', seq: slot.seq, ref: this._mode === 'reference' });
+    this._store.store.setUI({ highlightBoard: board.id });
   }
 
   render() {
@@ -278,6 +275,7 @@ export class PandemoniumBoardsPanel extends LitElement {
     const state = this._store.store.getFinalState();
     const reference = this._mode === 'reference';
     const arr = state.R.boards.filter((o) => !!o.bd.ref === reference).sort(boardOrder);
+    const slots = boardSlots(state.R.boards);
     const runs = boardRuns(project.boards);
     return html`
       <div class="shell" style="--pane-bg:var(--bg)">
@@ -301,8 +299,8 @@ export class PandemoniumBoardsPanel extends LitElement {
           @dragover=${(e) => this.#onDragOver(e)}
           @dragleave=${(e) => this.#onDragLeave(e)}
           @drop=${(e) => this.#onDrop(e)}>
-          ${arr.length || this.#otherModeAnchors(state).size
-            ? (this._showScript ? this.#scriptView(state, arr, runs) : this.#framesOnly(state, arr, runs))
+          ${arr.length || slots.length
+            ? (this._showScript ? this.#scriptView(state, arr, slots, runs) : this.#framesOnly(state, arr, slots, runs))
             : html`<div class="noboards">
                 <img src="/boards-empty.png" alt="">
                 <p>drop ${reference ? 'reference images' : 'images'} here to use as storyboard panels</p>

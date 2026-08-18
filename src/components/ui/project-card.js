@@ -50,6 +50,13 @@ export class PdProjectCard extends LitElement {
   static properties = {
     scale: { type: Number },
     elevated: { type: Boolean, reflect: true },
+    // A static, flat (never-swinging) clapper: parked rather than about to
+    // act, for a recent-project tile rather than the create-a-new-one flow.
+    closed: { type: Boolean, reflect: true },
+    // Just the clapper and a name, as a clickable button: a launcher tile
+    // for an existing project, not the editable form. Fires a native click
+    // on the host, which the caller listens for directly (no custom event).
+    compact: { type: Boolean, reflect: true },
     projectName: { type: String },
     type: { type: String },
     workspace: { type: String },
@@ -106,6 +113,24 @@ export class PdProjectCard extends LitElement {
     }
     @media (prefers-reduced-motion:reduce){
       .top-clip .rot{animation:none}
+    }
+    /* Closed: no swing, ever -- the flat 0deg pose the animation only ever
+       passes through mid-clap, held instead of the usual -15deg rest. */
+    :host([closed]) .top-clip .rot{animation:none;transform:translate(3.857px,29.297px) rotate(0deg)}
+
+    .wrap.compact{
+      cursor:pointer;background:none;border:0;padding:0;font:inherit;color:inherit;
+      display:flex;flex-direction:column;align-items:center;gap:6px;
+    }
+    .wrap.compact:hover .bars{opacity:.82}
+    .bars{position:relative;overflow:hidden;flex:none}
+    .clabel{
+      font-size:12px;font-weight:500;color:var(--ink);
+      max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    }
+    .cws{
+      font-size:10px;color:var(--mut);margin-top:-4px;
+      max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
     }
     .bottom-clip{
       position:absolute;left:2.298px;top:84.04px;
@@ -202,6 +227,8 @@ export class PdProjectCard extends LitElement {
     super();
     this.scale = 1.25;
     this.elevated = false;
+    this.closed = false;
+    this.compact = false;
     this.projectName = '';
     this.type = '';
     this.workspace = '';
@@ -276,7 +303,39 @@ export class PdProjectCard extends LitElement {
     };
   }
 
+  // Just the top bars (the info card starts at Figma y 108.665, so that is
+  // exactly where this clips), as a real <button> so a recents row is
+  // keyboard-reachable and its click is a plain DOM event the caller can
+  // listen for on the host tag, no custom event needed.
+  #renderCompact() {
+    const s = this.scale;
+    const barsH = 108.665;
+    return html`
+      <button type="button" class="wrap compact" title=${this.projectName || 'Untitled'}>
+        <div class="bars" style="width:${W * s}px;height:${barsH * s}px">
+          <div class="clapper" style="transform:scale(${s})">
+            <div class="bar-back"></div>
+            <div class="top-clip">
+              <div class="rot">
+                <svg class="stripes" viewBox="0 0 226.394 24.6212" fill="none" preserveAspectRatio="none" aria-hidden="true">${clapperStripes}</svg>
+              </div>
+            </div>
+            <div class="bottom-clip">
+              <svg class="stripes" viewBox="0 0 226.394 24.6211" fill="none" preserveAspectRatio="none" aria-hidden="true">${clapperStripes}</svg>
+            </div>
+            <div class="hinge">
+              <svg viewBox="0 0 39.3337 40.5347" fill="none" preserveAspectRatio="none" aria-hidden="true">${clapperHinge}</svg>
+            </div>
+          </div>
+        </div>
+        <span class="clabel">${this.projectName || 'Untitled'}</span>
+        ${this.workspace ? html`<span class="cws">${this.workspace}</span>` : ''}
+      </button>
+    `;
+  }
+
   render() {
+    if (this.compact) return this.#renderCompact();
     const mins = this.#mins();
     const s = this.scale;
     return html`

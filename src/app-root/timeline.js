@@ -115,7 +115,9 @@ export class PandemoniumTimeline extends LitElement {
         bi: b.i, type: b.type,
         secs: durByBi.get(b.i) || elementSeconds(b),
         paced: durByBi.has(b.i),
-        boarded: finalSet.has(b.i) || refSet.has(b.i),
+        // Reference-only sits out of "boarded" too (see coverage() in
+        // selectors.js): refOnly below is what still lights the bar hatched.
+        boarded: finalSet.has(b.i),
         refOnly: !finalSet.has(b.i) && refSet.has(b.i),
         sourced: sourced.has(b.i),
       }));

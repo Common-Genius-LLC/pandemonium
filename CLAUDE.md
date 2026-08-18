@@ -130,9 +130,10 @@ as of the migration:
   `#printRoot` element (see `src/components/print/print.js` and the comment
   in `src/styles/global.css` on why it must live outside every component's
   shadow root), not a PDF library.
-- Test runner: Vitest is installed but no tests have been written yet, first
-  candidate is `src/fountain/parse.js` against every construct hard rule 2
-  lists below.
+- Test runner: Vitest, with tests alongside the modules they cover
+  (`src/**/*.test.js`, e.g. `data/merge.test.js`, `data/layout-tree.test.js`,
+  `state/selectors.test.js`). `src/fountain/parse.js` against every construct
+  hard rule 2 lists is still the biggest open gap.
 
 Migration is being done in phases (scaffold, feature-parity port, Figma
 re-skin, unified CodeMirror-based editor, new capabilities). Check
@@ -213,6 +214,26 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
    the corner-drag gesture generalized to reach any ancestor boundary a drag
    actually crosses rather than only the immediate sibling (section 1.1).
    **Done.**
+8. Storyboards: final and reference now share frame count and division per
+   passage (`boardSlots`/`slotBoard` in `src/state/selectors.js` pair a final
+   and a reference board at the same anchor and `seq` into one slot; a slot
+   only one mode has filled renders a placeholder in the other), so the
+   slideshow and boards panel show the same beats switching between them
+   instead of two independently-sized lists. Fixed alongside: an editor image
+   drop no longer silently lands in a mode the boards panel isn't showing (it
+   was reading `dropToReference` while the panel filtered on its own
+   `_mode`); the new board is scrolled to and flashed pink for 2 seconds.
+   `coverage()` now excludes reference boards from the boarded percentage,
+   matching `addBoard`'s documented intent (hard rule 3) rather than the
+   comment it had drifted from. Show Script in the boards panel now defaults
+   off. **Done.**
+9. Home screen: the start screen gained a recent-projects row below
+   Create/Open, using a new `compact closed` variant of `pd-project-card`
+   (the clapper held flat, no swing, just the art and a name). Cloud accounts
+   only for now, reusing the same `listProjectsRemote()` list the account
+   dialog's picker already had; local projects are a single browser-resident
+   slot with no history to list yet, so the row is absent rather than empty
+   when signed out. **Done.**
 
 ---
 

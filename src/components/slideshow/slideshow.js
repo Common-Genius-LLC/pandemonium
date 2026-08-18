@@ -3,7 +3,7 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { StoreController } from '../../state/store-controller.js';
 import { CONTENT_TYPES } from '../../fountain/blocks.js';
-import { boardOrder } from '../../state/selectors.js';
+import { boardSlots, slotBoard } from '../../state/selectors.js';
 import { readFileAsDataURL, isVideoSrc } from '../../utils/files.js';
 
 // Fullscreen playback: image on top, the linked (or nearest) script excerpt
@@ -99,14 +99,19 @@ export class PandemoniumSlideshow extends LitElement {
     super.disconnectedCallback();
   }
 
+  // One slide per SLOT (see boardSlots in selectors.js), not per board of the
+  // current mode: a passage boarded three times in Reference gets three
+  // slides in Final too, even where Final has not filled them yet, so the
+  // deck's shape never changes when you switch storyboards mid-show -- only
+  // which image (or a blank, waiting for one) each slide shows does.
   #buildSlides() {
     const store = this._store.store;
     const state = store.getFinalState();
     const scenes = state.fscenes, parsed = state.fparsed;
+    const reference = this._sbMode === 'reference';
     const byScene = scenes.map(() => []);
-    state.R.boards.slice().sort(boardOrder).forEach((o) => {
-      if (!!o.bd.ref !== (this._sbMode === 'reference')) return; // show the selected storyboard (final or reference)
-      if (o.ok && byScene[o.sceneIdx]) byScene[o.sceneIdx].push(o);
+    boardSlots(state.R.boards).forEach((slot) => {
+      if (byScene[slot.sceneIdx]) byScene[slot.sceneIdx].push(slot);
     });
     // Slide text is kept as [{type, text}], not a flat string: the strip
     // renders it with the same element formatting as the editor, and that
@@ -137,17 +142,25 @@ export class PandemoniumSlideshow extends LitElement {
       if (sc.end < sc.start && !byScene[ix].length) return;
       const label = (sc.pre ? 'Opening' : 'Sc ' + sc.label) + ' · ' + sc.name;
       if (!byScene[ix].length) {
-        // A scene with no boards at all. boardId stays null, which is what
-        // makes this slide refuse an image drop: there is no board to put the
-        // image on, and creating one behind the presenter's back mid-talk is
-        // worse than doing nothing.
+        // A scene with no boards at all, in either storyboard. boardId and
+        // fillParts both stay unset, which is what makes this slide refuse an
+        // image drop: there is no slot to put the image on, and creating one
+        // behind the presenter's back mid-talk is worse than doing nothing.
         const lines = excerpt(sc);
         slides.push({ boardId: null, img: null, label, lines: lines.length ? lines : [{ type: 'scene', text: sc.name }] });
         return;
       }
-      byScene[ix].forEach((o) => {
-        const lines = boardLines(o);
-        slides.push({ boardId: o.bd.id, img: o.bd.img, cap: o.bd.caption, label, lines: lines.length ? lines : excerpt(sc) });
+      byScene[ix].forEach((slot) => {
+        const o = slotBoard(slot, reference);
+        if (o) {
+          const lines = boardLines(o);
+          slides.push({ boardId: o.bd.id, img: o.bd.img, cap: o.bd.caption, label, lines: lines.length ? lines : excerpt(sc) });
+          return;
+        }
+        // The OTHER storyboard filled this slot; this one has not. The slide
+        // still takes its place in the deck (same count, same order), and a
+        // drop here fills exactly this slot rather than being a dead end.
+        slides.push({ boardId: null, fillParts: slot.parts, fillSeq: slot.seq, img: null, label, lines: excerpt(sc) });
       });
     });
     return slides;
@@ -197,7 +210,11 @@ export class PandemoniumSlideshow extends LitElement {
     this._ix = Math.max(0, Math.min(this._slides.length - 1, this._ix + d));
   }
 
-  // Switch between the final and reference storyboard mid-show.
+  // Switch between the final and reference storyboard mid-show. Both builds
+  // walk the same slots (see #buildSlides), so the deck is always the same
+  // length in either mode and _ix keeps pointing at the same beat -- the
+  // empty-deck branch below is now only reachable when the script has no
+  // boards at all, already caught by open().
   #setMode(mode) {
     if (this._sbMode === mode) return;
     this._sbMode = mode;
@@ -225,7 +242,7 @@ export class PandemoniumSlideshow extends LitElement {
 
   #canDrop(e) {
     const slide = this._slides[this._ix];
-    return !!(slide && slide.boardId && e.dataTransfer && [...e.dataTransfer.types].includes('Files'));
+    return !!(slide && (slide.boardId || slide.fillParts) && e.dataTransfer && [...e.dataTransfer.types].includes('Files'));
   }
 
   #onDragOver(e) {
@@ -239,9 +256,10 @@ export class PandemoniumSlideshow extends LitElement {
     if (this._dropping) { this._dropping = false; this.requestUpdate(); }
   }
 
-  // Fill the slide on screen from a dropped image. Uses replaceBoardImage
-  // rather than creating anything, so this works the same whether the slide is
-  // a blank board waiting for its frame or an existing board being swapped.
+  // Fill the slide on screen from a dropped image. A slide with a board
+  // already (blank or not) uses replaceBoardImage; a slide that only exists
+  // because the OTHER storyboard filled this slot creates this mode's board
+  // there, at that same slot's seq, so the two stay paired.
   async #onDrop(e) {
     if (!this.#canDrop(e)) return;
     e.preventDefault();
@@ -250,7 +268,11 @@ export class PandemoniumSlideshow extends LitElement {
     const file = [...(e.dataTransfer.files || [])].find((f) => f.type.startsWith('image/'));
     if (!file) { this.requestUpdate(); return; }
     const dataUrl = await readFileAsDataURL(file);
-    this._store.store.replaceBoardImage(slide.boardId, dataUrl);
+    if (slide.boardId) {
+      this._store.store.replaceBoardImage(slide.boardId, dataUrl);
+    } else {
+      this._store.store.addBoard({ parts: slide.fillParts, img: dataUrl, caption: '', seq: slide.fillSeq, ref: this._sbMode === 'reference' });
+    }
     this.#refreshSlides();
   }
 
@@ -292,7 +314,7 @@ export class PandemoniumSlideshow extends LitElement {
           ? (isVideoSrc(s.img)
             ? html`<video src=${s.img} autoplay muted loop playsinline></video>`
             : html`<img alt="" src=${s.img}>`)
-          : html`<div class="noimg">${s.boardId ? 'Drop an image here' : 'No board yet'}</div>`}
+          : html`<div class="noimg">${(s.boardId || s.fillParts) ? 'Drop an image here' : 'No board yet'}</div>`}
       </div>
       <div class="bottom">
         <div class="prog"><i style="width:${((this._ix + 1) / this._slides.length) * 100}%"></i></div>

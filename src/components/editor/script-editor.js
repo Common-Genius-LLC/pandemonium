@@ -22,6 +22,7 @@ import { summaryDefault } from './cm-summary-default.js';
 import { linkToItems } from '../linking/link-actions.js';
 import { elementMenu } from './element-menu.js';
 import { readFileAsDataURL, isBoardMediaFile, BOARD_MEDIA_ACCEPT } from '../../utils/files.js';
+import { openCounterpartSeq } from '../../data/project-model.js';
 import { imageFromClipboard } from '../../utils/clipboard.js';
 import { openPair } from '../../state/actions.js';
 import { clamp } from '../../utils/format.js';
@@ -338,27 +339,39 @@ export class PandemoniumScriptEditor extends LitElement {
   }
 
   // Dropping an image onto a paragraph boards it. External drops (from outside
-  // the storyboard panel) default to the REFERENCE storyboard. If the passage
-  // already has a frame, the image replaces it after a confirm; otherwise a new
-  // reference board is created (with cue/dialogue pairing, see #boardParts).
+  // the storyboard panel) default to the REFERENCE storyboard (see
+  // dropToReference, changeable from the panel's gear icon). If the target
+  // mode already has a frame on this exact passage, the image replaces it
+  // after a confirm. Otherwise, if the OTHER mode already boarded this
+  // passage, the new board takes that slot's seq so the two stay paired (see
+  // boardSlots in selectors.js) -- with no counterpart either, it starts a
+  // fresh slot (with cue/dialogue pairing, see #boardParts). Either way the
+  // boards panel is revealed and switched to show wherever the image landed,
+  // scrolled to and flashed, so the drop is never invisible.
   async #dropImageOnSection(sec, file) {
     const store = this._store.store;
     store.revealContent('boards');
     const parts = this.#boardParts(sec);
     const firstBlock = parts[0] && parts[0].b;
-    const existing = store.getFinalState().R.boards.find((o) => o.ok && o.firstBi === firstBlock);
+    const ref = store.project.dropToReference !== false;
+    const existing = store.getFinalState().R.boards.find((o) => o.ok && o.firstBi === firstBlock && !!o.bd.ref === ref);
     const img = await readFileAsDataURL(file);
     if (existing) {
       dispatch(this, 'pandemonium-open-dialog', {
         title: 'Replace storyboard frame?',
         body: html`<p>This passage already has a storyboard frame. Replace its image with the one you dropped?</p>`,
         okLabel: 'Replace',
-        onOk: () => { store.replaceBoardImage(existing.bd.id, img); dispatch(this, 'pandemonium-toast', { message: 'Frame replaced.' }); },
+        onOk: () => {
+          store.replaceBoardImage(existing.bd.id, img);
+          store.setUI({ highlightBoard: existing.bd.id });
+          dispatch(this, 'pandemonium-toast', { message: 'Frame replaced.' });
+        },
       });
       return;
     }
-    const ref = store.project.dropToReference !== false;
-    store.addBoard({ parts, img, caption: '', ref });
+    const seq = openCounterpartSeq(store.project.boards, parts, ref);
+    const board = store.addBoard({ parts, img, caption: '', seq: seq != null ? seq : undefined, ref });
+    store.setUI({ highlightBoard: board.id });
     dispatch(this, 'pandemonium-toast', { message: `Added to the ${ref ? 'reference' : 'final'} storyboard.` });
   }
 
