@@ -89,15 +89,19 @@ export function computeSections(parsed) {
 // passes the shared fountain plugin's `.parsed` so we never parse twice).
 // `onAct(actName, section)` runs a direct action (comment). `onLink(section,
 // rect)` opens the "link to" menu (Storyboard / Research / Sound) anchored to
-// the pill. `canLink()` gates the whole thing off when the shown draft is not
-// the final one (only the final draft owns links) or when a text selection is
-// active (the selection toolbar owns that case).
+// the pill. `canLink()` gates the link and comment pills (and image-drop-to-
+// board) off when the shown draft is not the final one, since only the final
+// draft owns links -- but the rail itself still shows, with just its element
+// pill, on every draft: changing a line's screenplay element (Scene, Action,
+// Character, ...) has nothing to do with linking. A text selection hides the
+// whole rail regardless (the selection toolbar owns that case).
 //
-// The two-pill rail is the Figma "Paragraph Element (Hover)" affordance
-// (node 85-590): a dark "link to" pill and a yellow "Comment" pill at the row's
-// right edge, replacing the older Board/Source/Comment button row. The linkable
-// unit is still a parsed section (a paragraph, or a cue with its speech), which
-// is the honest anchor unit -- the pills just re-dress how it is reached.
+// The rail is the Figma "Paragraph Element (Hover)" affordance (node 85-590):
+// an element pill plus a dark "link to" pill and a yellow "Comment" pill at
+// the row's right edge, replacing the older Board/Source/Comment button row.
+// The linkable unit is still a parsed section (a paragraph, or a cue with its
+// speech), which is the honest anchor unit -- the pills just re-dress how it
+// is reached.
 export function sectionAffordances({ getParsed, onAct, onLink, onElement, onDropImage, elementLabelForSection, canLink }) {
   return ViewPlugin.fromClass(class {
     constructor(view) {
@@ -114,6 +118,8 @@ export function sectionAffordances({ getParsed, onAct, onLink, onElement, onDrop
         '<button class="linkto" data-act="link" title="Link this passage to a storyboard, research source, or sound">link to</button>' +
         '<button class="comment" data-act="comment" title="Add a comment on this passage">Comment</button>';
       this.eltBtn = this.acts.querySelector('.elt');
+      this.linkBtn = this.acts.querySelector('.linkto');
+      this.commentBtn = this.acts.querySelector('.comment');
       // Keep the editor's selection/focus intact when a rail button is used.
       this.acts.addEventListener('mousedown', (e) => e.preventDefault());
       this.acts.addEventListener('click', (e) => {
@@ -186,7 +192,9 @@ export function sectionAffordances({ getParsed, onAct, onLink, onElement, onDrop
     onMouseMove(e) {
       // Over the rail itself: hold the current section so the click lands.
       if (this.acts.contains(e.target)) return;
-      if (!this.canLink() || !this.view.state.selection.main.empty) { this.setHover(-1); return; }
+      // The rail shows on every draft now (element pill at minimum), so only
+      // an active selection (the selection toolbar's turf) hides it.
+      if (!this.view.state.selection.main.empty) { this.setHover(-1); return; }
       this.setHover(this.sectionAt(e.clientX, e.clientY));
     }
 
@@ -229,7 +237,7 @@ export function sectionAffordances({ getParsed, onAct, onLink, onElement, onDrop
         read: (v) => {
           const idx = effectiveSection(v.state);
           const sec = this.sections[idx];
-          if (!sec || !this.canLink() || !v.state.selection.main.empty) return { show: false };
+          if (!sec || !v.state.selection.main.empty) return { show: false };
           const doc = v.state.doc;
           if (sec.firstLine + 1 > doc.lines) return { show: false };
           const coords = v.coordsAtPos(doc.line(sec.firstLine + 1).from);
@@ -246,6 +254,11 @@ export function sectionAffordances({ getParsed, onAct, onLink, onElement, onDrop
           this.acts.style.display = 'flex';
           this.acts.style.top = data.top + 'px';
           if (this.eltBtn) this.eltBtn.textContent = data.label || 'Element';
+          // Link and comment are final-draft-only (only the final draft owns
+          // links); every other draft gets just the element pill.
+          const linkable = this.canLink();
+          if (this.linkBtn) this.linkBtn.style.display = linkable ? '' : 'none';
+          if (this.commentBtn) this.commentBtn.style.display = linkable ? '' : 'none';
         },
       });
     }

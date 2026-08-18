@@ -36,8 +36,14 @@ export class PandemoniumStore extends EventTarget {
     // with an explicit null both land on a real tree.
     if (!this.#project.layout) this.#project = { ...this.#project, layout: defaultLayout() };
     if (!this.#project.scripts.length) {
-      const created = model.createScript(this.#project, {});
-      this.#project = created.project;
+      // A brand-new project opens with two drafts already on the tab bar:
+      // "First Draft" to write in, and "Final Draft" as the one that will
+      // own storyboard/research links once it exists. Anything added later
+      // lands between them (see insertDraft in project-model.js).
+      const first = model.createScript(this.#project, { name: model.FIRST_DRAFT_NAME, final: false });
+      const withFirst = first.project;
+      const final = model.createScript(withFirst, { final: true });
+      this.#project = final.project;
     }
     if (!this.#project.scripts.some((s) => s.final)) {
       this.#project = { ...this.#project, scripts: this.#project.scripts.map((s, ix) => (ix === 0 ? { ...s, final: true } : s)) };
@@ -171,6 +177,8 @@ export class PandemoniumStore extends EventTarget {
   }
 
   renameScript(id, name) { this.#applyProject(model.renameScript(this.#project, id, name)); }
+
+  reorderScript(id, beforeId) { this.#applyProject(model.reorderScript(this.#project, id, beforeId)); }
 
   // Used by the live textarea/editor: the underlying text is always written
   // synchronously (so `store.project` is instantly current for Save/export,

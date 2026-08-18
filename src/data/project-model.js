@@ -15,17 +15,32 @@ import { defaultFountain } from './schema.js';
 
 // The final draft is always called this, and is the one script that cannot be
 // renamed or deleted: it is what storyboard and research links attach to (hard
-// rule 4), so it has to exist and has to be identifiable at a glance. Every
-// other draft is "Draft N", numbered from 1 among the non-final drafts.
+// rule 4), so it has to exist and has to be identifiable at a glance. A new
+// project opens with exactly one other draft, "First Draft" (also reserved,
+// also the tab bar's leftmost tab), and everything after that is "Draft N",
+// numbered from 2 since "First Draft" already occupies the first slot.
 export const FINAL_DRAFT_NAME = 'Final Draft';
+export const FIRST_DRAFT_NAME = 'First Draft';
 
 function nextDraftName(project) {
   let max = 0;
   for (const s of project.scripts) {
+    if (s.name === FIRST_DRAFT_NAME) { max = Math.max(max, 1); continue; }
     const m = /^Draft (\d+)$/.exec(s.name || '');
     if (m) max = Math.max(max, parseInt(m[1], 10));
   }
   return 'Draft ' + (max + 1);
+}
+
+// Non-final drafts land just before the final draft, so the tab bar reads
+// "First Draft, Draft 2 .. Draft N, Final Draft" instead of trailing the
+// final tab. Tabs are freely reorderable from there (see reorderScript).
+function insertDraft(project, script) {
+  const finalIx = project.scripts.findIndex((s) => s.final);
+  const scripts = finalIx === -1
+    ? [...project.scripts, script]
+    : [...project.scripts.slice(0, finalIx), script, ...project.scripts.slice(finalIx)];
+  return { ...project, scripts };
 }
 
 // A project restored from an autosave or opened from a file can carry a final
@@ -58,7 +73,8 @@ export function createScript(project, { name, text, final } = {}) {
     text: text != null ? text : defaultFountain(project),
     final: isFinal,
   };
-  return { project: { ...project, scripts: [...project.scripts, script] }, script };
+  if (isFinal) return { project: { ...project, scripts: [...project.scripts, script] }, script };
+  return { project: insertDraft(project, script), script };
 }
 
 export function renameScript(project, id, name) {
@@ -74,13 +90,28 @@ export function duplicateScript(project, id) {
   if (!s) return { project, script: null };
   // A copy is never the final draft, so it cannot carry the final name.
   const copy = { id: uid(), name: s.final ? nextDraftName(project) : s.name + ' copy', text: s.text, final: false };
-  return { project: { ...project, scripts: [...project.scripts, copy] }, script: copy };
+  return { project: insertDraft(project, copy), script: copy };
 }
 
 export function deleteScript(project, id) {
   const s = project.scripts.find((x) => x.id === id);
   if (!s || s.final) return project;
   return { ...project, scripts: project.scripts.filter((x) => x.id !== id) };
+}
+
+// Moves `id` to just before `beforeId` in tab order (drag-and-drop reorder).
+// A null/missing beforeId moves it to the end of the non-final run, i.e. right
+// before the final draft. The final draft itself never moves: its tab is
+// always the rightmost, matching the reserved name and its unique role as the
+// one draft that owns storyboard/research links (hard rule 4).
+export function reorderScript(project, id, beforeId) {
+  const moving = project.scripts.find((s) => s.id === id);
+  if (!moving || moving.final) return project;
+  const without = project.scripts.filter((s) => s.id !== id);
+  const finalIx = without.findIndex((s) => s.final);
+  const targetIx = beforeId ? without.findIndex((s) => s.id === beforeId) : -1;
+  const at = targetIx !== -1 ? targetIx : (finalIx !== -1 ? finalIx : without.length);
+  return { ...project, scripts: [...without.slice(0, at), moving, ...without.slice(at)] };
 }
 
 // Promoting a draft moves the name with the status, so the stored names stay
@@ -104,7 +135,7 @@ export function updateScriptText(project, id, text) {
 
 export function importFountain(project, name, text) {
   const script = { id: uid(), name, text, final: false };
-  return { project: { ...project, scripts: [...project.scripts, script] }, script };
+  return { project: insertDraft(project, script), script };
 }
 
 // ---- boards ----

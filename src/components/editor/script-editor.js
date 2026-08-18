@@ -80,8 +80,10 @@ export class PandemoniumScriptEditor extends LitElement {
         keymap.of([...defaultKeymap, ...historyKeymap]),
         // Shown only while the document is empty, so it appears on a new
         // draft, goes on the first keystroke, and comes back if the writer
-        // clears everything out again. CodeMirror owns that toggle.
-        placeholder('Start writing your script'),
+        // clears everything out again. CodeMirror owns that toggle. Styled as
+        // a synopsis (cm-theme.js .cm-placeholder) because that is genuinely
+        // what the first keystroke becomes -- see cm-summary-default.js.
+        placeholder('Start with a summary of the script'),
         EditorView.lineWrapping,
         fountainTheme,
         this.#plugin,

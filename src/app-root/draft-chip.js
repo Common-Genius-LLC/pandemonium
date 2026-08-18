@@ -8,14 +8,20 @@ import { tabStyles } from '../styles/shared.js';
 // One chip per script. Clicking a chip that isn't active switches to it;
 // clicking the already-active chip opens its context menu (rename,
 // duplicate, make final, delete) -- same two-purpose click as the original.
+// Every non-final chip is also a drag source and drop target, so the tab
+// order (Draft 2..N between the fixed First/Final ends) is freely
+// rearrangeable (see reorderScript in data/project-model.js).
+const DND_TYPE = 'application/x-pandemonium-draft';
+
 export class PandemoniumDraftChip extends LitElement {
-  static properties = { script: { type: Object }, leafId: {}, active: { type: Boolean, reflect: true } };
+  static properties = { script: { type: Object }, leafId: {}, active: { type: Boolean, reflect: true }, _dragOver: { state: true } };
 
   // Figma "Final Draft" / "Other Drafts" (44:148, 44:157). tabStyles carries
   // the shape; --pane-bg is inherited from the panel shell so the active tab
   // takes the working area's own colour.
   static styles = [tabStyles, css`
     :host{display:inline-flex}
+    button.dragover{box-shadow:inset 2px 0 0 var(--ui)}
   `];
 
   constructor() {
@@ -62,6 +68,34 @@ export class PandemoniumDraftChip extends LitElement {
     this._store.store.deleteScript(s.id);
   }
 
+  #dragStart(e) {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData(DND_TYPE, this.script.id);
+  }
+
+  #dragOver(e) {
+    if (![...e.dataTransfer.types].includes(DND_TYPE)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (!this._dragOver) this._dragOver = true;
+  }
+
+  #dragLeave() {
+    if (this._dragOver) this._dragOver = false;
+  }
+
+  #drop(e) {
+    if (![...e.dataTransfer.types].includes(DND_TYPE)) return;
+    e.preventDefault();
+    this._dragOver = false;
+    const draggedId = e.dataTransfer.getData(DND_TYPE);
+    if (!draggedId || draggedId === this.script.id) return;
+    // Dropping on a tab moves the dragged draft to just before it -- dropping
+    // on the final tab lands it at the end of the reorderable run, right
+    // before Final, same place a freshly created draft would appear.
+    this._store.store.reorderScript(draggedId, this.script.id);
+  }
+
   render() {
     const s = this.script;
     const ui = this._store.ui;
@@ -69,8 +103,11 @@ export class PandemoniumDraftChip extends LitElement {
     // Active reflects this pane's own draft (its override, else the global one).
     this.active = this._store.store.scriptForLeaf(this.leafId).id === s.id;
     const title = this.active ? 'Draft options: rename, duplicate, make final, delete' : 'Switch to this draft';
-    return html`<button class="tab ${s.final ? 'final' : ''} ${this.active ? 'on' : ''}"
-      title=${title} @click=${(e) => this.#click(e)}>${s.name}</button>`;
+    return html`<button class="tab ${s.final ? 'final' : ''} ${this.active ? 'on' : ''} ${this._dragOver ? 'dragover' : ''}"
+      title=${title} @click=${(e) => this.#click(e)}
+      draggable=${!s.final} @dragstart=${(e) => this.#dragStart(e)}
+      @dragover=${(e) => this.#dragOver(e)} @dragleave=${() => this.#dragLeave()} @drop=${(e) => this.#drop(e)}
+      >${s.name}</button>`;
   }
 }
 

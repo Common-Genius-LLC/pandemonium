@@ -234,6 +234,27 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
    dialog's picker already had; local projects are a single browser-resident
    slot with no history to list yet, so the row is absent rather than empty
    when signed out. **Done.**
+10. New-project default layout changed to storyboards top-left, script editor
+    top-right, timeline as a minimum-height strip across the foot
+    (`defaultLayout()` in `src/data/layout-tree.js`); research is no longer
+    shown by default. A brand-new project now seeds two drafts, "First Draft"
+    and "Final Draft" (`store.loadProject`), with anything added after that
+    landing between them in the tab bar (`insertDraft` in
+    `src/data/project-model.js`) and numbered "Draft 2".."Draft N" (max(1,
+    existing) + 1, since "First Draft" occupies slot 1). Draft tabs are
+    freely drag-reorderable (`reorderScript`, wired in `draft-chip.js`); the
+    final draft's tab never moves. A blank script's placeholder now reads
+    "Start with a summary of the script" and is styled exactly like a
+    Fountain synopsis line (`.cm-placeholder` in `cm-theme.js`), matching
+    what the first keystroke actually becomes (`cm-summary-default.js`). The
+    per-line hover rail (`cm-sections.js`) now shows on every draft, not only
+    the final one; only its link and comment pills stay final-only, so any
+    draft can still change a line's screenplay element from the hover pill.
+    The slideshow no longer segments boardless stretches of script into one
+    slide per scene: consecutive scenes with no board fold into a single
+    continuous slide (`#buildSlides` in `slideshow.js`), and the top-left
+    scene label that segmentation drove is removed (a board's own caption,
+    if it has one, still shows there). **Done.**
 
 ---
 

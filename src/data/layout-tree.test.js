@@ -19,15 +19,15 @@ function findLeaf(node, content) {
 }
 
 describe('absorbAcross', () => {
-  // defaultLayout() = col(.82){ a: col(.68){ a: boards, b: research }, b: timeline }.
-  // research's immediate sibling is boards, so the old single-level
-  // absorbSibling could never reach timeline from research at all.
+  // defaultLayout() = col(.82){ a: row(.5){ a: boards, b: script }, b: timeline }.
+  // script's immediate sibling is boards, so the old single-level
+  // absorbSibling could never reach timeline from script at all.
   // absorbAcross, walked to the root (their actual common ancestor), must
   // keep everything on the 'a' side intact and drop only 'b'.
   it('collapsing to the a side keeps every pane on that side and drops only the far side', () => {
     const root = defaultLayout();
     const collapsed = absorbAcross(root, root.id, 'a');
-    expect(collectContents(collapsed).sort()).toEqual(['boards', 'research']);
+    expect(collectContents(collapsed).sort()).toEqual(['boards', 'script']);
     expect(findLeaf(collapsed, 'timeline')).toBeNull();
   });
 
@@ -75,10 +75,10 @@ describe('growAcross', () => {
 describe('pathTo', () => {
   it('returns the root-to-leaf chain, root first and the leaf last', () => {
     const root = defaultLayout();
-    const researchLeaf = findLeaf(root, 'research');
-    const path = pathTo(root, researchLeaf.id);
+    const scriptLeaf = findLeaf(root, 'script');
+    const path = pathTo(root, scriptLeaf.id);
     expect(path[0]).toBe(root);
-    expect(path[path.length - 1]).toBe(researchLeaf);
+    expect(path[path.length - 1]).toBe(scriptLeaf);
   });
 
   it('returns null for an id not in the tree', () => {

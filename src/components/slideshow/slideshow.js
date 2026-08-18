@@ -46,7 +46,7 @@ export class PandemoniumSlideshow extends LitElement {
     .prog i{display:block;height:100%;background:var(--res)}
     .txt{flex:1;min-height:0;display:flex;gap:24px;align-items:flex-start;padding:16px 26px;overflow:hidden}
     .txt .left{flex:1;min-width:0;height:100%;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin}
-    .scene{margin-bottom:8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--smut)}
+    .cap{margin-bottom:8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--smut)}
     /* Poster-sized by default; the actual size per slide comes from
        #lineSize() below, since a long excerpt has to step down to keep fitting
        the strip. Each script line is its own element (so it can be formatted
@@ -104,6 +104,14 @@ export class PandemoniumSlideshow extends LitElement {
   // slides in Final too, even where Final has not filled them yet, so the
   // deck's shape never changes when you switch storyboards mid-show -- only
   // which image (or a blank, waiting for one) each slide shows does.
+  //
+  // Boarded passages still get one slide per board slot, in scene order. But
+  // stretches of script with no board anywhere are no longer chopped into one
+  // slide per scene -- that used scene breaks as a stand-in for pacing they
+  // don't actually carry, so a script with zero storyboards played back as a
+  // slow click-through of individual scenes. A run of consecutive boardless
+  // scenes is now one continuous slide instead, read straight through rather
+  // than stepped.
   #buildSlides() {
     const store = this._store.store;
     const state = store.getFinalState();
@@ -138,31 +146,37 @@ export class PandemoniumSlideshow extends LitElement {
       return b ? { type: b.type, text: b.plain.slice(r.s, r.e) } : null;
     }).filter((l) => l && l.text);
     const slides = [];
+    let pending = [];
+    const flushPending = () => {
+      if (!pending.length) return;
+      slides.push({ boardId: null, img: null, lines: pending });
+      pending = [];
+    };
     scenes.forEach((sc, ix) => {
       if (sc.end < sc.start && !byScene[ix].length) return;
-      const label = (sc.pre ? 'Opening' : 'Sc ' + sc.label) + ' · ' + sc.name;
       if (!byScene[ix].length) {
-        // A scene with no boards at all, in either storyboard. boardId and
-        // fillParts both stay unset, which is what makes this slide refuse an
-        // image drop: there is no slot to put the image on, and creating one
-        // behind the presenter's back mid-talk is worse than doing nothing.
+        // A scene with no boards at all, in either storyboard: fold its text
+        // into the run of boardless script being built up, rather than
+        // giving it a slide (and a slide-advance) of its own.
         const lines = excerpt(sc);
-        slides.push({ boardId: null, img: null, label, lines: lines.length ? lines : [{ type: 'scene', text: sc.name }] });
+        pending.push(...(lines.length ? lines : [{ type: 'scene', text: sc.name }]));
         return;
       }
+      flushPending();
       byScene[ix].forEach((slot) => {
         const o = slotBoard(slot, reference);
         if (o) {
           const lines = boardLines(o);
-          slides.push({ boardId: o.bd.id, img: o.bd.img, cap: o.bd.caption, label, lines: lines.length ? lines : excerpt(sc) });
+          slides.push({ boardId: o.bd.id, img: o.bd.img, cap: o.bd.caption, lines: lines.length ? lines : excerpt(sc) });
           return;
         }
         // The OTHER storyboard filled this slot; this one has not. The slide
         // still takes its place in the deck (same count, same order), and a
         // drop here fills exactly this slot rather than being a dead end.
-        slides.push({ boardId: null, fillParts: slot.parts, fillSeq: slot.seq, img: null, label, lines: excerpt(sc) });
+        slides.push({ boardId: null, fillParts: slot.parts, fillSeq: slot.seq, img: null, lines: excerpt(sc) });
       });
     });
+    flushPending();
     return slides;
   }
 
@@ -320,7 +334,7 @@ export class PandemoniumSlideshow extends LitElement {
         <div class="prog"><i style="width:${((this._ix + 1) / this._slides.length) * 100}%"></i></div>
         <div class="txt">
           <div class="left">
-            <div class="scene">${s.label}${s.cap ? ' · ' + s.cap : ''}</div>
+            ${s.cap ? html`<div class="cap">${s.cap}</div>` : ''}
             <div class="lines" style="font-size:${this.#lineSize(s.lines)}">
               ${(s.lines || []).map((l) => html`<div class="l-${l.type}">${l.text}</div>`)}
             </div>

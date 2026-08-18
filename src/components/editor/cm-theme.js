@@ -39,10 +39,16 @@ export const fountainTheme = EditorView.theme({
     padding: '10px 10px 40vh 10px',
     caretColor: 'var(--ink)',
   },
-  // "Start writing your script", shown only over an empty document.
+  // "Start with a summary of the script", shown only over an empty document.
+  // Styled exactly like a Fountain synopsis line (.cm-line.cmf-synopsis
+  // below), since that is the element the first keystroke actually becomes
+  // (see cm-summary-default.js).
   '.cm-placeholder': {
-    color: 'var(--ink)',
-    opacity: '.5',
+    color: 'var(--mut)',
+    fontStyle: 'italic',
+    fontWeight: '400',
+    fontFamily: 'var(--sans)',
+    fontSize: '13px',
   },
   // The neutral line. Everything an element rule below can set is reset to its
   // plain-action value here, so a line with no element class (a blank line, or
