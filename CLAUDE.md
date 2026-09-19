@@ -364,11 +364,15 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
     Coverage: a storyboard is boarded only when its final frame has an image.
     **Done.**
 
-    Found in passing, not fixed (pre-existing, unrelated to the above): typing
-    a line that starts with "She " or "The " in the script editor drops the
-    first letter and force-uppercases the rest of the line. Reproduces with
-    plain keystroke input, not just fast synthetic typing. Likely in the
-    autoformat/case-journal path (`cm-autoformat.js` / `cm-case-journal.js`).
+14. Typing bug fixed: a paragraph starting "She ", "The ", "A ", "He " (or with a
+    digit) lost its first letter and was rewritten as a scene heading or a
+    transition (`> HE FLOORBOARDS...`). Enter on an empty line, the ordinary
+    paragraph break in Fountain, opens the element menu, and the next keystroke
+    was read as a menu shortcut whenever it matched a row's letter,
+    case-insensitively. Only a plain lowercase letter is a shortcut now
+    (`shortcutForKey` in `element-menu.js`, tested); capitals and digits dismiss
+    the menu and type. The rows stay reachable by arrows, Enter, click, or
+    lowercase. **Done.**
 
 ---
 

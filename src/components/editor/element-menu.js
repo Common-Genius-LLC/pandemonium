@@ -1,6 +1,7 @@
 // The element list Final Draft pops up when you press Enter on an empty line,
 // rebuilt here as a VS Code-style autocomplete dropdown anchored to the caret.
-// Letter shortcuts and rows come from ELEMENT_SHORTCUTS (element-ops.js).
+// Letter shortcuts and rows come from ELEMENT_SHORTCUTS (element-ops.js); see
+// shortcutForKey for which keystrokes count as a shortcut.
 //
 // It is pure UI over the element vocabulary: picking a row goes through the
 // same applyElement path the picker and Tab use, so the menu cannot introduce
@@ -80,13 +81,27 @@ function handleKey(view, event, onPick) {
   // Tab closes and falls through, so it goes on cycling elements as usual.
   if (k === 'Tab') { closeElementMenu(view); return false; }
   if (k.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
-    const hit = ELEMENT_SHORTCUTS.find((it) => it.k.toLowerCase() === k.toLowerCase());
+    const hit = shortcutForKey(k);
     if (hit) return pick(view, hit, onPick);
     // Any other character: dismiss and let it type, so the menu never eats
     // the first letter of a line you decided to just write.
     closeElementMenu(view);
   }
   return false;
+}
+
+// The row a typed character picks, or null when it should just be typed. Only
+// a plain LOWERCASE letter is a shortcut. The menu opens on every Enter on an
+// empty line, which in a Fountain file is the ordinary paragraph break, so the
+// next thing typed is usually the first word of a sentence: a capital ("She",
+// "The", "A", "He") or a digit ("3 YEARS LATER"). Taking those as shortcuts
+// swallowed the letter and rewrote the paragraph as a scene heading or a
+// transition (`> HE FLOORBOARDS...`). Capitals and digits now dismiss the menu
+// and type; the rows stay reachable by arrows, Enter, click, or lowercase.
+export function shortcutForKey(k) {
+  if (typeof k !== 'string' || k.length !== 1) return null;
+  if (k !== k.toLowerCase() || k === k.toUpperCase()) return null; // capital, digit, symbol
+  return ELEMENT_SHORTCUTS.find((it) => it.k.toLowerCase() === k) || null;
 }
 
 // Walk up from an event target (which can be a text node) to the nearest
@@ -127,7 +142,7 @@ function menuPlugin(onPick) {
       }
       this.dom.innerHTML = ELEMENT_SHORTCUTS.map((it, i) => (
         `<div class="cm-elmenu-row${i === st.index ? ' sel' : ''}" data-ix="${i}">`
-        + `<span class="cm-elmenu-k">[${it.k}]</span>`
+        + `<span class="cm-elmenu-k">${/^[a-z]$/i.test(it.k) ? '[' + it.k.toLowerCase() + ']' : ''}</span>`
         + `<span class="cm-elmenu-l">${it.label}</span>`
         + `<span class="cm-elmenu-w">${it.writes}</span>`
         + '</div>'
