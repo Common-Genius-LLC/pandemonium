@@ -15,6 +15,9 @@ export class PdButton extends LitElement {
     variant: { type: String, reflect: true }, // 'default' | 'dark' | 'act' | 'ghost' | 'pink'
     disabled: { type: Boolean, reflect: true },
     title: { type: String },
+    // A square, label-less button for a single icon/glyph (e.g. an inline
+    // SVG slotted in), rather than the padded pill a text label needs.
+    icon: { type: Boolean, reflect: true },
   };
 
   static styles = css`
@@ -35,7 +38,11 @@ export class PdButton extends LitElement {
       color:var(--ui);
       background:var(--btn-bg);
       border:1px solid var(--btn-line);
-      border-radius:var(--r);
+      /* Pill-rounded, the same radius as every other interactive control in
+         the app now (board-card.js .pill, the Final/Reference switch): one
+         consistent shape for anything clickable, decoupled from --r (which
+         other, non-button chrome still uses for its own subtler rounding). */
+      border-radius:20px;
       box-shadow:0 1px 1.25px rgba(0,0,0,.25);
       cursor:pointer;
     }
@@ -60,12 +67,16 @@ export class PdButton extends LitElement {
     }
     :host([variant=ghost]) button:hover{color:var(--ui);background:var(--panel)}
     :host([variant=ghost]) button:active{background:var(--ph);border-color:transparent;box-shadow:none}
+
+    :host([icon]) button{width:24px;padding:5px;gap:0}
+    :host([icon]) ::slotted(svg){width:14px;height:14px;fill:currentColor}
   `;
 
   constructor() {
     super();
     this.variant = 'default';
     this.disabled = false;
+    this.icon = false;
   }
 
   render() {

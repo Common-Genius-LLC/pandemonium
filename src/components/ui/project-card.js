@@ -19,27 +19,30 @@ import { CHIPCOLORS } from '../../utils/format.js';
 // the art ended up overlapping the buttons under it.
 
 // Top and bottom clapper stripes. Identical geometry; the bottom one is the
-// same artwork flipped on Y, exactly as the design composes it.
+// same artwork flipped on Y, exactly as the design composes it. Colors are
+// classes (k grey-black, g grey, r red, b blue, y yellow, n green), not fill
+// attributes, because a var() does not resolve in an SVG attribute; the CSS
+// below maps each to a theme token so the clapper follows light and dark.
 const clapperStripes = svg`
-  <path d="M226.394 24.6211L201.773 0L226.394 0V24.6211Z" fill="#333333"/>
-  <path fill-rule="evenodd" clip-rule="evenodd" d="M201.773 6.54806e-05L226.394 24.6212L196.969 24.6212L172.348 6.54806e-05L201.773 6.54806e-05Z" fill="#9C9799"/>
-  <path fill-rule="evenodd" clip-rule="evenodd" d="M172.348 6.0154e-05L196.969 24.6212L167.544 24.6212L142.922 6.0154e-05L172.348 6.0154e-05Z" fill="#C21F3C"/>
-  <path fill-rule="evenodd" clip-rule="evenodd" d="M138.118 24.6212L113.497 6.43138e-05L142.923 6.43138e-05L167.544 24.6212L138.118 24.6212Z" fill="#2288DE"/>
-  <path fill-rule="evenodd" clip-rule="evenodd" d="M84.0721 5.89872e-05L113.497 5.89872e-05L138.118 24.6212L108.693 24.6212L84.0721 5.89872e-05Z" fill="#F0D06D"/>
-  <path fill-rule="evenodd" clip-rule="evenodd" d="M79.2679 24.6212L54.6468 5.36606e-05L84.072 5.36606e-05L108.693 24.6212L79.2679 24.6212Z" fill="#1F8C62"/>
-  <path fill-rule="evenodd" clip-rule="evenodd" d="M0 3.58559e-07H54.6468L79.2679 24.6211H0V3.58559e-07Z" fill="#333333"/>
+  <path d="M226.394 24.6211L201.773 0L226.394 0V24.6211Z" class="k"/>
+  <path fill-rule="evenodd" clip-rule="evenodd" d="M201.773 6.54806e-05L226.394 24.6212L196.969 24.6212L172.348 6.54806e-05L201.773 6.54806e-05Z" class="g"/>
+  <path fill-rule="evenodd" clip-rule="evenodd" d="M172.348 6.0154e-05L196.969 24.6212L167.544 24.6212L142.922 6.0154e-05L172.348 6.0154e-05Z" class="r"/>
+  <path fill-rule="evenodd" clip-rule="evenodd" d="M138.118 24.6212L113.497 6.43138e-05L142.923 6.43138e-05L167.544 24.6212L138.118 24.6212Z" class="b"/>
+  <path fill-rule="evenodd" clip-rule="evenodd" d="M84.0721 5.89872e-05L113.497 5.89872e-05L138.118 24.6212L108.693 24.6212L84.0721 5.89872e-05Z" class="y"/>
+  <path fill-rule="evenodd" clip-rule="evenodd" d="M79.2679 24.6212L54.6468 5.36606e-05L84.072 5.36606e-05L108.693 24.6212L79.2679 24.6212Z" class="n"/>
+  <path fill-rule="evenodd" clip-rule="evenodd" d="M0 3.58559e-07H54.6468L79.2679 24.6211H0V3.58559e-07Z" class="k"/>
 `;
 
 // The hinge block the top clapper pivots on.
 const clapperHinge = svg`
-  <path d="M0 35.1301V5.40463C0 2.41974 2.41974 0 5.40464 0H19.6263C21.0914 0 22.4938 0.594857 23.5121 1.64829L37.815 16.4443C38.7892 17.4521 39.3337 18.799 39.3337 20.2006V35.1301C39.3337 38.115 36.914 40.5347 33.9291 40.5347H5.40463C2.41974 40.5347 0 38.115 0 35.1301Z" fill="#989898"/>
-  <circle cx="5.70488" cy="34.5296" r="3.30283" fill="#D9D9D9"/>
-  <circle cx="5.70488" cy="5.70489" r="3.30283" fill="#D9D9D9"/>
-  <circle cx="33.9291" cy="34.5296" r="3.30283" fill="#D9D9D9"/>
+  <path d="M0 35.1301V5.40463C0 2.41974 2.41974 0 5.40464 0H19.6263C21.0914 0 22.4938 0.594857 23.5121 1.64829L37.815 16.4443C38.7892 17.4521 39.3337 18.799 39.3337 20.2006V35.1301C39.3337 38.115 36.914 40.5347 33.9291 40.5347H5.40463C2.41974 40.5347 0 38.115 0 35.1301Z" class="hb"/>
+  <circle cx="5.70488" cy="34.5296" r="3.30283" class="hs"/>
+  <circle cx="5.70488" cy="5.70489" r="3.30283" class="hs"/>
+  <circle cx="33.9291" cy="34.5296" r="3.30283" class="hs"/>
 `;
 
 const chevron = html`<svg class="chev" viewBox="0 0 7.45492 4.07923" fill="none" preserveAspectRatio="none" aria-hidden="true">
-  <path d="M0.424628 0.424628L3.30283 3.30283C3.53735 3.53735 3.91757 3.53735 4.15209 3.30283L7.03029 0.424628" stroke="#DCDCDC" stroke-width="1.20103"/>
+  <path d="M0.424628 0.424628L3.30283 3.30283C3.53735 3.53735 3.91757 3.53735 4.15209 3.30283L7.03029 0.424628" class="cv" stroke-width="1.20103"/>
 </svg>`;
 
 // Unscaled Figma dimensions of the whole clapper group (node 13:396).
@@ -84,7 +87,20 @@ export class PdProjectCard extends LitElement {
       filter:drop-shadow(0 2px 3px rgba(0,0,0,.12)) drop-shadow(0 10px 18px rgba(0,0,0,.22));
     }
     .clapper{position:absolute;left:0;top:0;width:228.692px;height:266px;transform-origin:top left}
-    .bar-back{position:absolute;left:2.298px;top:84.04px;width:226.394px;height:24.621px;background:#333}
+    .bar-back{position:absolute;left:2.298px;top:84.04px;width:226.394px;height:24.621px;background:var(--overlay)}
+    /* The clapper art, themed. The stripe colors are the tokens they always
+       matched (--danger, --link, --act-hi, --ok); the two darks/greys map to
+       the closest neutrals, so light is the Figma and dark is the same board
+       under the midnight palette. */
+    .stripes .k{fill:var(--overlay)}
+    .stripes .g{fill:var(--mut)}
+    .stripes .r{fill:var(--danger)}
+    .stripes .b{fill:var(--link)}
+    .stripes .y{fill:var(--act-hi)}
+    .stripes .n{fill:var(--ok)}
+    .hinge .hb{fill:var(--mut)}
+    .hinge .hs{fill:var(--ph)}
+    .chev .cv{stroke:var(--ph-hi)}
     .top-clip{
       position:absolute;left:0;top:0;width:225.052px;height:82.377px;
       display:flex;align-items:center;justify-content:center;
@@ -143,15 +159,15 @@ export class PdProjectCard extends LitElement {
       box-sizing:border-box;
       position:absolute;left:2.298px;top:108.665px;
       width:226.394px;height:157.335px;
-      background:#fff;border:1.201px solid #dcdcdc;
+      background:var(--btn-bg);border:1.201px solid var(--ph);
       border-radius:0 0 18.015px 18.015px;
       overflow:hidden;
     }
-    .card .rule{position:absolute;background:#dcdcdc}
+    .card .rule{position:absolute;background:var(--ph)}
 
     .lbl{
       font-size:9.473px;line-height:12.01px;font-weight:500;
-      letter-spacing:-0.0947px;color:rgba(0,0,0,.6);
+      letter-spacing:-0.0947px;color:color-mix(in srgb,var(--ink) 60%,transparent);
       white-space:nowrap;
     }
     .val{
@@ -172,7 +188,7 @@ export class PdProjectCard extends LitElement {
     .name{
       position:absolute;left:12.01px;top:16.81px;transform:translateY(-50%);
       width:200px;
-      font-size:14.277px;line-height:17.434px;font-weight:500;color:#000;
+      font-size:14.277px;line-height:17.434px;font-weight:500;color:var(--ink);
     }
 
     /* Duration cell: 0 to 70.26 across, 34.23 to 87.07 down. */
@@ -212,14 +228,14 @@ export class PdProjectCard extends LitElement {
       display:inline-flex;align-items:center;height:15.613px;
       padding:2px 6px;border-radius:1.802px;
       font-size:9.473px;line-height:12.01px;font-weight:500;
-      letter-spacing:-0.0947px;color:rgba(0,0,0,.56);
+      letter-spacing:-0.0947px;color:color-mix(in srgb,var(--act-ink) 56%,transparent);
       white-space:nowrap;cursor:pointer;
     }
     .tag:hover{opacity:.6}
     .tags input{
       flex:1;height:15.613px;
       font-size:9.473px;line-height:12.01px;font-weight:500;
-      letter-spacing:-0.0947px;color:rgba(0,0,0,.56);
+      letter-spacing:-0.0947px;color:color-mix(in srgb,var(--ink) 56%,transparent);
     }
   `;
 

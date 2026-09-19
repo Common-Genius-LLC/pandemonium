@@ -39,12 +39,14 @@ export const formStyles = css`
 // `--pane-bg` is the working area's colour, set per panel.
 export const panelStyles = css`
   :host{display:flex;flex-direction:column;min-height:0;min-width:0}
-  /* Sharp corners, no shadow (Figma node 101-1095): panes are flat blocks set
-     apart by even gaps rather than by rounding or elevation, matching the
-     design language (flat, solid fills, no borders). */
+  /* No shadow, flat solid fills (Figma node 101-1095): panes are set apart by
+     even gaps rather than elevation. Rounded the same amount as the app's
+     pill buttons (20px, e.g. board-card.js .pill, the Final/Reference mode
+     toggle), not the subtler --r used for small controls, so a pane reads as
+     the same family of shape as the rounded chrome sitting on top of it. */
   .shell{
     flex:1;min-height:0;display:flex;flex-direction:column;
-    background:var(--pane-bg,var(--bg));border-radius:0;overflow:hidden;
+    background:var(--pane-bg,var(--bg));border-radius:20px;overflow:hidden;
   }
   /* The strip takes the pane's own colour, so a panel is one solid object.
      Only the script panel overrides it back to the chrome grey, because its
