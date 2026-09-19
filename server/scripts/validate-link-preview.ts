@@ -19,9 +19,20 @@
 import { createPreviewService } from '../src/link-preview/service';
 import { systemLookup } from '../src/link-preview/dns';
 import type { LinkPreview } from '../src/link-preview/parse';
+// @ts-ignore -- the client's own pure module, plain JS
+import { optimizeImage } from '../../src/data/link-preview.js';
 
 type Check = (p: LinkPreview) => string[]; // problems; empty means pass
-interface Case { name: string; url: string; proves: string; check: Check }
+// allowBlock: the site may answer this client with an anti-bot challenge
+// (a 401/403/429/503, or a redirect into a challenge page). That is reported
+// as BLOCKED, not failed, as long as the preview degraded to the URL cleanly:
+// defeating a challenge is not this pipeline's job, and it will not try.
+// maxRendition: how small the card's resized image must be, as a fraction
+// of the original (only where the CDN resizes; default: just smaller).
+interface Case { name: string; url: string; proves: string; check: Check; allowBlock?: boolean; maxRendition?: number }
+
+const CHALLENGE = /\.within\.website|captcha|challenge/i;
+const isBlock = (p: LinkPreview) => !p.fetched && ([401, 403, 429, 503].includes(p.status || 0) || CHALLENGE.test(p.finalUrl));
 
 const has = (cond: unknown, problem: string) => (cond ? [] : [problem]);
 const CJK = /[぀-ヿ㐀-鿿]/;
@@ -108,11 +119,21 @@ const CASES: Case[] = [
     ],
   },
   {
-    name: 'Image scaling', url: 'https://unsplash.com/',
-    proves: 'a heavy og:image from an image CDN is found and actually loadable for the card',
+    name: 'Image scaling (page)', url: 'https://unsplash.com/',
+    proves: 'a heavy og:image from an image CDN is found and loadable; Unsplash serves data-centre clients an Anubis proof-of-work challenge, which is reported, not fought',
+    allowBlock: true,
     check: (p) => [
       ...has(p.fetched && p.sources.title === 'og', `title from ${p.sources.title} (fetched ${p.fetched}, status ${p.status})`),
       ...has(p.image && /images\.unsplash\.com/.test(p.image), `image ${p.image}`),
+    ],
+  },
+  {
+    name: 'Image scaling (6000px original)', url: 'https://images.unsplash.com/photo-1779896411979-35844de55d13?q=100&w=6000',
+    proves: 'a link to a huge original is its own preview, and the card asks the CDN for a card-sized rendition instead of the original',
+    maxRendition: 0.1,
+    check: (p) => [
+      ...has(p.fetched && p.sources.image === 'self', `image from ${p.sources.image} (fetched ${p.fetched}, status ${p.status})`),
+      ...has(p.image && optimizeImage(p.image, 720) !== p.image, 'the card would load the original, not a rendition'),
     ],
   },
 ];
@@ -141,15 +162,18 @@ async function nytArticle(): Promise<string | null> {
 }
 
 // Load the image as the card will: no Referer. Reports size and type.
-async function probeImage(url: string): Promise<{ ok: boolean; note: string }> {
+async function probeImage(url: string): Promise<{ ok: boolean; note: string; bytes: number }> {
   try {
-    const res = await fetch(url, { referrerPolicy: 'no-referrer', signal: AbortSignal.timeout(10000) } as RequestInit);
+    const res = await fetch(url, {
+      referrerPolicy: 'no-referrer', signal: AbortSignal.timeout(15000),
+      headers: { Accept: 'image/avif,image/webp,image/*,*/*;q=0.8' }, // what a browser asks for
+    } as RequestInit);
     const type = res.headers.get('content-type') || '?';
     const bytes = (await res.arrayBuffer()).byteLength;
     const ok = res.status === 200 && /^image\//.test(type);
-    return { ok, note: `${res.status} ${type} ${(bytes / 1024).toFixed(0)} KB` };
+    return { ok, bytes, note: `${res.status} ${type} ${(bytes / 1024).toFixed(0)} KB` };
   } catch (err) {
-    return { ok: false, note: `failed: ${(err as Error).message}` };
+    return { ok: false, bytes: 0, note: `failed: ${(err as Error).message}` };
   }
 }
 
@@ -173,6 +197,7 @@ console.log(`link-preview validation (${apiBase ? 'API ' + apiBase : 'in-process
 if (!article) console.log('(NYT article case skipped: no article link found on the homepage from this machine)');
 console.log('');
 let failures = 0;
+let blockedCount = 0;
 for (const c of CASES) {
   const started = performance.now();
   let problems: string[];
@@ -188,10 +213,21 @@ for (const c of CASES) {
     const probe = await probeImage(p.image);
     imageNote = probe.note;
     if (!probe.ok) problems.push(`image does not load: ${probe.note}`);
+    const rendition = optimizeImage(p.image, 720);
+    if (rendition !== p.image) {
+      const small = await probeImage(rendition);
+      imageNote += `; card rendition ${small.note}`;
+      if (!small.ok) problems.push(`card rendition does not load: ${small.note}`);
+      else if (small.bytes >= probe.bytes * (c.maxRendition ?? 1)) {
+        problems.push(`card rendition too big: ${small.bytes} vs ${probe.bytes} bytes (limit ${Math.round((c.maxRendition ?? 1) * 100)}%)`);
+      }
+    }
   }
+  const blocked = !!(p && c.allowBlock && isBlock(p) && p.domain && p.title === c.url);
   const ms = Math.round(performance.now() - started);
-  if (problems.length) failures++;
-  console.log(`${problems.length ? 'FAIL' : 'PASS'}  ${c.name}  (${ms} ms)  ${c.url}`);
+  if (blocked) blockedCount++;
+  else if (problems.length) failures++;
+  console.log(`${blocked ? 'BLOCKED' : problems.length ? 'FAIL' : 'PASS'}  ${c.name}  (${ms} ms)  ${c.url}`);
   console.log(`      proves: ${c.proves}`);
   if (p) {
     console.log(`      title       [${p.sources.title}] ${clip(p.title, 80)}`);
@@ -209,8 +245,10 @@ for (const c of CASES) {
     if (extra) console.log(`      detail      ${clip(extra, 150)}`);
     console.log(`      domain ${p.domain}   final ${clip(p.finalUrl, 55)}   status ${p.status}   fetched ${p.fetched}`);
   }
-  for (const problem of problems) console.log(`      !! ${problem}`);
+  if (blocked) console.log(`      -- the site answered this client with a bot challenge (status ${p!.status}); the card falls back to the link, cleanly`);
+  else for (const problem of problems) console.log(`      !! ${problem}`);
   console.log('');
 }
-console.log(failures ? `${failures} of ${CASES.length} failed` : `all ${CASES.length} passed`);
+const tail = blockedCount ? ` (${blockedCount} blocked by the site's own bot challenge, degraded cleanly)` : '';
+console.log((failures ? `${failures} of ${CASES.length} failed` : `all ${CASES.length - blockedCount} readable cases passed`) + tail);
 process.exit(failures ? 1 : 0);

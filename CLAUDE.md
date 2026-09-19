@@ -547,6 +547,45 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
     banner (GA4 already needed the notice; Clarity's terms require one, and
     `Clarity.consentV2` exists for EEA/UK/CH consent).
 
+19. Link previews on the edge, and richer. **Where**: production previews are
+    a Cloudflare Pages Function, `functions/api/link-preview.ts`, at
+    `/api/link-preview` on the app's own origin (`VITE_LINK_PREVIEW_URL` in
+    `.env.production`), deployed by every push to main like the rest of the
+    frontend. The API server was never deployed with item 18's route and
+    cannot be deployed from here (no SSH key on this machine), and a preview
+    needs no database, so it moved to where a push ships it. The Bun route
+    stays for local dev. One pipeline behind both: the core was split so it
+    loads in either runtime (`ip.ts` pure address rules, `dns.ts` the only
+    Node import, `lookup: null` meaning "the platform refuses private
+    destinations", which a Worker does). Checked before shipping: an esbuild
+    bundle for a neutral platform with zero `node:` references, and parse CPU
+    at about 1 ms for a 1 MB page against the free plan's 10 ms. YouTube's
+    metadata sits about 700 KB into the page, which is why the 1 MB read cap
+    must not be trimmed. **What it reads now**, all additive beside the
+    unchanged fallbacks: `og:type`/`og:url`, image size and alt, `og:video*`
+    (plus the `duration` itemprop), `og:audio`, `music:*` (artist names from
+    `music:musician_description`, since `music:musician` is a URL), `article:*`
+    and JSON-LD article schemas (`@graph` included, broken blocks skipped),
+    oEmbed (fetched through the SSRF check, `html` deliberately dropped), the
+    favicon and `twitter:card`. **A third agent**: `facebookexternalhit`, last
+    and only when Chrome and our honest bot both came back empty, because the
+    New York Times serves its card to a short allowlist of social unfurlers and
+    refuses everyone else (tested: Discord and Iframely are refused too).
+    `LINK_PREVIEW_SOCIAL_UA=off` removes it. **Card**: large or small chosen as
+    Twitter/Slack do (`cardLayout`: a square or small image stays a thumbnail
+    so a logo is not cut in half), site icon, one-line summary (`previewMeta`:
+    "Song, The Killers, 3:42"; a byline and date), images resized on
+    Unsplash/imgix/Contentful (`optimizeImage`), YouTube, Vimeo and Spotify
+    playable in place on click. **Research**: links written in a note unfurl
+    under their paragraph (`urlsIn`, once per link, never repeating the
+    source's own); an untitled source takes the page title into its title
+    field (`previewPatch`, never over a title the writer gave); sources carry
+    no note or link icon any more (a file with no still keeps a picture of the
+    file). **Validation**: `bun run validate:link-preview [--api <base>]` covers
+    ogp.me, example.com, YouTube, Spotify, the NYT homepage plus an article it
+    finds there at run time, Amazon, http GitHub, ja.wikipedia and Unsplash,
+    and loads every image the way the card will (no Referer).
+
 ---
 
 ## Working context

@@ -197,7 +197,10 @@ export function optimizeImage(url, width = 720) {
   const host = u.hostname;
   if (host === 'images.unsplash.com' || host.endsWith('.imgix.net')) {
     u.searchParams.set('w', String(width));
-    if (!u.searchParams.has('q')) u.searchParams.set('q', '75');
+    // A link to an original often carries q=100; at card size that only buys
+    // bytes, so quality is brought down to 75, never up.
+    const q = Number(u.searchParams.get('q'));
+    if (!q || q > 75) u.searchParams.set('q', '75');
     if (!u.searchParams.has('auto')) u.searchParams.set('auto', 'format');
     return u.href;
   }

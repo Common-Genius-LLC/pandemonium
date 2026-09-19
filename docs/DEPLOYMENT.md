@@ -289,6 +289,24 @@ bot wall, a redirect, Japanese text):
 cd server && bun run validate:link-preview --api https://api.pandemonium.commongenius.in/v1
 ```
 
+### Link previews in production
+
+Production link previews do NOT need the API server: they are a Cloudflare
+Pages Function (`functions/api/link-preview.ts`), served at
+`https://pandemonium.commongenius.in/api/link-preview` and deployed with the
+frontend by every push to main. The Pages project builds it automatically
+because `functions/` sits at the repo root. Optional Pages environment
+variables (dashboard, Settings, Environment variables): `LINK_PREVIEW_USER_AGENT`,
+`LINK_PREVIEW_BOT_USER_AGENT`, and `LINK_PREVIEW_SOCIAL_UA=off` to stop the
+last-resort Facebook-crawler agent. Check it with:
+
+```bash
+cd server && bun run validate:link-preview --api https://pandemonium.commongenius.in/api
+```
+
+The API server keeps its own `/v1/link-preview` route (used in local dev); the
+hardening below applies to that route if it is ever deployed.
+
 ### B8. Harden the link-preview fetcher (recommended)
 
 `GET /v1/link-preview` makes this server fetch URLs that anyone supplies. The

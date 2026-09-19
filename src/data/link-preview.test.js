@@ -201,8 +201,11 @@ describe('cardLayout', () => {
 describe('optimizeImage', () => {
   it('asks a resizing CDN for a card-sized rendition', () => {
     expect(optimizeImage('https://images.unsplash.com/photo-1?ixid=x', 720)).toBe('https://images.unsplash.com/photo-1?ixid=x&w=720&q=75&auto=format');
-    expect(optimizeImage('https://acme.imgix.net/a.jpg?q=90', 400)).toBe('https://acme.imgix.net/a.jpg?q=90&w=400&auto=format');
+    expect(optimizeImage('https://acme.imgix.net/a.jpg?q=60', 400)).toBe('https://acme.imgix.net/a.jpg?q=60&w=400&auto=format');
     expect(optimizeImage('https://images.ctfassets.net/s/a.png', 720)).toBe('https://images.ctfassets.net/s/a.png?w=720&fm=webp');
+  });
+  it('brings an original\'s q=100 and w=6000 down to card size, never quality up', () => {
+    expect(optimizeImage('https://images.unsplash.com/photo-1?q=100&w=6000', 720)).toBe('https://images.unsplash.com/photo-1?q=75&w=720&auto=format');
   });
   it('leaves every other host alone rather than guessing its parameters', () => {
     expect(optimizeImage('https://i.scdn.co/image/ab67', 720)).toBe('https://i.scdn.co/image/ab67');
