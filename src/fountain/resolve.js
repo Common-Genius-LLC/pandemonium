@@ -9,6 +9,23 @@
 
 import { clamp } from '../utils/format.js';
 
+const WORD_CHAR = /[A-Za-z0-9']/;
+function isWordChar(ch) { return ch != null && WORD_CHAR.test(ch); }
+
+// Grows a plain-text [s, e) range outward to the word boundaries it sits
+// inside, so an anchor always reads as "from this word to that word" rather
+// than from whatever character a drag happened to start/end on. Used both
+// when a selection is first captured and whenever an edit forces a part to
+// be re-derived, so a link keeps whole-word bounds as the words around it
+// change.
+export function snapToWords(text, s, e) {
+  let ns = s;
+  while (ns > 0 && isWordChar(text[ns - 1]) && isWordChar(text[ns])) ns--;
+  let ne = e;
+  while (ne < text.length && isWordChar(text[ne - 1]) && isWordChar(text[ne])) ne++;
+  return { s: ns, e: ne };
+}
+
 export function resolvePart(plains, part) {
   if (!part || !part.q) return null;
   const q = part.q;

@@ -6,6 +6,7 @@
 'use strict';
 
 import { blockRawRange, rawOffsetToPlainPos } from '../../fountain/doc-map.js';
+import { snapToWords } from '../../fountain/resolve.js';
 
 export function captureFromSelection(parsed, doc, from, to) {
   if (from === to) return null;
@@ -17,9 +18,12 @@ export function captureFromSelection(parsed, doc, from, to) {
     const ovFrom = Math.max(from, bFrom);
     const ovTo = Math.min(to, bTo);
     if (ovFrom >= ovTo) continue;
-    const ps = rawOffsetToPlainPos(b, line.from, ovFrom, true);
-    const pe = rawOffsetToPlainPos(b, line.from, ovTo, false);
+    let ps = rawOffsetToPlainPos(b, line.from, ovFrom, true);
+    let pe = rawOffsetToPlainPos(b, line.from, ovTo, false);
     if (pe <= ps) continue;
+    // A drag rarely lands exactly on word boundaries; snap so the anchor
+    // always reads as whole word to whole word.
+    ({ s: ps, e: pe } = snapToWords(b.plain, ps, pe));
     const q = b.plain.slice(ps, pe);
     if (!q.trim()) continue;
     parts.push({ q, b: b.i, s: ps });
