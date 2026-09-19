@@ -5,8 +5,8 @@ import { StoreController } from '../../state/store-controller.js';
 import { dispatch } from '../../utils/events.js';
 import { openPair } from '../../state/actions.js';
 import { NOTE_COLORS, colorToken, docTitle, docSnippet, hostOf, mediaKind } from '../../data/research-doc.js';
-import { previewOf } from '../../data/link-preview.js';
-import { sourceIcon, sourceLabel } from './icons.js';
+import { previewOf, optimizeImage } from '../../data/link-preview.js';
+import { mediaIcon } from './icons.js';
 import { withGlobalItems } from '../../utils/context-menu.js';
 
 // One research source in the grid. A source is one record that may carry a
@@ -14,7 +14,7 @@ import { withGlobalItems } from '../../utils/context-menu.js';
 // whichever of those exist rather than being one of three card types:
 //   - a thumbnail when the media is an image (a video, audio file or PDF gets
 //     its glyph on a plain tile, since there is no still to show)
-//   - the title, marked with a glyph for what the source is
+//   - the title (the page's own, for a link the writer did not name)
 //   - the notes, or failing that the URL, as the preview line
 //   - the host, and how many script passages this source backs
 //
@@ -46,7 +46,6 @@ export class PandemoniumResearchCard extends LitElement {
     }
     .text{padding:10px;display:flex;flex-direction:column;gap:6px;flex:1;min-height:0}
     .rt{font-size:12px;font-weight:500;color:var(--ink);display:flex;gap:6px;align-items:flex-start;line-height:1.35}
-    .rt svg{width:13px;height:13px;flex:none;margin-top:1px;fill:var(--mut)}
     .rt span{overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
     .snip{color:var(--mut);font-size:11px;line-height:1.5;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;flex:1;overflow-wrap:anywhere}
     /* Topics, under the preview line. Clicking one filters the grid to it,
@@ -190,7 +189,7 @@ export class PandemoniumResearchCard extends LitElement {
     const att = this.doc.attachment;
     if (att && att.data) {
       if (mediaKind(att) === 'image') return html`<div class="thumb"><img alt="" src=${att.data}></div>`;
-      return html`<div class="thumb">${sourceIcon(this.doc)}</div>`;
+      return html`<div class="thumb">${mediaIcon(att)}</div>`;
     }
     // The server's image when the source has been read (stored on it, so the
     // grid draws offline and never fans out one request per card), else what
@@ -198,7 +197,8 @@ export class PandemoniumResearchCard extends LitElement {
     const url = this.doc.url;
     const local = url ? previewOf(url) : null;
     const stored = this.doc.preview && this.doc.preview.url === url ? this.doc.preview : null;
-    const src = (stored && stored.image) || (local && local.thumb);
+    const found = (stored && stored.image) || (local && local.thumb);
+    const src = found ? optimizeImage(found, 400) : null;
     if (src) {
       return html`<div class="thumb">
         <img alt="" src=${src} loading="lazy" decoding="async" referrerpolicy="no-referrer" @error=${(e) => { e.target.remove(); }}>
@@ -224,7 +224,7 @@ export class PandemoniumResearchCard extends LitElement {
         ${this.#thumb()}
         <button class="more" title="Source options" @click=${(e) => this.#menu(e)}>&#8943;</button>
         <div class="text">
-          <div class="rt" title=${sourceLabel(d)}>${sourceIcon(d)}<span>${title}</span></div>
+          <div class="rt"><span>${title}</span></div>
           <div class="snip">${snip}</div>
           ${(d.labels || []).length ? html`<div class="tags">
             ${(d.labels || []).map((l) => html`<button title=${'Show only ' + l} @click=${(e) => this.#pickLabel(e, l)}>${l}</button>`)}

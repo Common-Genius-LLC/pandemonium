@@ -52,6 +52,14 @@ function youtubeId(u) {
   return m ? m[1] : null;
 }
 
+// open.spotify.com/{track|album|playlist|episode|show|artist}/{id}, with or
+// without a locale segment (/intl-fr/track/...).
+function spotifyEmbed(u) {
+  if (u.hostname !== 'open.spotify.com') return null;
+  const m = u.pathname.match(/^\/(?:intl-[a-z-]+\/)?(track|album|playlist|episode|show|artist)\/([A-Za-z0-9]+)/);
+  return m ? `https://open.spotify.com/embed/${m[1]}/${m[2]}` : null;
+}
+
 function vimeoId(u) {
   if (u.hostname.replace(/^www\./, '') !== 'vimeo.com') return null;
   const m = u.pathname.match(/^\/(\d+)/);
@@ -88,6 +96,11 @@ export function previewOf(url) {
     return { kind: 'vimeo', host, url: u.href, embed: `https://player.vimeo.com/video/${encodeURIComponent(vm)}` };
   }
 
+  // Spotify's player is a fixed-height strip, not a 16:9 frame, so it says
+  // how tall it wants to be.
+  const sp = spotifyEmbed(u);
+  if (sp) return { kind: 'spotify', host, url: u.href, embed: sp, embedHeight: 152 };
+
   const path = u.pathname;
   if (IMAGE_EXT.test(path)) return { kind: 'image', host, url: u.href, thumb: u.href };
   if (VIDEO_EXT.test(path)) return { kind: 'video', host, url: u.href };
@@ -119,6 +132,103 @@ export function isRichPreview(p) {
   return !!((p.sources && p.sources.title && p.sources.title !== 'url') || p.description || p.image);
 }
 
+// The one line under a card's title that says what the thing IS, from the
+// structured detail the server read: a song's artist and length, a video's
+// channel and length, an article's byline and date. Null when there is
+// nothing structured to say, so an ordinary page shows no empty line.
+export function previewMeta(p) {
+  if (!p) return null;
+  const type = String(p.type || '');
+  const parts = [];
+  if (p.music || type.startsWith('music.')) {
+    const kind = { 'music.song': 'Song', 'music.album': 'Album', 'music.playlist': 'Playlist', 'music.radio_station': 'Station' }[type];
+    if (kind) parts.push(kind);
+    if (p.music && p.music.musicians && p.music.musicians.length) parts.push(p.music.musicians.slice(0, 2).join(', '));
+    if (p.music && p.music.duration) parts.push(clock(p.music.duration));
+  } else if (p.video || type.startsWith('video.')) {
+    parts.push('Video');
+    if (p.oembed && p.oembed.authorName) parts.push(p.oembed.authorName);
+    if (p.video && p.video.duration) parts.push(clock(p.video.duration));
+  } else if (p.article && (p.article.authors.length || p.article.publishedTime)) {
+    if (p.article.authors.length) parts.push(p.article.authors.slice(0, 2).join(', ') + (p.article.authors.length > 2 ? ' and others' : ''));
+    const d = shortDate(p.article.publishedTime);
+    if (d) parts.push(d);
+  }
+  return parts.length ? parts.join(' \u00b7 ') : null;
+}
+
+function clock(secs) {
+  const s = Math.round(secs);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${r}` : `${m}:${r}`;
+}
+
+function shortDate(iso) {
+  const t = Date.parse(iso || '');
+  if (!Number.isFinite(t)) return null;
+  return new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+}
+
+// Large or small, the way Twitter and Slack decide: a page that asks for a
+// large image (twitter:card summary_large_image, or a player) and anything
+// wide and big enough gets the big frame; a square or small image (an album
+// cover, a logo) gets a thumbnail beside the text, because cropping a square
+// logo to 1.91:1 cuts it in half.
+export function cardLayout(p) {
+  if (!p || !p.image) return 'text';
+  if (p.card === 'summary_large_image' || p.card === 'player') return 'large';
+  const w = p.imageWidth;
+  const h = p.imageHeight;
+  if (w && h && (w / h < 1.3 || w < 400)) return 'small';
+  if (p.card === 'summary') return 'small';
+  return 'large';
+}
+
+// A smaller rendition of an image from a CDN that resizes on request, for
+// the size a card actually draws it at. Only hosts whose resizing parameters
+// are documented and stable: an unknown host is returned untouched rather
+// than guessed at. Unsplash (imgix), any imgix domain, and Contentful (which
+// GitHub's og:image comes from) all take a width.
+export function optimizeImage(url, width = 720) {
+  let u;
+  try { u = new URL(url); } catch { return url; }
+  const host = u.hostname;
+  if (host === 'images.unsplash.com' || host.endsWith('.imgix.net')) {
+    u.searchParams.set('w', String(width));
+    if (!u.searchParams.has('q')) u.searchParams.set('q', '75');
+    if (!u.searchParams.has('auto')) u.searchParams.set('auto', 'format');
+    return u.href;
+  }
+  if (host === 'images.ctfassets.net') {
+    u.searchParams.set('w', String(width));
+    if (!u.searchParams.has('fm')) u.searchParams.set('fm', 'webp');
+    return u.href;
+  }
+  return url;
+}
+
+// Every web link in a piece of note text, in order, each once, trimmed of the
+// punctuation that ends a sentence rather than a URL ("see https://x.com.").
+// A bare www. address counts; a bare domain does not, because "e.g." and
+// "Mr." would start looking like links.
+export function urlsIn(text) {
+  const out = [];
+  const re = /\b(?:https?:\/\/|www\.)[^\s<>"']+/gi;
+  let m;
+  while ((m = re.exec(String(text || '')))) {
+    let raw = m[0].replace(/[.,;:!?]+$/, '');
+    // A closing bracket belongs to the URL only if the URL opened one.
+    while (/[)\]}]$/.test(raw) && (raw.match(/[([{]/g) || []).length < (raw.match(/[)\]}]/g) || []).length) raw = raw.slice(0, -1);
+    const href = /^www\./i.test(raw) ? 'https://' + raw : raw;
+    let normal;
+    try { normal = new URL(href).href; } catch { continue; }
+    if (!out.includes(normal)) out.push(normal);
+  }
+  return out;
+}
+
 // What a research source keeps of a preview: enough to draw its card in the
 // grid offline and to name the source, and nothing time-stamped. Two devices
 // that fetch the same URL get the same cached answer, so what they store is
@@ -133,5 +243,23 @@ export function storablePreview(p) {
     title: p.sources && p.sources.title !== 'url' ? p.title : null,
     description: p.description || null,
     image: p.image || null,
+    // What the card needs to draw the same way offline: its size decision,
+    // the site icon, and the one-line summary of what the thing is.
+    layout: cardLayout(p),
+    favicon: p.favicon || null,
+    meta: previewMeta(p),
   };
+}
+
+// What a research source should change once its link's preview arrives:
+// the stored preview when it says something new, and the title when the
+// source has none of its own. A title the writer gave is never replaced. An
+// empty patch means nothing to write, so reopening a source is not an edit.
+export function previewPatch(doc, stored) {
+  if (!doc || !stored || stored.url !== doc.url) return {};
+  const patch = {};
+  if (JSON.stringify(stored) !== JSON.stringify(doc.preview || null)) patch.preview = stored;
+  const own = String(doc.title || '').trim();
+  if ((!own || own === 'Untitled') && stored.title) patch.title = stored.title;
+  return patch;
 }

@@ -16,6 +16,7 @@ import { getConnInfo } from 'hono/bun';
 import { config } from '../config';
 import { HttpError } from '../errors';
 import { createPreviewService } from '../link-preview/service';
+import { systemLookup } from '../link-preview/dns';
 import { createRateLimiter } from '../rate-limit';
 import type { AppEnv } from '../types';
 
@@ -35,8 +36,10 @@ function clientIp(c: Context<AppEnv>): string {
 
 export function linkPreviewRoutes(
   service = createPreviewService({
+    lookup: systemLookup,
     userAgent: config.linkPreview.userAgent || undefined,
     botUserAgent: config.linkPreview.botUserAgent || undefined,
+    socialUserAgent: config.linkPreview.socialUserAgentOff ? null : undefined,
   }),
   limiter = createRateLimiter({ limit: config.linkPreview.ratePerMinute, windowMs: 60_000 }),
 ) {

@@ -6,9 +6,11 @@
 
 import { describe, it, expect } from 'bun:test';
 import { Hono } from 'hono';
-import { extractMeta, buildPreview, decodeBody, sniffCharset, MAX_TITLE, type LinkPreview } from '../src/link-preview/parse';
+import { extractMeta, buildPreview, decodeBody, sniffCharset, urlOnlyPreview, MAX_TITLE, type LinkPreview } from '../src/link-preview/parse';
 import { isPublicAddress, assertPublicUrl } from '../src/link-preview/ssrf';
-import { createPreviewService, LIMITS, DEFAULT_USER_AGENT, DEFAULT_BOT_USER_AGENT, isThin, type FetchFn } from '../src/link-preview/service';
+import { createPreviewService, LIMITS, DEFAULT_USER_AGENT, DEFAULT_BOT_USER_AGENT, DEFAULT_SOCIAL_USER_AGENT, isThin, type FetchFn } from '../src/link-preview/service';
+import { readJsonLd, readOEmbed, isoSeconds } from '../src/link-preview/parse';
+import { ipVersion } from '../src/link-preview/ip';
 import { createRateLimiter } from '../src/rate-limit';
 import { linkPreviewRoutes } from '../src/routes/link-preview';
 import { HttpError } from '../src/errors';
@@ -146,6 +148,173 @@ describe('text hygiene', () => {
   });
 });
 
+// ---------------------------------------------------------- rich detail --
+// Fixtures are trimmed copies of what the real sites serve (checked live).
+
+describe('baseline OG detail (ogp.me)', () => {
+  const OGP = doc(`<title>The Open Graph protocol</title>
+    <meta property="og:title" content="Open Graph protocol"><meta property="og:type" content="website">
+    <meta property="og:url" content="https://ogp.me/"><meta property="og:image" content="https://ogp.me/logo.png">
+    <meta property="og:image:type" content="image/png"><meta property="og:image:width" content="300">
+    <meta property="og:image:height" content="300"><meta property="og:image:alt" content="The Open Graph logo">
+    <meta property="og:description" content="The Open Graph protocol enables any web page to become a rich object.">`);
+  it('reads og:type, og:url, og:image and its dimensions and alt', async () => {
+    const p = await preview(OGP, 'https://ogp.me/');
+    expect([p.type, p.canonicalUrl, p.image]).toEqual(['website', 'https://ogp.me/', 'https://ogp.me/logo.png']);
+    expect([p.imageWidth, p.imageHeight, p.imageAlt]).toEqual([300, 300, 'The Open Graph logo']);
+    expect(p.favicon).toBe('https://ogp.me/favicon.ico'); // no <link rel=icon>: the site root
+  });
+  it('does not lend og:image dimensions to an image from another tier', async () => {
+    const p = await preview(doc('<meta property="og:image:width" content="900"><meta name="twitter:image" content="/t.png">'));
+    expect([p.sources.image, p.imageWidth]).toEqual(['twitter', null]);
+  });
+  it('prefers og:url over <link rel=canonical>, and uses canonical without it', async () => {
+    expect((await preview(doc('<link rel="canonical" href="/c"><meta property="og:url" content="https://x.example/og">'))).canonicalUrl).toBe('https://x.example/og');
+    expect((await preview(doc('<link rel="canonical" href="/c">'))).canonicalUrl).toBe('https://www.example.org/c');
+  });
+});
+
+describe('video (YouTube)', () => {
+  const YT = doc(`<meta property="og:type" content="video.other">
+    <meta property="og:title" content="Rick Astley - Never Gonna Give You Up">
+    <meta property="og:image" content="https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg">
+    <meta property="og:image:width" content="1280"><meta property="og:image:height" content="720">
+    <meta property="og:video:url" content="https://www.youtube.com/embed/dQw4w9WgXcQ">
+    <meta property="og:video:secure_url" content="https://www.youtube.com/embed/dQw4w9WgXcQ">
+    <meta property="og:video:type" content="text/html"><meta property="og:video:width" content="1280">
+    <meta property="og:video:height" content="720"><meta name="twitter:card" content="summary_large_image">
+    <meta itemprop="duration" content="PT3M34S">
+    <link rel="icon" href="/favicon_32x32.png" sizes="32x32"><link rel="icon" href="/favicon_144x144.png" sizes="144x144">
+    <link rel="alternate" type="application/json+oembed" href="https://www.youtube.com/oembed?format=json&amp;url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DdQw4w9WgXcQ">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"VideoObject","name":"Rick"}</script>`);
+  const URL_YT = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+  it('reads og:video with its type, size and the duration', async () => {
+    const p = await preview(YT, URL_YT);
+    expect(p.type).toBe('video.other');
+    expect(p.video).toEqual({ url: 'https://www.youtube.com/embed/dQw4w9WgXcQ', type: 'text/html', width: 1280, height: 720, duration: 214 });
+    expect(p.card).toBe('summary_large_image');
+  });
+  it('discovers the oEmbed endpoint with its entity decoded', async () => {
+    expect((await preview(YT, URL_YT)).oembedUrl).toBe('https://www.youtube.com/oembed?format=json&url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DdQw4w9WgXcQ');
+  });
+  it('picks the icon nearest 32px and lists the schema types', async () => {
+    const p = await preview(YT, URL_YT);
+    expect(p.favicon).toBe('https://www.youtube.com/favicon_32x32.png');
+    expect(p.jsonLdTypes).toEqual(['VideoObject']);
+  });
+  it('reads ISO 8601 durations', () => {
+    expect([isoSeconds('PT3M34S'), isoSeconds('PT1H2M'), isoSeconds('PT45S'), isoSeconds('P1DT1S'), isoSeconds('3:34'), isoSeconds('PT')])
+      .toEqual([214, 3720, 45, 86401, null, null]);
+  });
+});
+
+describe('audio and music (Spotify)', () => {
+  const SP = doc(`<meta property="og:title" content="Mr. Brightside"><meta property="og:type" content="music.song">
+    <meta property="og:audio" content="https://p.scdn.co/mp3-preview/2680d6"><meta property="og:audio:type" content="audio/mpeg">
+    <meta property="og:image" content="https://i.scdn.co/image/ab67"><meta property="og:image:width" content="640"><meta property="og:image:height" content="640">
+    <meta name="twitter:card" content="summary">
+    <meta name="music:duration" content="222"><meta name="music:album" content="https://open.spotify.com/album/4OHN">
+    <meta name="music:album:track" content="2"><meta name="music:release_date" content="2004-06-15">
+    <meta name="music:musician" content="https://open.spotify.com/artist/0C0X"><meta name="music:musician_description" content="The Killers">
+    ${'<meta property="og:restrictions:country:allowed" content="GB">'.repeat(180)}`);
+  it('reads og:audio and the music.song detail', async () => {
+    const p = await preview(SP, 'https://open.spotify.com/track/3n3P');
+    expect(p.type).toBe('music.song');
+    expect(p.audio).toEqual({ url: 'https://p.scdn.co/mp3-preview/2680d6', type: 'audio/mpeg' });
+    expect(p.music).toEqual({ duration: 222, releaseDate: '2004-06-15', albumUrl: 'https://open.spotify.com/album/4OHN', trackNumber: 2, musicians: ['The Killers'] });
+    expect([p.card, p.imageWidth, p.imageHeight]).toEqual(['summary', 640, 640]);
+  });
+  it('never shows a profile URL as an artist name', async () => {
+    const p = await preview(doc('<meta property="og:type" content="music.song"><meta name="music:musician" content="https://open.spotify.com/artist/x">'));
+    expect(p.music!.musicians).toEqual([]);
+  });
+  it('keeps a key repeated a hundred times to a small cap', async () => {
+    const many = await extractMeta(doc('<meta property="og:video:tag" content="t">'.repeat(100)));
+    expect(many.meta['og:video:tag'].length).toBe(20);
+  });
+});
+
+describe('articles (article:* and JSON-LD)', () => {
+  const NEWS = doc(`<meta property="og:type" content="article"><meta property="og:title" content="A headline">
+    <meta property="article:published_time" content="2026-09-19T10:00:00Z">
+    <meta property="article:modified_time" content="2026-09-19T12:30:00Z">
+    <meta property="article:author" content="Jane Doe"><meta property="article:author" content="https://example.com/by/john">
+    <meta property="article:author" content="John Roe"><meta property="article:section" content="Climate">
+    <meta property="article:tag" content="Oceans"><meta property="article:tag" content="Heat">
+    <script type="application/ld+json">{"@context":"https://schema.org","@graph":[
+      {"@type":"WebPage","name":"page"},
+      {"@type":"NewsArticle","headline":"A headline","datePublished":"2026-09-19T10:00:00Z",
+       "author":[{"@type":"Person","name":"Jane Doe"},{"@type":"Person","name":"John Roe"}],
+       "publisher":{"@type":"NewsMediaOrganization","name":"The Example Times"}}]}</script>`);
+  it('reads article:* with repeated authors and tags, dropping URL-shaped authors', async () => {
+    const p = await preview(NEWS);
+    expect(p.article!.publishedTime).toBe('2026-09-19T10:00:00Z');
+    expect(p.article!.modifiedTime).toBe('2026-09-19T12:30:00Z');
+    expect(p.article!.authors).toEqual(['Jane Doe', 'John Roe']);
+    expect([p.article!.section, p.article!.tags]).toEqual(['Climate', ['Oceans', 'Heat']]);
+  });
+  it('reads a NewsArticle out of an @graph, with its publisher', async () => {
+    const p = await preview(NEWS);
+    expect(p.jsonLdTypes).toEqual(['WebPage', 'NewsArticle']);
+    expect([p.article!.publisher, p.article!.headline]).toEqual(['The Example Times', 'A headline']);
+  });
+  it('fills an article from JSON-LD alone when there are no article:* tags', async () => {
+    const p = await preview(doc('<script type="application/ld+json">[{"@type":["BlogPosting"],"headline":"Post","datePublished":"2025-01-01","author":"Solo Writer"}]</script>'));
+    expect(p.article).toEqual({ publishedTime: '2025-01-01', modifiedTime: null, authors: ['Solo Writer'], section: null, tags: [], headline: 'Post', publisher: null });
+  });
+  it('falls back to a "By" byline for the author', async () => {
+    expect((await preview(doc('<meta property="og:type" content="article"><meta name="byl" content="By Ann Lee">'))).article!.authors).toEqual(['Ann Lee']);
+  });
+  it('survives a broken JSON-LD block beside a good one, and has no article on a plain page', async () => {
+    expect(readJsonLd(['{not json', '{"@type":"Article","headline":"ok"}'], 'https://x.example/').article!.headline).toBe('ok');
+    expect((await preview(doc('<title>plain</title>'))).article).toBeNull();
+  });
+});
+
+describe('oEmbed', () => {
+  it('keeps what a card uses and never the provider html', () => {
+    const o = readOEmbed({ type: 'video', title: 'T', author_name: 'Rick Astley', author_url: 'https://www.youtube.com/@RickAstleyYT',
+      provider_name: 'YouTube', thumbnail_url: 'https://i.ytimg.com/vi/x/hqdefault.jpg', thumbnail_width: 480, thumbnail_height: 360,
+      width: 200, height: 113, html: '<iframe src="https://evil.example"></iframe>' }, 'https://www.youtube.com/');
+    expect(o).toEqual({ type: 'video', title: 'T', authorName: 'Rick Astley', authorUrl: 'https://www.youtube.com/@RickAstleyYT',
+      providerName: 'YouTube', thumbnailUrl: 'https://i.ytimg.com/vi/x/hqdefault.jpg', thumbnailWidth: 480, thumbnailHeight: 360, width: 200, height: 113 });
+    expect(JSON.stringify(o)).not.toContain('iframe');
+  });
+  it('is null when there is nothing usable', () => {
+    expect(readOEmbed(null, 'https://x.example/')).toBeNull();
+    expect(readOEmbed({ html: '<b>x</b>' }, 'https://x.example/')).toBeNull();
+  });
+  it('is fetched when the page advertises it, and attached', async () => {
+    const page = () => html(doc('<meta property="og:title" content="Video"><link rel="alternate" type="application/json+oembed" href="https://v.example/oembed?u=1">'));
+    const { service, calls } = harness({
+      'https://v.example/watch': page,
+      'https://v.example/oembed?u=1': () => new Response(JSON.stringify({ author_name: 'Channel', provider_name: 'V' }), { headers: { 'content-type': 'application/json' } }),
+    });
+    const p = await service.get('https://v.example/watch');
+    expect(p.oembed!.authorName).toBe('Channel');
+    expect(calls).toEqual(['https://v.example/watch', 'https://v.example/oembed?u=1']);
+  });
+  it('is never fetched from a private address, and its failure spoils nothing', async () => {
+    const page = () => html(doc('<meta property="og:title" content="V"><link rel="alternate" type="application/json+oembed" href="http://inside.example/oembed">'));
+    const { service, calls } = harness({ 'https://v.example/p': page }, { dns: { 'inside.example': ['10.0.0.9'] } });
+    const p = await service.get('https://v.example/p');
+    expect([p.title, p.oembed]).toEqual(['V', null]);
+    expect(calls).toEqual(['https://v.example/p']);
+  });
+});
+
+describe('runtime-neutral pieces', () => {
+  it('ipVersion matches node:net isIP', () => {
+    expect(['1.2.3.4', '::1', '2606:4700::1111', '::ffff:1.2.3.4', 'example.com', '1.2.3', '', ':::'].map(ipVersion)).toEqual([4, 6, 6, 6, 0, 0, 0, 0]);
+  });
+  it('with lookup null (a Worker), refuses private literals but leaves names to the platform', async () => {
+    let err: unknown = null;
+    try { await assertPublicUrl('http://169.254.169.254/', null); } catch (e) { err = e; }
+    expect((err as HttpError).status).toBe(400);
+    expect((await assertPublicUrl('https://example.com/', null)).hostname).toBe('example.com');
+  });
+});
+
 // -------------------------------------------------------------- encoding --
 
 describe('character encoding', () => {
@@ -275,8 +444,8 @@ describe('fetching', () => {
       { dns: { 'metadata.example': ['169.254.169.254'] } },
     );
     const p = await service.get('https://bait.example/');
-    // Asked twice (browser, then bot), refused both times, never followed.
-    expect(calls).toEqual(['https://bait.example/', 'https://bait.example/']);
+    // Asked once per agent, refused every time, never followed.
+    expect(calls).toEqual(['https://bait.example/', 'https://bait.example/', 'https://bait.example/']);
     expect(calls.some((u) => u.includes('metadata'))).toBe(false);
     expect([p.fetched, p.title]).toEqual([false, 'https://bait.example/']);
   });
@@ -284,7 +453,7 @@ describe('fetching', () => {
     const { service, calls } = harness({ 'https://loop.example/': () => redirect('https://loop.example/') });
     const p = await service.get('https://loop.example/');
     expect(p.fetched).toBe(false);
-    expect(calls.length).toBe(2 * (LIMITS.maxRedirects + 1)); // capped on each of the two passes
+    expect(calls.length).toBe(3 * (LIMITS.maxRedirects + 1)); // capped on each of the three passes
   });
   it('turns a block (403/503) into URL-only data, never a thrown error or a scraped error page', async () => {
     for (const status of [403, 404, 429, 503]) {
@@ -364,11 +533,36 @@ describe('user agent: browser first, honest bot when the browser gets nothing', 
     const p = await service.get('https://shop.example/');
     expect([p.title, p.fetched]).toEqual(['Shop', true]);
   });
-  it('keeps the browser result when the bot does no better', async () => {
+  it('keeps the browser result when neither fallback does better', async () => {
     const { service, agents } = harness({ 'https://plain.example/': shell });
     const p = await service.get('https://plain.example/');
     expect([p.title, p.sources.title]).toEqual(['App', 'html']);
-    expect(agents.length).toBe(2);
+    expect(agents).toEqual([DEFAULT_USER_AGENT, DEFAULT_BOT_USER_AGENT, DEFAULT_SOCIAL_USER_AGENT]);
+  });
+  it('tries the social unfurler last, only after both others came back empty (the NYT case)', async () => {
+    const allowlist: Route = (_u, init) => {
+      const ua = (init.headers as Record<string, string>)['User-Agent'];
+      return ua === DEFAULT_SOCIAL_USER_AGENT ? rich('The New York Times') : new Response('', { status: 403 });
+    };
+    const { service, agents } = harness({ 'https://news.example/': allowlist });
+    const p = await service.get('https://news.example/');
+    expect([p.title, p.fetched]).toEqual(['The New York Times', true]);
+    expect(agents).toEqual([DEFAULT_USER_AGENT, DEFAULT_BOT_USER_AGENT, DEFAULT_SOCIAL_USER_AGENT]);
+  });
+  it('never uses the social unfurler when the honest bot already got the card', async () => {
+    const { service, agents } = harness({ 'https://app.example/': byAgent(shell, () => rich('Card')) });
+    await service.get('https://app.example/');
+    expect(agents).not.toContain(DEFAULT_SOCIAL_USER_AGENT);
+  });
+  it('can have the social unfurler switched off', async () => {
+    const agentsSeen: string[] = [];
+    const service = createPreviewService({
+      lookup: async () => ['93.184.216.34'],
+      socialUserAgent: null,
+      fetch: async (_url, init) => { agentsSeen.push((init.headers as Record<string, string>)['User-Agent']); return new Response('', { status: 403 }); },
+    });
+    await service.get('https://news.example/');
+    expect(agentsSeen).toEqual([DEFAULT_USER_AGENT, DEFAULT_BOT_USER_AGENT]);
   });
   it('keeps the browser result when the bot is the one that gets blocked', async () => {
     const { service } = harness({ 'https://picky.example/': byAgent(shell, () => new Response('', { status: 403 })) });
@@ -382,7 +576,7 @@ describe('user agent: browser first, honest bot when the browser gets nothing', 
     }
   });
   it('calls a result thin when a card would have nothing but the URL', () => {
-    const base = { url: 'u', finalUrl: 'u', domain: 'd', title: 'u', description: null, image: null, fetched: true, status: 200, contentType: 'text/html' };
+    const base = { ...urlOnlyPreview('https://u.example/', 'https://u.example/'), fetched: true, status: 200, contentType: 'text/html' };
     expect(isThin({ ...base, sources: { title: 'html', description: null, image: null } })).toBe(true);
     expect(isThin({ ...base, sources: { title: 'og', description: null, image: null } })).toBe(false);
     expect(isThin({ ...base, image: 'i', sources: { title: 'html', description: null, image: 'link' } })).toBe(false);
@@ -480,7 +674,7 @@ describe('GET /v1/link-preview', () => {
   const stub = (result: Partial<LinkPreview>) => ({
     get: async (url: string) => {
       if (url.includes('169.254')) throw new HttpError(400, 'that address is not on the public internet');
-      return { url, finalUrl: url, domain: 'x', title: url, description: null, image: null, sources: { title: 'url', description: null, image: null }, fetched: true, status: 200, contentType: 'text/html', ...result } as LinkPreview;
+      return { ...urlOnlyPreview(url, url), fetched: true, status: 200, contentType: 'text/html', ...result } as LinkPreview;
     },
     size: () => 0,
   });

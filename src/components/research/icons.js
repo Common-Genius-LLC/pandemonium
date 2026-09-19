@@ -1,16 +1,13 @@
-// The glyphs a research source is marked with, in one place because three
-// surfaces show them: the card in the grid, the reader's header, and the
-// panel's toolbar. Material Symbols paths on the app's usual 0 -960 960 960
+// The research panel's glyphs: the toolbar's, and the picture a file tile
+// shows when the file has no still. Material Symbols paths on the app's usual 0 -960 960 960
 // viewBox, same as the boards panel's toolbar icons. `currentColor` throughout,
 // so a glyph takes the colour of whatever it sits in and never needs a token.
 'use strict';
 
 import { html } from 'lit';
-import { researchKind, mediaKind } from '../../data/research-doc.js';
+import { mediaKind } from '../../data/research-doc.js';
 
 const PATHS = {
-  note: 'M320-240h320v-80H320v80Zm0-160h320v-80H320v80ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520Z',
-  link: 'M440-280H280q-83 0-141.5-58.5T80-480q0-83 58.5-141.5T280-680h160v80H280q-50 0-85 35t-35 85q0 50 35 85t85 35h160v80ZM320-440v-80h320v80H320Zm200 160v-80h160q50 0 85-35t35-85q0-50-35-85t-85-35H520v-80h160q83 0 141.5 58.5T880-480q0 83-58.5 141.5T680-280H520Z',
   image: 'M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Z',
   video: 'M160-800h640q33 0 56.5 23.5T880-720v480q0 33-23.5 56.5T800-160H160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800Zm0 240v320h640v-320H160Zm0-80h100l-60-120h-40v120Zm220 0h100l-60-120H320l60 120Zm220 0h100l-60-120H540l60 120Z',
   audio: 'M400-120q-66 0-113-47t-47-113q0-66 47-113t113-47q23 0 42.5 5.5T480-418v-422h240v160H560v400q0 66-47 113t-113 47Z',
@@ -30,21 +27,9 @@ export function icon(name) {
   return html`<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d=${d}></path></svg>`;
 }
 
-// What a source is marked with: its media type when it carries a file,
-// otherwise link or note (see researchKind).
-export function sourceIconName(doc) {
-  const kind = researchKind(doc);
-  if (kind === 'file') return mediaKind(doc.attachment);
-  return kind;
-}
-
-export function sourceIcon(doc) {
-  return icon(sourceIconName(doc));
-}
-
-// The word for what a source is, used in tooltips and the reader's header.
-const LABELS = { note: 'Note', link: 'Link', image: 'Image', video: 'Video', audio: 'Audio', pdf: 'PDF', file: 'File' };
-
-export function sourceLabel(doc) {
-  return LABELS[sourceIconName(doc)] || 'Source';
+// The picture in the tile of a file that has no still of its own (a video, an
+// audio file, a PDF). This is not a note-or-link badge; sources carry no kind
+// marker. It is only what a file looks like when there is nothing to show.
+export function mediaIcon(attachment) {
+  return icon(mediaKind(attachment));
 }

@@ -8,8 +8,8 @@
 // Amazon has a bad day is not a test suite.
 
 import { HttpError } from '../errors';
-import { assertPublicUrl, parseFetchableUrl, systemLookup, type Lookup } from './ssrf';
-import { buildPreview, decodeBody, extractMeta, urlOnlyPreview, type LinkPreview } from './parse';
+import { assertPublicUrl, parseFetchableUrl, type Lookup } from './ssrf';
+import { buildPreview, decodeBody, extractMeta, readOEmbed, urlOnlyPreview, type LinkPreview } from './parse';
 
 // Two user agents, tried in this order, because no single one works
 // everywhere and the live check proved it (scripts/validate-link-preview.ts):
@@ -33,6 +33,18 @@ import { buildPreview, decodeBody, extractMeta, urlOnlyPreview, type LinkPreview
 export const DEFAULT_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
 export const DEFAULT_BOT_USER_AGENT = 'PandemoniumBot/1.0 (+https://pandemonium.commongenius.in)';
+
+//   3. Facebook's link-preview crawler, as a LAST resort, and only when the
+//      first two both came back with nothing. Some publishers (the New York
+//      Times, tested) refuse every client except a short allowlist of social
+//      unfurlers, including an honestly named bot. They allowlist those so
+//      that a shared link previews, which is exactly what this is: one request
+//      per URL, cached for a day, for a preview card. It is still wearing
+//      another company's name, which is why it is last, why a site that
+//      accepts the honest bot never sees it, and why LINK_PREVIEW_SOCIAL_UA=off
+//      turns it off. Some sites verify this crawler by IP, and then it simply
+//      fails like the others.
+export const DEFAULT_SOCIAL_USER_AGENT = 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)';
 
 export const LIMITS = {
   timeoutMs: 8000, // the whole fetch, every hop and the body included
@@ -58,6 +70,7 @@ export interface PreviewDeps {
   now: () => number;
   userAgent: string;
   botUserAgent: string;
+  socialUserAgent: string | null; // null: never try it
 }
 
 // A result with nothing a card could use beyond the URL: the page was not
@@ -132,13 +145,20 @@ function createGate(max: number, maxQueued: number) {
   };
 }
 
+function missingLookup(): never {
+  throw new Error('createPreviewService needs a lookup: systemLookup in Bun, or null where the runtime refuses private addresses itself');
+}
+
 export function createPreviewService(partial: Partial<PreviewDeps> = {}, limits = LIMITS) {
   const deps: PreviewDeps = {
     fetch: partial.fetch || ((url, init) => fetch(url, init)),
-    lookup: partial.lookup || systemLookup,
+    // No default on purpose: the Bun route passes the system resolver, a
+    // Worker passes null. Forgetting would silently skip the DNS check.
+    lookup: partial.lookup === undefined ? missingLookup() : partial.lookup,
     now: partial.now || Date.now,
     userAgent: partial.userAgent || DEFAULT_USER_AGENT,
     botUserAgent: partial.botUserAgent || DEFAULT_BOT_USER_AGENT,
+    socialUserAgent: partial.socialUserAgent === undefined ? DEFAULT_SOCIAL_USER_AGENT : partial.socialUserAgent,
   };
   const cache = new Map<string, { value: LinkPreview; expires: number }>();
   const inflight = new Map<string, Promise<LinkPreview>>();
@@ -150,12 +170,39 @@ export function createPreviewService(partial: Partial<PreviewDeps> = {}, limits 
     'Accept-Language': 'en-US,en;q=0.9',
   });
 
-  // Browser first; the honest bot only when the browser got nothing usable.
+  // Browser, then the honest bot, then (last) the social unfurler, stopping at
+  // the first that gets a real card; if none does, the richest of them.
   async function fetchPreview(requested: string): Promise<LinkPreview> {
-    const first = await fetchOnce(requested, deps.userAgent);
-    if (!isThin(first)) return first;
-    const second = await fetchOnce(requested, deps.botUserAgent);
-    return richness(second) > richness(first) ? second : first;
+    const agents = [deps.userAgent, deps.botUserAgent, ...(deps.socialUserAgent ? [deps.socialUserAgent] : [])];
+    let best: { preview: LinkPreview; agent: string } | null = null;
+    for (const agent of agents) {
+      const preview = await fetchOnce(requested, agent);
+      if (!best || richness(preview) > richness(best.preview)) best = { preview, agent };
+      if (!isThin(preview)) break;
+    }
+    return withOEmbed(best!.preview, best!.agent);
+  }
+
+  // oEmbed is the provider's own description of an embeddable thing (a video's
+  // channel, a track's artist, exact thumbnail sizes). Asked for only when the
+  // page advertised it, through the same SSRF check as any hop, with its own
+  // small cap, and with the agent that the page itself answered.
+  async function withOEmbed(preview: LinkPreview, agent: string): Promise<LinkPreview> {
+    if (!preview.fetched || !preview.oembedUrl) return preview;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), Math.min(4000, limits.timeoutMs));
+    try {
+      const target = await assertPublicUrl(preview.oembedUrl, deps.lookup);
+      const res = await deps.fetch(target.href, { redirect: 'manual', headers: { ...headersFor(agent), Accept: 'application/json' }, signal: ctrl.signal });
+      if (res.status !== 200) { discard(res); return preview; }
+      const bytes = await readCapped(res, 64_000);
+      const oembed = readOEmbed(JSON.parse(new TextDecoder().decode(bytes)), target.href);
+      return oembed ? { ...preview, oembed } : preview;
+    } catch {
+      return preview; // a missing extra is not a failed preview
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   // Redirects are followed by hand, never by fetch itself, so that every hop's

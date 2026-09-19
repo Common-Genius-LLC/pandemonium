@@ -3,8 +3,7 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { StoreController } from '../../state/store-controller.js';
 import { getParsed } from '../../fountain/cache.js';
-import { docParas, docTitle } from '../../data/research-doc.js';
-import { sourceLabel } from '../research/icons.js';
+import { docParas, docTitle, hostOf } from '../../data/research-doc.js';
 import { esc } from '../../utils/format.js';
 
 // Search across scripts, research and boards, as a real field in the title bar
@@ -119,7 +118,7 @@ export class PandemoniumSearchField extends LitElement {
         // heading matches on any of the three: searching a file name or a host
         // has to find the source that carries it, not only its typed title.
         const head = [d.title, d.url, d.attachment && d.attachment.name, d.preview && d.preview.title].filter(Boolean).join(' ').toLowerCase();
-        if (head.includes(q)) { results.push({ group: 'Research', t: docTitle(d), sub: sourceLabel(d), go: { k: 'doc', id: d.id } }); researchCount++; }
+        if (head.includes(q)) { results.push({ group: 'Research', t: docTitle(d), sub: hostOf(d.url || '') || 'source', go: { k: 'doc', id: d.id } }); researchCount++; }
         docParas(d).forEach((p, pi) => {
           if (researchCount < CAP && p.toLowerCase().includes(q)) { results.push({ group: 'Research', t: p, sub: docTitle(d), go: { k: 'doc', id: d.id, pi } }); researchCount++; }
         });

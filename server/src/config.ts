@@ -30,5 +30,7 @@ export const config = {
     ratePerMinute: num(process.env.LINK_PREVIEW_RATE_PER_MINUTE, 60),
     userAgent: process.env.LINK_PREVIEW_USER_AGENT || '',
     botUserAgent: process.env.LINK_PREVIEW_BOT_USER_AGENT || '',
+    // The last-resort social-unfurler agent (see service.ts). "off" disables it.
+    socialUserAgentOff: process.env.LINK_PREVIEW_SOCIAL_UA === 'off',
   },
 };

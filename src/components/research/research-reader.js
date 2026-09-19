@@ -12,7 +12,6 @@ import {
   parasToBody, setPara, splitPara, mergePara, colorToken,
   addLabel, removeLabel, allLabels, MAX_LABEL,
 } from '../../data/research-doc.js';
-import { sourceIcon, sourceLabel, icon } from './icons.js';
 import { captureParts, getRootSelection } from '../../utils/selection.js';
 import { readFileAsDataURL } from '../../utils/files.js';
 import { clamp } from '../../utils/format.js';
@@ -20,7 +19,7 @@ import { openPair } from '../../state/actions.js';
 import { formStyles } from '../../styles/shared.js';
 import './attachment-viewer.js';
 import '../ui/link-preview.js';
-import { storablePreview } from '../../data/link-preview.js';
+import { storablePreview, previewPatch, urlsIn } from '../../data/link-preview.js';
 
 // One open source: its media, the page it came from, the notes about it, and
 // the script passages it backs, down one page.
@@ -56,8 +55,6 @@ export class PandemoniumResearchReader extends LitElement {
       background:var(--card,var(--note-plain));border-radius:12.36px;overflow:hidden;
     }
     .rhead{flex:none;display:flex;align-items:center;gap:6px;padding:10px 10px 6px}
-    .rhead .kind{flex:none;line-height:0}
-    .rhead .kind svg{width:14px;height:14px;fill:var(--mut)}
     .rtitle{
       font-size:13px;font-weight:500;color:var(--ink);background:transparent;padding:2px 6px;flex:1;min-width:0;
       border:0;border-radius:var(--r);font-family:var(--sans);height:auto;
@@ -91,7 +88,6 @@ export class PandemoniumResearchReader extends LitElement {
       background:transparent;cursor:text;transition:background .12s;
     }
     .linkbox:hover,.linkbox:focus-within{background:var(--bg)}
-    .linkbox svg{width:13px;height:13px;flex:none;fill:var(--mut)}
     .linkbox input{
       flex:1;min-width:0;height:20px;padding:0;font-size:12px;
       background:transparent;border:0;border-radius:0;color:var(--link);
@@ -142,6 +138,9 @@ export class PandemoniumResearchReader extends LitElement {
     }
     /* The first paragraph of an empty source says what to do IN the place
        where doing it happens, rather than in a sentence above it. */
+    /* A link written in the notes unfurls under its paragraph, inside the
+       note, the way it does in a chat. */
+    .embeds{display:flex;flex-direction:column;gap:8px;margin:-.2em 0 .9em;cursor:default}
     .para.ph::before{content:attr(data-ph);color:var(--mut);pointer-events:none;font-size:17px}
     .para.ph:focus::before{opacity:.55}
     #readerBody mark.hr{background:var(--res);color:#fff;cursor:pointer;border-radius:1px}
@@ -236,12 +235,14 @@ export class PandemoniumResearchReader extends LitElement {
   // The server's read of the page, kept on the source so the grid can draw
   // its card offline and the source can be named after the page. Written only
   // when it says something new, so reopening a source is not an edit.
+  //
+  // A source with no title of its own takes the page's title as its title,
+  // really, not just as a fallback for display: it lands in the title field,
+  // where it can be edited like one the writer typed. A title the writer gave
+  // is never replaced.
   #keepPreview(p) {
-    const next = storablePreview(p);
-    const d = this.doc;
-    if (!next || next.url !== d.url) return;
-    if (JSON.stringify(next) === JSON.stringify(d.preview || null)) return;
-    this._store.store.updateResearch(d.id, { preview: next });
+    const patch = previewPatch(this.doc, storablePreview(p));
+    if (Object.keys(patch).length) this._store.store.updateResearch(this.doc.id, patch);
   }
 
   // ---- editing the notes in place ----
@@ -361,7 +362,7 @@ export class PandemoniumResearchReader extends LitElement {
   // swallowed clicks on the link field and the label field, which made both of
   // them impossible to use.
   #onNotesClick(e) {
-    if (e.target.closest && e.target.closest('.para')) return;
+    if (e.target.closest && e.target.closest('.para, .embeds')) return;
     const paras = this.renderRoot.querySelectorAll('.para');
     const last = paras[paras.length - 1];
     if (!last) return;
@@ -652,6 +653,12 @@ export class PandemoniumResearchReader extends LitElement {
       ? 'Write what this shows'
       : 'Write or paste what this source says';
     const gen = this.#editGen;
+    // Each link written in the notes gets its card under the paragraph that
+    // holds it, where it was written: once per link (at its first mention),
+    // never for the link the source itself points at (its card is above), and
+    // at most three under any one paragraph.
+    const shown = new Set(doc.url ? [urlsIn(doc.url)[0] || doc.url] : []);
+    const embedsFor = (text) => urlsIn(text).filter((u) => !shown.has(u) && shown.add(u)).slice(0, 3);
     return keyed(gen, html`${paras.map((p, pi) => html`<p
       class="para ${lone ? 'ph' : ''}"
       data-ri=${pi}
@@ -668,7 +675,17 @@ export class PandemoniumResearchReader extends LitElement {
         // StoreController keeps its store, so the last edit still lands.
         requestAnimationFrame(() => this.#commitPara(pi, text, gen));
       }}
-    >${unsafeHTML(blockHTML(paraAsBlock(p), map[pi]) || '')}</p>`)}`);
+    >${unsafeHTML(blockHTML(paraAsBlock(p), map[pi]) || '')}</p>${this.#embeds(embedsFor(p))}`)}`);
+  }
+
+  // Link cards inside the notes. Not editable, and not part of the text: the
+  // paragraph above still holds the URL itself, which is what gets saved, so
+  // deleting the link from the text is what removes its card.
+  #embeds(urls) {
+    if (!urls.length) return nothing;
+    return html`<div class="embeds" contenteditable="false">
+      ${urls.map((u) => html`<pd-link-preview quiet .url=${u}></pd-link-preview>`)}
+    </div>`;
   }
 
   // The link is one box, and the box is the editor. At rest it sits on the
@@ -683,7 +700,6 @@ export class PandemoniumResearchReader extends LitElement {
   #linkBox(doc) {
     return html`
       <label class="linkbox" title=${doc.url ? 'Click to change the link' : 'Paste a link'}>
-        ${icon('link')}
         <input type="url" placeholder="Paste a link" spellcheck="false" .value=${doc.url || ''}
           @keydown=${(e) => {
             if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
@@ -717,7 +733,6 @@ export class PandemoniumResearchReader extends LitElement {
     return html`
       <div class="card" style="--card:${colorToken(doc.color)}">
         <div class="rhead">
-          <span class="kind" title=${sourceLabel(doc)}>${sourceIcon(doc)}</span>
           <input class="rtitle" type="text" placeholder="Untitled" .value=${doc.title || ''} @input=${(e) => this.#title(e)}>
           ${links.length ? html`<button class="countpill" title="See the passages this source backs" @click=${() => this.#scrollToBacks()}>${links.length} in script</button>` : nothing}
           ${lost.length ? html`<button class="countpill warn" title="Reattach the first of these to a passage" @click=${() => this.#reattach(lost[0].lk.id)}>${lost.length} lost</button>` : nothing}
