@@ -306,7 +306,10 @@ export class PandemoniumApp extends LitElement {
     if (!file) return;
     e.preventDefault();
     const img = await readFileAsDataURL(file);
-    store.addBoard({ parts: [], img, caption: '' });
+    // Pasted images always start as reference frames, regardless of the
+    // drop-target setting: a paste is inspiration for a beat, not a
+    // deliberate "this is the final frame" choice.
+    store.addBoard({ parts: [], img, caption: '', mode: 'reference' });
     dispatch(this, 'pandemonium-toast', { message: 'Board added. Select a script passage anytime to attach it.' });
   };
 

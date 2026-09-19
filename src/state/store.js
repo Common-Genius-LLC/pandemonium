@@ -30,7 +30,9 @@ export class PandemoniumStore extends EventTarget {
       { name: 'Untitled', workspace: '', type: '', targetMins: 0, contributors: [], scripts: [], boards: [], research: [], links: [], comments: [], layout: null },
       rawProject,
     );
-    this.#project = project;
+    // Projects saved before a storyboard held both its frames are one board
+    // per frame; fold them (a no-op for anything already in the new shape).
+    this.#project = model.migrateBoards(project);
     // Seeded rather than defaulted in the Object.assign above, so a project
     // file written before `layout` existed (no key at all) and one written
     // with an explicit null both land on a real tree.
@@ -230,7 +232,6 @@ export class PandemoniumStore extends EventTarget {
   }
   makeFinal(id) { this.#applyProject(model.makeFinal(this.#project, id)); }
   setBoardDuration(id, secs) { this.#applyProject(model.setBoardDuration(this.#project, id, secs)); }
-  setBoardRef(id, ref) { this.#applyProject(model.setBoardRef(this.#project, id, ref)); }
   // Where image drops from the editor/timeline land: the reference storyboard
   // (default) or the final one. Persisted with the project.
   setDropToReference(v) { this.#applyProject({ ...this.#project, dropToReference: !!v }); }
@@ -244,30 +245,50 @@ export class PandemoniumStore extends EventTarget {
 
   // ---- board actions ----
 
+  // `opts.mode` ('final' | 'reference') picks which frame the image goes in;
+  // the other frame exists, empty. See the storyboard note in project-model.js.
   addBoard(opts) {
     const { project, board } = model.addBoard(this.#project, opts);
     this.#applyProject(project);
-    // An image dropped into the boards panel with no anchor is not yet a
-    // storyboard *link*: only a board attached to a script passage counts.
-    const parts = (opts.parts || []).length;
-    if (parts) trackStoryboardLinkAdd({ script_parts: parts, board_count: project.boards.length });
+    this.#trackBoardLink(opts, project);
     return board;
   }
-  // A board with no image yet, made from a script section. It is a real
-  // storyboard link (the section is claimed), so it is tracked as one, but
-  // coverage() will not let it into the boarded percentage until it has an
-  // image.
+
+  // Put an image in one frame of the storyboard already on this passage if that
+  // frame is empty (so a beat's final and reference stay together), else start
+  // a new storyboard. The drop and paste paths use this rather than addBoard.
+  placeFrame(opts) {
+    const { project, board } = model.placeFrame(this.#project, opts);
+    this.#applyProject(project);
+    this.#trackBoardLink(opts, project);
+    return board;
+  }
+
+  // A storyboard with no image in either frame, made from a script section. It
+  // is a real storyboard link (the section is claimed), so it is tracked as
+  // one, but coverage() will not let it into the boarded percentage until its
+  // final frame has an image. `opts.note` is the storyboard's own comment.
   addBlankBoard(opts) {
     const { project, board } = model.addBlankBoard(this.#project, opts);
     this.#applyProject(project);
+    this.#trackBoardLink(opts, project);
+    return board;
+  }
+
+  // An image with no anchor is not yet a storyboard *link*: only a storyboard
+  // attached to a script passage counts.
+  #trackBoardLink(opts, project) {
     const parts = (opts.parts || []).length;
     if (parts) trackStoryboardLinkAdd({ script_parts: parts, board_count: project.boards.length });
-    return board;
   }
 
   reorderBoard(id, delta) { this.#applyProject(model.reorderBoard(this.#project, id, delta)); }
   updateBoardCaption(id, caption) { this.#applyProject(model.updateBoardCaption(this.#project, id, caption)); }
-  replaceBoardImage(id, img) { this.#applyProject(model.replaceBoardImage(this.#project, id, img)); }
+  setBoardNote(id, note) { this.#applyProject(model.setBoardNote(this.#project, id, note)); }
+  // Set or clear ONE frame ('final' by default); the other is untouched.
+  replaceBoardImage(id, img, mode) { this.#applyProject(model.replaceBoardImage(this.#project, id, img, mode)); }
+  // Swap a storyboard's two frames; with one empty this moves the image across.
+  swapBoardFrames(id) { this.#applyProject(model.swapBoardFrames(this.#project, id)); }
   reattachBoard(id, parts) { this.#applyProject(model.reattachBoard(this.#project, id, parts)); }
   deleteBoard(id) { this.#applyProject(model.deleteBoard(this.#project, id)); }
 
@@ -350,7 +371,14 @@ export class PandemoniumStore extends EventTarget {
   // itself into the account, which is the one outcome worse than the
   // conflict itself.
   beginMerge({ base, mine, theirs, theirUpdatedAt }) {
-    const result = mergeProjects(base || null, mine, theirs);
+    // All three sides go through the same migration first: the other device
+    // may not have updated yet, and merging an old-shape board against a
+    // new-shape one would read every storyboard as edited on both sides.
+    const result = mergeProjects(
+      base ? model.migrateBoards(base) : null,
+      model.migrateBoards(mine),
+      model.migrateBoards(theirs),
+    );
     if (result.clean) {
       this.#project = model.normalizeDraftNames(result.project);
       this.#ui = { ...this.#ui, dirty: true };
@@ -408,8 +436,15 @@ function defaultUI(draftId) {
     scrollToBlock: null,
     scrollToParagraph: null,
     highlightBoard: null,
+    // Which storyboard tab ('final' | 'reference') the boards panel should switch
+    // to while it scrolls to and flashes highlightBoard; null leaves it as is.
+    highlightMode: null,
     merge: null, // {result: mergeProjects() output, theirUpdatedAt} while a sync conflict awaits resolution
     dirty: false,
+    // Id of a leaf temporarily shown alone (focused writing mode), or null.
+    // Transient and per-session like everything else in ui: the saved split
+    // tree (project.layout) is never touched by focusing a pane.
+    focusedLeaf: null,
   };
 }
 

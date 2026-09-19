@@ -31,15 +31,22 @@ From the product spec. Confirm against the code before relying on it.
 - **Script**: a Fountain document. Multiple scripts are allowed per project, but
   only one is the **final draft**, and only the final draft links to storyboards
   and research.
-- **Storyboard link**: a script section connected to one or more images. Viewable
-  as a board, or as a slideshow with the image on top and the linked script
-  portion in the bottom fifth of the frame. Several boards may attach to one
-  section; their order within that section is the board's `seq` field, since
-  they all resolve to the same script position and nothing else would order
-  them. A board may also be **blank** (`img: null`), created from a section
-  before the frame exists. A blank board is a real link but is **not** counted
-  as boarded by the timeline (see hard rule 3): the section is claimed, not
-  drawn.
+- **Storyboard link**: a script section connected to a **storyboard**. A
+  storyboard is one record with two image frames, a final one (`img`) and a
+  reference one (`refImg`), either of which may be empty, plus its own `note`
+  (a comment on the storyboard, separate from script comments). Making one from
+  either side always makes the other side, empty, so the Final and Reference
+  views list the same beats and the slideshow shows the same script in both;
+  only the image differs. Viewable as a board, or as a slideshow with the image
+  on top and the linked script portion in the bottom fifth of the frame.
+  Several storyboards may attach to one section; their order within that
+  section is the storyboard's `seq` field, since they all resolve to the same
+  script position and nothing else would order them. A storyboard may also be
+  **blank** (no image in either frame), created from a section before any
+  frame exists. A storyboard with no FINAL image (blank, or holding only a
+  reference frame) is a real link but is **not** counted as boarded by the
+  timeline (see hard rule 3): the section is claimed, not drawn. A reference
+  frame is inspiration and never counts toward boarded coverage.
 - **Research link**: a script section connected to a URL, a research document, or
   a note. A highlighted span inside a research doc links to a specific script
   span. Clicking either end reveals the link between the two.
@@ -226,7 +233,8 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
    `coverage()` now excludes reference boards from the boarded percentage,
    matching `addBoard`'s documented intent (hard rule 3) rather than the
    comment it had drifted from. Show Script in the boards panel now defaults
-   off. **Done.**
+   off. **Done.** Superseded by item 13: `boardSlots` and `slotBoard` are gone,
+   because one storyboard record now holds both frames.
 9. Home screen: the start screen gained a recent-projects row below
    Create/Open, using a new `compact closed` variant of `pd-project-card`
    (the clapper held flat, no swing, just the art and a name). Cloud accounts
@@ -255,6 +263,112 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
     continuous slide (`#buildSlides` in `slideshow.js`), and the top-left
     scene label that segmentation drove is removed (a board's own caption,
     if it has one, still shows there). **Done.**
+11. Bug fixes from a review pass: pasting an image now always creates a
+    reference board (`ref: true`, both the editor's own paste handler and
+    `pandemonium-app`'s document-level fallback), matching the intent that a
+    paste is inspiration for a beat, not a deliberate final frame; moving a
+    board between Final and Reference already had no code-level restriction
+    on link state, the real bug was that the boards panel filters by mode, so
+    a moved board just vanished from the tab you were on, fixed by having the
+    move set `highlightBoard` so the panel follows it the same way a new
+    board does. The board card's Final/Reference marker pill now matches
+    Edit's resting style (plain pill) and only turns pink with white text on
+    hover, instead of staying permanently pink whenever the board is a
+    reference. The timeline's reference hatch (`timeline.js`) was made
+    seamless across adjacent bars (painted once on the row instead of per
+    element); item 12 later replaced the hatch with a solid yellow fill.
+    Unlink moved out to the board card's outer hover menu next to
+    Edit (it is the frequent action); Delete moved into the Edit overlay for
+    a linked board, but stays outside for an already-unlinked one, which has
+    no link to unlink. Each linked board now has a "Preview from here" pill
+    that opens the slideshow at that board's slide (`slideshow.js`'s `open()`
+    takes an optional `boardId`). "Start Show" is relabeled "Preview"
+    throughout. Anchors (`src/fountain/resolve.js`) now snap to whole-word
+    boundaries on capture and on every edit-triggered re-derive, so a link
+    reads as word-to-word and keeps that shape as the words around it change,
+    layered onto the existing quote-search-plus-remap scheme rather than
+    replacing it. **Done.**
+
+12. Feature batch. **Guardrails**: `describeSlideshowGap` in
+    `src/state/selectors.js` names what is missing (no script, no frames, or
+    frames not linked) before Preview and Record Pacing open a show, and
+    Script PDF export refuses an empty draft. **Focused writing**: a Focus
+    button on the script panel sets the transient `ui.focusedLeaf`, and
+    `panel-layout.js` renders just that leaf without touching the saved split
+    tree. **Minimap** (`cm-minimap.js`, `@replit/codemirror-minimap`) on the
+    script editor, with a 4px gutter bar beside every line a storyboard link
+    lands on. **Storyboard link colors**: green for a final board, yellow for
+    a reference board, in the editor highlight (`hb` / `hbr` in `cm-theme.js`),
+    the timeline bars (the reference hatch is gone, replaced by solid
+    `--act`), the minimap gutter (a canvas, so token values are read off the
+    DOM and passed in), and a bar beside linked lines in the boards panel's
+    script view (`boardLinkKinds` and `gutterRecord` in `selectors.js`,
+    tested). **Timeline drop**: dropping a file on a bar of the Storyboarded
+    row links a new board to that element, with the target outlined and named
+    while dragging (the browser gives no image bytes until the drop, so there
+    is no live thumbnail). **Popover**: the linked-text board card shows
+    Unlink instead of Boards (the image itself opens the boards panel).
+    **Pacing**: bars with a measured duration carry a tick, the tooltip says
+    measured vs estimated, and a board's Edit overlay can clear its pacing.
+    **Slideshow editing**: script lines are editable in place (Enter commits,
+    Escape reverts, `#commitLineEdit` splices the line back into the
+    document and re-derives that board's own anchor). Lessons kept in the
+    code: a document-level keydown handler must not eat keys while a line is
+    focused (`composedPath`, not `target`, since the line is in a shadow
+    root), and a `contenteditable` inside a Lit template must be remounted
+    (`keyed`) after an edit because the browser can disturb Lit's marker
+    nodes. **Element colors**: transition and lyric read a step muted, like
+    paren, in the editor, the boards script view and the slideshow.
+    **Visual pass**: panels and the split guide use the 20px pill radius,
+    `pd-button` is pill-rounded everywhere (with a new `icon` variant),
+    storyboard frames use 20 / 1.618 = 12.36px, the script editor is a
+    centered page on a grey desk with a shadow (its hover band and rail are
+    anchored to the page, not the scroller), the boards panel toolbar is
+    icon buttons plus Preview at the top right with the Final/Reference
+    switch floating at the bottom center, and the drop-target setting moved
+    to File > Storyboard settings. The clapperboard now follows the dark
+    theme: its literals became tokens (the stripe colors already matched
+    `--danger`, `--link`, `--act-hi`, `--ok`). **Not done**: a new design
+    language, and usernames with add-by-username in the clapperboard (needs a
+    `users.username` column, a lookup endpoint, and a decision on merging the
+    free-text Contributors list with account-backed shares). **Done** for
+    everything else.
+
+13. Storyboard data model. Final and reference frames used to be two separate
+    boards matched only by sharing an anchor and a `seq`, which let the two
+    modes drift apart: a board made in one mode had no counterpart in the other,
+    and the slideshow fell back to a whole-scene excerpt for the missing side
+    (so Reference showed "all the rest of the script till the next section").
+    A board in `project.boards` is now a storyboard: `{anchor, seq, img,
+    refImg, caption, note, dur}`, with no `ref` flag. `img` is the final frame
+    and `refImg` the reference frame (helpers `FRAME_KEY`, `frameImg`,
+    `otherMode` in `project-model.js`). Both modes list every storyboard
+    (`linkedBoards` in `selectors.js`), an empty frame is a click-or-drop card,
+    and `#buildSlides` in `slideshow.js` builds one slide per storyboard from
+    its own linked lines, so both modes show identical script. New reducers:
+    `placeFrame` (fills the empty frame of a storyboard already on the passage
+    instead of starting a second one), `swapBoardFrames` (the card's marker:
+    Move to, Bring from, or Swap with the other frame), `setBoardNote`, and
+    `replaceBoardImage` now takes a mode. **Blank storyboard** is offered in the
+    "link to" menu (both the row rail and the selection toolbar) and as an icon
+    in the boards panel toolbar; a blank frame shows the note as the shot
+    description, and the slideshow does too. **Migration**: `migrateBoards`
+    folds every legacy final/reference pair into one storyboard, keeps a lone
+    reference board as a storyboard with an empty final frame, never pairs
+    unlinked boards, loses no image, and is idempotent (returns the same object
+    when already migrated). It runs in `store.loadProject` and on all three
+    sides of `beginMerge`, so old files and an out-of-date device both still
+    work. Sync: `refImg` travels as `refImgAssetId` beside `imgAssetId`
+    (`remote-api-adapter.js`). The server's read-only share projection still
+    reads `img` (the final frame), so a shared link shows final frames only.
+    Coverage: a storyboard is boarded only when its final frame has an image.
+    **Done.**
+
+    Found in passing, not fixed (pre-existing, unrelated to the above): typing
+    a line that starts with "She " or "The " in the script editor drops the
+    first letter and force-uppercases the rest of the line. Reproduces with
+    plain keystroke input, not just fast synthetic typing. Likely in the
+    autoformat/case-journal path (`cm-autoformat.js` / `cm-case-journal.js`).
 
 ---
 

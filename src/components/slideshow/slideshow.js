@@ -3,8 +3,28 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { StoreController } from '../../state/store-controller.js';
 import { CONTENT_TYPES } from '../../fountain/blocks.js';
-import { boardSlots, slotBoard } from '../../state/selectors.js';
+import { linkedBoards } from '../../state/selectors.js';
+import { frameImg } from '../../data/project-model.js';
 import { readFileAsDataURL, isVideoSrc } from '../../utils/files.js';
+import { keyed } from 'lit/directives/keyed.js';
+import { parseFountain } from '../../fountain/parse.js';
+import { plainRangeToRaw } from '../../fountain/doc-map.js';
+import { snapToWords } from '../../fountain/resolve.js';
+
+// Raw character offset of the start of 0-indexed line `lineIdx` in `text`.
+// The plain-text-string counterpart of CodeMirror's doc.line(n).from, needed
+// here because the slideshow edits the script's text directly, with no
+// editor instance backing it.
+function lineStartOffset(text, lineIdx) {
+  let off = 0, n = 0;
+  while (n < lineIdx) {
+    const nl = text.indexOf('\n', off);
+    if (nl < 0) return text.length;
+    off = nl + 1;
+    n++;
+  }
+  return off;
+}
 
 // Fullscreen playback: image on top, the linked (or nearest) script excerpt
 // in the bottom fifth. One instance at app-root, opened via
@@ -25,7 +45,10 @@ export class PandemoniumSlideshow extends LitElement {
        has to say when it will accept one. Inset rather than a border so the
        frame does not shift under the presenter mid-drag. */
     .stage.dropping::after{content:"";position:absolute;inset:10px;outline:2px dashed var(--res);border-radius:3px;pointer-events:none}
-    .noimg{width:min(58%,640px);aspect-ratio:16/9;background:#1a1a1a;display:flex;align-items:center;justify-content:center;color:var(--smut);font-size:12px;letter-spacing:.08em;text-transform:uppercase;border-radius:2px}
+    .noimg{width:min(58%,640px);aspect-ratio:16/9;background:#1a1a1a;display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center;color:var(--smut);text-align:center;padding:24px;box-sizing:border-box;overflow:hidden;border-radius:2px}
+    .noimg-hint{font-size:12px;letter-spacing:.08em;text-transform:uppercase}
+    /* The storyboard's own note, standing in for the shot that is not drawn yet. */
+    .shotnote{font-family:var(--sans);font-size:clamp(15px,1.6vw,22px);line-height:1.35;color:var(--sink);white-space:pre-wrap;overflow-wrap:anywhere;max-height:70%;overflow:hidden}
     button{color:var(--sink);background:rgba(255,255,255,.12);border:0;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:var(--sans)}
     button:hover:not(:disabled){background:rgba(255,255,255,.26)}
     button:disabled{opacity:.25;cursor:default}
@@ -47,6 +70,7 @@ export class PandemoniumSlideshow extends LitElement {
     .txt{flex:1;min-height:0;display:flex;gap:24px;align-items:flex-start;padding:16px 26px;overflow:hidden}
     .txt .left{flex:1;min-width:0;height:100%;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin}
     .cap{margin-bottom:8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--smut)}
+    .cap.note{text-transform:none;letter-spacing:normal;font-style:italic;font-size:13px;white-space:pre-wrap}
     /* Poster-sized by default; the actual size per slide comes from
        #lineSize() below, since a long excerpt has to step down to keep fitting
        the strip. Each script line is its own element (so it can be formatted
@@ -56,6 +80,12 @@ export class PandemoniumSlideshow extends LitElement {
        between the divs would print as blank lines. */
     .lines{font-family:var(--script);font-size:38px;line-height:1.3;color:var(--sink)}
     .lines > div{white-space:pre-wrap;overflow-wrap:break-word;word-break:break-word}
+    /* Editable in place: click a line, type, blur (or Enter) to commit --
+       see #commitLineEdit. Esc reverts. Outline only on focus so the strip
+       doesn't look like a form the rest of the time. */
+    .lines > div[contenteditable]{cursor:text;border-radius:2px;outline:2px solid transparent;transition:outline-color .12s}
+    .lines > div[contenteditable]:hover{outline-color:rgba(255,255,255,.18)}
+    .lines > div[contenteditable]:focus{outline-color:var(--res)}
     /* The same screenplay formatting the editor applies (cm-theme.js), and
        self-contained for the same reason: one element must never inherit
        another's alignment or column. */
@@ -64,9 +94,9 @@ export class PandemoniumSlideshow extends LitElement {
     .l-character{text-align:center;max-width:none;margin:.4em 0 0;text-transform:uppercase;font-weight:700;font-style:normal;letter-spacing:normal;color:var(--sink)}
     .l-paren{text-align:center;max-width:none;margin:0;text-transform:none;font-weight:400;font-style:normal;letter-spacing:normal;color:var(--smut)}
     .l-dialogue{text-align:left;max-width:62%;margin:0 auto;text-transform:none;font-weight:400;font-style:normal;letter-spacing:normal;color:var(--sink)}
-    .l-transition{text-align:right;max-width:none;margin:.4em 0 0;text-transform:uppercase;font-weight:400;font-style:italic;letter-spacing:normal;color:var(--sink)}
+    .l-transition{text-align:right;max-width:none;margin:.4em 0 0;text-transform:uppercase;font-weight:400;font-style:italic;letter-spacing:normal;color:var(--smut)}
     .l-centered{text-align:center;max-width:none;margin:0;text-transform:none;font-weight:400;font-style:normal;letter-spacing:normal;color:var(--sink)}
-    .l-lyric{text-align:left;max-width:none;margin:0 0 0 1.5em;text-transform:none;font-weight:400;font-style:italic;letter-spacing:normal;color:var(--sink)}
+    .l-lyric{text-align:left;max-width:none;margin:0 0 0 1.5em;text-transform:none;font-weight:400;font-style:italic;letter-spacing:normal;color:var(--smut)}
     .l-section{text-align:left;max-width:none;margin:.4em 0 0;text-transform:none;font-weight:700;font-style:normal;letter-spacing:.01em;color:var(--sink)}
     .l-synopsis{text-align:left;max-width:none;margin:0;text-transform:none;font-weight:400;font-style:italic;letter-spacing:normal;color:var(--smut)}
     .rightcol{flex:none;text-align:right;color:var(--smut);font-size:11px;display:flex;flex-direction:column;gap:4px}
@@ -79,6 +109,13 @@ export class PandemoniumSlideshow extends LitElement {
     this._open = false;
     this._slides = [];
     this._ix = 0;
+    // Bumped on every editable-line blur (see #commitLineEdit) and used to
+    // key the .lines container: contenteditable input, even a revert via
+    // execCommand, can disturb Lit's own marker nodes inside an edited
+    // line (browsers don't treat comment nodes as inert inside an editable
+    // region), so the next render forces a clean remount rather than
+    // attempting to patch whatever the browser left behind.
+    this._editGen = 0;
     this._sbMode = 'final';
   }
 
@@ -86,6 +123,12 @@ export class PandemoniumSlideshow extends LitElement {
     super.connectedCallback();
     this._onKey = (e) => {
       if (!this._open) return;
+      // A line being edited (see #commitLineEdit) owns the keyboard: space
+      // types a space, arrows move the caret, Escape reverts the line, not
+      // the whole show. e.composedPath() is needed here, not e.target,
+      // because the actual editable div lives inside this component's own
+      // shadow root and e.target would just be this host element.
+      if (e.composedPath().some((el) => el.isContentEditable)) return;
       if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); this.#step(1); }
       else if (e.key === 'ArrowLeft') { e.preventDefault(); this.#step(-1); }
       else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); this.#setMode(this._sbMode === 'reference' ? 'final' : 'reference'); }
@@ -99,13 +142,14 @@ export class PandemoniumSlideshow extends LitElement {
     super.disconnectedCallback();
   }
 
-  // One slide per SLOT (see boardSlots in selectors.js), not per board of the
-  // current mode: a passage boarded three times in Reference gets three
-  // slides in Final too, even where Final has not filled them yet, so the
-  // deck's shape never changes when you switch storyboards mid-show -- only
-  // which image (or a blank, waiting for one) each slide shows does.
+  // One slide per STORYBOARD (see linkedBoards in selectors.js), and every
+  // storyboard has both a final and a reference frame, either of which may be
+  // empty. So the deck is identical in either mode, slide for slide and line
+  // for line: switching mode mid-show swaps only the image (or a blank, waiting
+  // for one). The lines are always the storyboard's own linked passage, never
+  // a wider excerpt, so Reference shows exactly the script Final does.
   //
-  // Boarded passages still get one slide per board slot, in scene order. But
+  // Boarded passages get one slide per storyboard, in scene order. But
   // stretches of script with no board anywhere are no longer chopped into one
   // slide per scene -- that used scene breaks as a stand-in for pacing they
   // don't actually carry, so a script with zero storyboards played back as a
@@ -116,22 +160,25 @@ export class PandemoniumSlideshow extends LitElement {
     const store = this._store.store;
     const state = store.getFinalState();
     const scenes = state.fscenes, parsed = state.fparsed;
-    const reference = this._sbMode === 'reference';
     const byScene = scenes.map(() => []);
-    boardSlots(state.R.boards).forEach((slot) => {
-      if (byScene[slot.sceneIdx]) byScene[slot.sceneIdx].push(slot);
+    linkedBoards(state.R.boards).forEach((o) => {
+      if (byScene[o.sceneIdx]) byScene[o.sceneIdx].push(o);
     });
     // Slide text is kept as [{type, text}], not a flat string: the strip
     // renders it with the same element formatting as the editor, and that
     // needs the parser's block type for every line rather than a guess made
     // from the words.
+    // Each line carries bi/s/e (its span within that block's plain text) so
+    // an in-show edit can be spliced back into the document -- see
+    // #commitLineEdit. A boardless excerpt line is the whole block (s:0,
+    // e:end), never partial.
     const excerpt = (sc) => {
       const parts = [];
       let n = 0;
       for (let bi = Math.max(0, sc.start); bi <= sc.end && bi < parsed.blocks.length; bi++) {
         const b = parsed.blocks[bi];
         if (CONTENT_TYPES[b.type] && b.plain) {
-          parts.push({ type: b.type, text: b.plain });
+          parts.push({ type: b.type, text: b.plain, bi, s: 0, e: b.plain.length });
           n += b.plain.length;
           if (n > 340) break;
         }
@@ -140,11 +187,18 @@ export class PandemoniumSlideshow extends LitElement {
     };
     // What a board is actually linked to: its resolved spans, in the block
     // each one landed in, so a part-line link shows just that part, formatted
-    // as the element it came from.
-    const boardLines = (o) => (o.res || []).filter(Boolean).map((r) => {
-      const b = parsed.blocks[r.bi];
-      return b ? { type: b.type, text: b.plain.slice(r.s, r.e) } : null;
-    }).filter((l) => l && l.text);
+    // as the element it came from. partIndex is this span's position in the
+    // board's own anchor.parts (not in the filtered/resolved list here,
+    // which can skip an unresolved part and shift indices), so an edit can
+    // update the exact part it came from.
+    const boardLines = (o) => (o.res || [])
+      .map((r, pi) => (r ? { r, pi } : null))
+      .filter(Boolean)
+      .map(({ r, pi }) => {
+        const b = parsed.blocks[r.bi];
+        return b ? { type: b.type, text: b.plain.slice(r.s, r.e), bi: r.bi, s: r.s, e: r.e, boardId: o.bd.id, partIndex: pi } : null;
+      })
+      .filter((l) => l && l.text);
     const slides = [];
     let pending = [];
     const flushPending = () => {
@@ -163,17 +217,15 @@ export class PandemoniumSlideshow extends LitElement {
         return;
       }
       flushPending();
-      byScene[ix].forEach((slot) => {
-        const o = slotBoard(slot, reference);
-        if (o) {
-          const lines = boardLines(o);
-          slides.push({ boardId: o.bd.id, img: o.bd.img, cap: o.bd.caption, lines: lines.length ? lines : excerpt(sc) });
-          return;
-        }
-        // The OTHER storyboard filled this slot; this one has not. The slide
-        // still takes its place in the deck (same count, same order), and a
-        // drop here fills exactly this slot rather than being a dead end.
-        slides.push({ boardId: null, fillParts: slot.parts, fillSeq: slot.seq, img: null, lines: excerpt(sc) });
+      byScene[ix].forEach((o) => {
+        const lines = boardLines(o);
+        slides.push({
+          boardId: o.bd.id,
+          img: frameImg(o.bd, this._sbMode),
+          cap: o.bd.caption,
+          note: o.bd.note,
+          lines: lines.length ? lines : excerpt(sc),
+        });
       });
     });
     flushPending();
@@ -190,7 +242,11 @@ export class PandemoniumSlideshow extends LitElement {
       return;
     }
     this._slides = slides;
-    this._ix = 0;
+    // "Preview from here" passes the board it was clicked on; land on that
+    // board's slide instead of the start. Falls back to 0 when the board
+    // isn't in this mode's slides (or none was requested).
+    const startIx = opts.boardId ? slides.findIndex((s) => s.boardId === opts.boardId) : -1;
+    this._ix = startIx >= 0 ? startIx : 0;
     this._open = true;
     // Record mode: time how long each slide holds the screen as the presenter
     // advances, and save that to the slide's board as its pacing (see #step /
@@ -224,11 +280,11 @@ export class PandemoniumSlideshow extends LitElement {
     this._ix = Math.max(0, Math.min(this._slides.length - 1, this._ix + d));
   }
 
-  // Switch between the final and reference storyboard mid-show. Both builds
-  // walk the same slots (see #buildSlides), so the deck is always the same
-  // length in either mode and _ix keeps pointing at the same beat -- the
-  // empty-deck branch below is now only reachable when the script has no
-  // boards at all, already caught by open().
+  // Switch between the final and reference frames mid-show. Both builds walk
+  // the same storyboards (see #buildSlides), so the deck is always the same
+  // length and text in either mode and _ix keeps pointing at the same beat --
+  // the empty-deck branch below is now only reachable when the script has no
+  // storyboards at all, already caught by open().
   #setMode(mode) {
     if (this._sbMode === mode) return;
     this._sbMode = mode;
@@ -254,9 +310,52 @@ export class PandemoniumSlideshow extends LitElement {
     this._ix = Math.max(0, Math.min(ix, this._slides.length - 1));
   }
 
+  // Editing script text in the show: splice the edited line back into the
+  // block it came from (line.s/e are its span within that block's plain
+  // text), then re-parse and write the whole document, same as the main
+  // editor writes back on every keystroke. If the line belongs to a board
+  // (boardId/partIndex set, see #buildSlides), that board's own anchor part
+  // is re-derived from the edited text in the same update, word-snapped like
+  // a fresh capture (fountain/resolve.js), so the board doesn't go "lost"
+  // over its own edit -- the same guarantee script-editor.js's #remapAnchors
+  // gives typing in the main editor, just for this one line rather than
+  // every anchor in the document (there is no CodeMirror transaction here to
+  // map the others through).
+  #commitLineEdit(lineIx, newText) {
+    const slide = this._slides[this._ix];
+    const line = slide && slide.lines && slide.lines[lineIx];
+    if (!line || line.bi == null || newText === line.text) return;
+    const store = this._store.store;
+    const sc = store.finalScript();
+    const parsed = parseFountain(sc.text);
+    const block = parsed.blocks[line.bi];
+    if (!block) return;
+    const lineFrom = lineStartOffset(sc.text, block.line);
+    const { from, to } = plainRangeToRaw(block, lineFrom, line.s, line.e);
+    const fullText = sc.text.slice(0, from) + newText + sc.text.slice(to);
+
+    let boards = null;
+    if (line.boardId != null && line.partIndex != null) {
+      const bd = store.project.boards.find((b) => b.id === line.boardId);
+      const oldPart = bd && bd.anchor && bd.anchor.parts[line.partIndex];
+      if (oldPart) {
+        const newBlockPlain = block.plain.slice(0, line.s) + newText + block.plain.slice(line.e);
+        const { s: ns, e: ne } = snapToWords(newBlockPlain, line.s, line.s + newText.length);
+        const q = newBlockPlain.slice(ns, ne);
+        if (q.trim()) {
+          const parts = bd.anchor.parts.slice();
+          parts[line.partIndex] = { q, b: line.bi, s: ns };
+          boards = store.project.boards.map((b) => (b.id === bd.id ? { ...b, anchor: { parts } } : b));
+        }
+      }
+    }
+    store.applyLiveEdit(sc.id, fullText, boards, null, null);
+    this.#refreshSlides();
+  }
+
   #canDrop(e) {
     const slide = this._slides[this._ix];
-    return !!(slide && (slide.boardId || slide.fillParts) && e.dataTransfer && [...e.dataTransfer.types].includes('Files'));
+    return !!(slide && slide.boardId && e.dataTransfer && [...e.dataTransfer.types].includes('Files'));
   }
 
   #onDragOver(e) {
@@ -270,10 +369,8 @@ export class PandemoniumSlideshow extends LitElement {
     if (this._dropping) { this._dropping = false; this.requestUpdate(); }
   }
 
-  // Fill the slide on screen from a dropped image. A slide with a board
-  // already (blank or not) uses replaceBoardImage; a slide that only exists
-  // because the OTHER storyboard filled this slot creates this mode's board
-  // there, at that same slot's seq, so the two stay paired.
+  // Fill the slide on screen from a dropped image: it goes in the frame of the
+  // mode being shown, of the storyboard the slide is (blank or not).
   async #onDrop(e) {
     if (!this.#canDrop(e)) return;
     e.preventDefault();
@@ -282,11 +379,7 @@ export class PandemoniumSlideshow extends LitElement {
     const file = [...(e.dataTransfer.files || [])].find((f) => f.type.startsWith('image/'));
     if (!file) { this.requestUpdate(); return; }
     const dataUrl = await readFileAsDataURL(file);
-    if (slide.boardId) {
-      this._store.store.replaceBoardImage(slide.boardId, dataUrl);
-    } else {
-      this._store.store.addBoard({ parts: slide.fillParts, img: dataUrl, caption: '', seq: slide.fillSeq, ref: this._sbMode === 'reference' });
-    }
+    this._store.store.replaceBoardImage(slide.boardId, dataUrl, this._sbMode);
     this.#refreshSlides();
   }
 
@@ -328,15 +421,37 @@ export class PandemoniumSlideshow extends LitElement {
           ? (isVideoSrc(s.img)
             ? html`<video src=${s.img} autoplay muted loop playsinline></video>`
             : html`<img alt="" src=${s.img}>`)
-          : html`<div class="noimg">${(s.boardId || s.fillParts) ? 'Drop an image here' : 'No board yet'}</div>`}
+          : html`<div class="noimg">${s.note ? html`<span class="shotnote">${s.note}</span>` : ''}<span class="noimg-hint">${s.boardId ? `Drop ${this._sbMode === 'reference' ? 'a reference' : 'the final'} image here` : 'No board yet'}</span></div>`}
       </div>
       <div class="bottom">
         <div class="prog"><i style="width:${((this._ix + 1) / this._slides.length) * 100}%"></i></div>
         <div class="txt">
           <div class="left">
             ${s.cap ? html`<div class="cap">${s.cap}</div>` : ''}
+            ${s.note && s.img ? html`<div class="cap note">${s.note}</div>` : ''}
             <div class="lines" style="font-size:${this.#lineSize(s.lines)}">
-              ${(s.lines || []).map((l) => html`<div class="l-${l.type}">${l.text}</div>`)}
+              ${keyed(this._editGen, html`${(s.lines || []).map((l, i) => html`<div class="l-${l.type}"
+                ?contenteditable=${l.bi != null}
+                spellcheck="false"
+                @click=${(e) => e.stopPropagation()}
+                @keydown=${(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); e.target.blur(); }
+                  if (e.key === 'Escape') {
+                    e.preventDefault(); e.stopPropagation();
+                    // Revert through the browser's own edit pipeline
+                    // (execCommand), not el.textContent = ...: this div is
+                    // Lit-templated, and replacing its children wholesale
+                    // ejects Lit's own marker nodes and breaks every future
+                    // render of it. execCommand mutates the existing text
+                    // node in place instead, the same as if the user had
+                    // selected-all and retyped it themselves.
+                    document.execCommand('selectAll', false, null);
+                    document.execCommand('insertText', false, l.text);
+                    e.target.blur();
+                  }
+                }}
+                @blur=${(e) => { this._editGen++; this.#commitLineEdit(i, e.target.textContent); }}
+              >${l.text}</div>`)}`)}
             </div>
           </div>
           <div class="rightcol"><span class="n">${this._ix + 1} / ${this._slides.length}</span></div>

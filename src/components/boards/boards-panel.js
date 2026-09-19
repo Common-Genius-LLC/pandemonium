@@ -2,7 +2,7 @@
 
 import { LitElement, html, css } from 'lit';
 import { StoreController } from '../../state/store-controller.js';
-import { boardOrder, boardSlots, slotBoard } from '../../state/selectors.js';
+import { linkedBoards, describeSlideshowGap, boardLinkKinds } from '../../state/selectors.js';
 import { boardRuns } from '../../data/project-model.js';
 import { dispatch } from '../../utils/events.js';
 import { readFileAsDataURL, isBoardMediaFile, BOARD_MEDIA_ACCEPT } from '../../utils/files.js';
@@ -30,16 +30,21 @@ export class PandemoniumBoardsPanel extends LitElement {
   static properties = { leafId: {}, _mode: { state: true }, _showScript: { state: true }, _dragging: { state: true } };
 
   static styles = [panelStyles, css`
+    /* Positions .modes against the whole pane, not .pbody: .pbody scrolls
+       (a long boards list), and the switch has to stay put while it does,
+       not travel with the content. */
+    .shell{position:relative}
     .pbody.over{outline:2px solid var(--res);outline-offset:-2px}
-    /* Final / Reference switch: the beat's chosen frames vs inspiration for it.
-       Reference boards never count as boarded (see coverage). */
-    .modes{display:flex;gap:2px;align-self:center;margin-left:8px;margin-right:6px}
-    .modes button{height:22px;padding:0 10px;font-size:11px;font-weight:500;color:var(--mut);
-      background:var(--panel);border:0;border-radius:20px;cursor:pointer;font-family:var(--sans)}
+    /* Final / Reference switch: the beat's chosen frames vs inspiration for
+       it. Reference boards never count as boarded (see coverage). Floats
+       bottom-center over the frames, like the same switch in the slideshow
+       (.sbswitch there), rather than crowding the toolbar. */
+    .modes{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:5;
+      display:flex;gap:4px;background:var(--panel);border-radius:20px;padding:3px;
+      box-shadow:0 1px 4px rgba(0,0,0,.18)}
+    .modes button{height:24px;padding:0 12px;font-size:11px;font-weight:500;color:var(--mut);
+      background:transparent;border:0;border-radius:20px;cursor:pointer;font-family:var(--sans)}
     .modes button.on{background:var(--overlay);color:var(--overlay-ink)}
-    /* Match the Final/Reference pill shape so the whole toolbar reads as one
-       family of buttons instead of two different corner radii. */
-    .tools pd-button::part(button){border-radius:20px}
     #boardsList{display:flex;flex-direction:column;gap:6px;padding:10px 10px 24px}
     /* Rendered-script view (Figma 82-34): the final draft's elements shown as
        formatted lines with the frames embedded at their linked positions. The
@@ -47,21 +52,25 @@ export class PandemoniumBoardsPanel extends LitElement {
        them. */
     .doc{display:flex;flex-direction:column;gap:5px;padding:10px 10px 24px}
     /* Script font matches the editor (Courier Prime Sans, --script). */
-    .el{font-family:var(--script);font-size:16px;line-height:1.5;color:var(--ink);white-space:pre-wrap;overflow-wrap:break-word;word-break:break-word}
+    .el{position:relative;font-family:var(--script);font-size:16px;line-height:1.5;color:var(--ink);white-space:pre-wrap;overflow-wrap:break-word;word-break:break-word}
+    /* Link bars: green beside a line a final board lands on, yellow for a
+       reference-only one. */
+    .el.lf::before,.el.lr::before{content:"";position:absolute;left:-8px;top:2px;bottom:2px;width:3px;border-radius:2px}
+    .el.lf::before{background:var(--board-strong)}
+    .el.lr::before{background:var(--act)}
     .el.scene{font-weight:700;text-transform:uppercase;margin-top:12px}
     .el.section{font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin-top:12px}
     .el.character{font-weight:700;text-transform:uppercase;text-align:center;margin-top:6px}
-    .el.dialogue,.el.paren{text-align:center;max-width:78%;margin:0 auto}
-    .el.transition{text-align:right;text-transform:uppercase}
+    .el.dialogue{text-align:center;max-width:78%;margin:0 auto}
+    /* Craft/technical elements read a step muted, same tiering as the editor
+       (cm-theme.js): they're present but shouldn't compete with story content. */
+    .el.paren{text-align:center;max-width:78%;margin:0 auto;color:var(--ui)}
+    .el.transition{text-align:right;text-transform:uppercase;color:var(--ui)}
+    .el.lyric{font-style:italic;color:var(--ui)}
     .el.centered{text-align:center}
-    .el.synopsis,.el.lyric{font-style:italic;color:var(--mut)}
+    .el.synopsis{font-style:italic;color:var(--mut)}
     .frame-wrap{margin:6px 0}
     .unlinked-h{margin-top:16px;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--mut)}
-    /* A section boarded in the other mode but not this one shows a blank frame
-       here; dropping an image fills it as a board of the current mode. */
-    .placeholder{aspect-ratio:16/9;background:var(--ph);opacity:.5;display:flex;align-items:center;justify-content:center;
-      text-align:center;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);padding:0 10px}
-    .placeholder.over{opacity:.85;outline:2px dashed var(--res);outline-offset:-2px}
     /* Figma "Frame 4" (node 19:330): the illustration over the pane's own
        pink, with the drop invitation beneath it, centered in the empty pane. */
     .noboards{
@@ -94,22 +103,21 @@ export class PandemoniumBoardsPanel extends LitElement {
     input.click();
   }
 
-  #startSlideshow() {
-    // Start the show in whichever storyboard the panel is viewing.
-    dispatch(this, 'pandemonium-open-slideshow', { mode: this._mode });
+  // A storyboard with no image in either frame. Unlinked, so it lands under
+  // "Unlinked frames" ready to be attached to a passage; to make one on a
+  // passage directly, use "Blank storyboard" in the script's link menu.
+  #addBlank() {
+    const board = this._store.store.addBlankBoard({ parts: [] });
+    this._store.store.setUI({ highlightBoard: board.id });
+    dispatch(this, 'pandemonium-toast', { message: 'Blank storyboard added. Link it to a passage, add a note, or drop an image on either frame.' });
   }
 
-  // Settings: where image drops from the editor/timeline land.
-  #openSettings(e) {
-    const store = this._store.store;
-    const toRef = store.project.dropToReference !== false;
-    dispatch(this, 'pandemonium-open-menu', {
-      anchor: e.currentTarget,
-      items: [
-        { label: 'Drops from script/timeline → Reference', selected: toRef, fn: () => store.setDropToReference(true) },
-        { label: 'Drops from script/timeline → Final', selected: !toRef, fn: () => store.setDropToReference(false) },
-      ],
-    });
+  #startSlideshow() {
+    // Start the show in whichever storyboard the panel is viewing.
+    const state = this._store.store.getFinalState();
+    const gap = describeSlideshowGap(state.fparsed, state.R.boards, this._mode, 'preview the show');
+    if (gap) { dispatch(this, 'pandemonium-toast', { message: gap }); return; }
+    dispatch(this, 'pandemonium-open-slideshow', { mode: this._mode });
   }
 
   async #onFilePicked(e) {
@@ -117,14 +125,14 @@ export class PandemoniumBoardsPanel extends LitElement {
   }
 
   // The empty pane invites a drop, so the pane has to accept one. Same
-  // unattached board a picked file produces, one per image dropped.
+  // unattached storyboard a picked file produces, one per image dropped, with
+  // the image in whichever frame this panel is showing.
   async #addImages(files) {
     const images = [...files].filter(isBoardMediaFile);
     if (!images.length) return;
-    const ref = this._mode === 'reference';
     for (const file of images) {
       const img = await readFileAsDataURL(file);
-      this._store.store.addBoard({ parts: [], img, caption: '', ref });
+      this._store.store.addBoard({ parts: [], img, caption: '', mode: this._mode });
     }
     dispatch(this, 'pandemonium-toast', {
       message: images.length === 1
@@ -155,19 +163,18 @@ export class PandemoniumBoardsPanel extends LitElement {
     await this.#addImages(e.dataTransfer.files || []);
   }
 
-  // A board just added or jumped to from elsewhere (a drop on the script, a
-  // search result, a highlight popover) scrolls into view and flashes pink.
-  // If it belongs to the mode this panel isn't currently showing, the panel
-  // switches to that mode first -- the whole point of the highlight is "look,
-  // here's what just happened," which a filtered-out card can't show.
+  // A storyboard just added or jumped to from elsewhere (a drop on the script,
+  // a search result, a highlight popover) scrolls into view and flashes pink.
+  // Every storyboard is in both views, so the card is always there; what the
+  // highlight can add is which view to show it in (`highlightMode`): the frame
+  // that just got its image, so "look, here's what just happened" is visible.
   updated() {
     const ui = this._store.ui;
     if (!ui || !ui.highlightBoard) return;
     const id = ui.highlightBoard;
-    this._store.store.setUI({ highlightBoard: null });
-    const project = this._store.project;
-    const board = project && project.boards.find((b) => b.id === id);
-    if (board) this._mode = board.ref ? 'reference' : 'final';
+    const mode = ui.highlightMode;
+    this._store.store.setUI({ highlightBoard: null, highlightMode: null });
+    if (mode) this._mode = mode;
     requestAnimationFrame(() => {
       const card = this.renderRoot.querySelector(`pandemonium-board-card[data-board-id="${id}"]`);
       if (!card) return;
@@ -177,96 +184,56 @@ export class PandemoniumBoardsPanel extends LitElement {
     });
   }
 
-  // A slot with a board in the current mode renders it (with its counterpart
-  // in the other mode, if any, offering the marker a swap rather than a
-  // move); a slot only the other mode has filled renders a placeholder.
-  #frameCard(slot, runs, reference) {
-    const mine = slotBoard(slot, reference);
-    if (!mine) return this.#placeholder(slot);
-    const other = reference ? slot.final : slot.ref;
-    const counterpart = other && other.bd.img ? other.bd.id : null;
-    return html`<div class="frame-wrap"><pandemonium-board-card .resolved=${mine} .run=${runs.get(mine.bd.id)} .counterpartId=${counterpart}></pandemonium-board-card></div>`;
+  // Every storyboard has a card in both views: this view's frame, filled or
+  // blank. A blank one is a click-or-drop card of its own (see board-card.js).
+  #frameCard(o, runs) {
+    return html`<div class="frame-wrap"><pandemonium-board-card .resolved=${o} .mode=${this._mode} .run=${runs.get(o.bd.id)}></pandemonium-board-card></div>`;
   }
 
-  #byBi(slots) {
+  #byBi(linked) {
     const m = new Map();
-    for (const slot of slots) { if (!m.has(slot.firstBi)) m.set(slot.firstBi, []); m.get(slot.firstBi).push(slot); }
+    for (const o of linked) { if (!m.has(o.firstBi)) m.set(o.firstBi, []); m.get(o.firstBi).push(o); }
     return m;
   }
 
   // The rendered-script view: walk the final draft's blocks, printing each
-  // element as a formatted line and dropping this mode's frame (or a blank
-  // placeholder, where only the other mode has boarded that slot) in right
-  // after the element it is anchored to. Boards that no longer resolve are
-  // collected under an "Unlinked frames" heading at the foot.
-  #scriptView(state, arr, slots, runs) {
-    const reference = this._mode === 'reference';
-    const byBi = this.#byBi(slots);
+  // element as a formatted line and dropping this view's frame of each
+  // storyboard in right after the element it is anchored to. Storyboards that
+  // no longer resolve are collected under an "Unlinked frames" heading at the
+  // foot.
+  #scriptView(state, all, linked, runs) {
+    const byBi = this.#byBi(linked);
+    const kinds = boardLinkKinds(state.R.boards);
     const rows = [];
     for (const b of state.fparsed.blocks) {
       if (b.line != null && b.plain && b.plain.trim() && DOC_TYPES.has(b.type)) {
-        rows.push(html`<div class="el ${b.type}">${b.plain}</div>`);
+        // A bar beside a linked line: green if a final board lands here,
+        // yellow if only a reference one does (the same split as the editor
+        // highlight, timeline and minimap).
+        const k = kinds.get(b.i);
+        const bar = k ? (k.final ? 'lf' : 'lr') : '';
+        rows.push(html`<div class="el ${b.type} ${bar}">${b.plain}</div>`);
       }
-      if (byBi.has(b.i)) for (const slot of byBi.get(b.i)) rows.push(this.#frameCard(slot, runs, reference));
+      if (byBi.has(b.i)) for (const o of byBi.get(b.i)) rows.push(this.#frameCard(o, runs));
     }
-    return html`<div class="doc">${rows}${this.#unlinked(arr, runs)}</div>`;
+    return html`<div class="doc">${rows}${this.#unlinked(all, runs)}</div>`;
   }
 
-  // Frames only (script hidden): the same frames and placeholders in script
-  // order, without the element text between them.
-  #framesOnly(state, arr, slots, runs) {
-    const reference = this._mode === 'reference';
-    const byBi = this.#byBi(slots);
+  // Frames only (script hidden): the same frames in script order, without the
+  // element text between them.
+  #framesOnly(state, all, linked, runs) {
+    const byBi = this.#byBi(linked);
     const rows = [];
     for (const b of state.fparsed.blocks) {
-      if (byBi.has(b.i)) for (const slot of byBi.get(b.i)) rows.push(this.#frameCard(slot, runs, reference));
+      if (byBi.has(b.i)) for (const o of byBi.get(b.i)) rows.push(this.#frameCard(o, runs));
     }
-    return html`<div id="boardsList">${rows}${this.#unlinked(arr, runs)}</div>`;
+    return html`<div id="boardsList">${rows}${this.#unlinked(all, runs)}</div>`;
   }
 
-  #unlinked(arr, runs) {
-    const unlinked = arr.filter((o) => !o.ok);
+  #unlinked(all, runs) {
+    const unlinked = all.filter((o) => !o.ok);
     if (!unlinked.length) return '';
-    return html`<div class="unlinked-h">Unlinked frames</div>${unlinked.map((o) => html`<div class="frame-wrap"><pandemonium-board-card .resolved=${o} .run=${runs.get(o.bd.id)}></pandemonium-board-card></div>`)}`;
-  }
-
-  // A blank frame for a slot this mode has not filled yet; drop or click
-  // fills it as a board of the current mode, taking the slot's own seq so it
-  // pairs with the frame that already claimed the position.
-  #placeholder(slot) {
-    const label = this._mode === 'reference' ? 'Add reference frame' : 'Add final frame';
-    return html`<div class="frame-wrap"><div class="placeholder"
-      title="Drop or click to add this frame"
-      @click=${() => this.#addToAnchor(slot)}
-      @dragover=${(e) => this.#phOver(e)}
-      @dragleave=${(e) => this.#phLeave(e)}
-      @drop=${(e) => this.#phDrop(e, slot)}>${label}</div></div>`;
-  }
-
-  #phOver(e) {
-    if (![...e.dataTransfer.types].includes('Files')) return;
-    e.preventDefault(); e.stopPropagation();
-    e.dataTransfer.dropEffect = 'copy';
-    e.currentTarget.classList.add('over');
-  }
-  #phLeave(e) { e.currentTarget.classList.remove('over'); }
-  async #phDrop(e, slot) {
-    e.preventDefault(); e.stopPropagation();
-    e.currentTarget.classList.remove('over');
-    const file = [...(e.dataTransfer.files || [])].find(isBoardMediaFile);
-    if (file) await this.#fillAnchor(slot, file);
-  }
-  #addToAnchor(slot) {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = BOARD_MEDIA_ACCEPT;
-    input.onchange = () => { const f = input.files && input.files[0]; if (f) this.#fillAnchor(slot, f); };
-    input.click();
-  }
-  async #fillAnchor(slot, file) {
-    const img = await readFileAsDataURL(file);
-    const board = this._store.store.addBoard({ parts: slot.parts, img, caption: '', seq: slot.seq, ref: this._mode === 'reference' });
-    this._store.store.setUI({ highlightBoard: board.id });
+    return html`<div class="unlinked-h">Unlinked frames</div>${unlinked.map((o) => this.#frameCard(o, runs))}`;
   }
 
   render() {
@@ -274,37 +241,42 @@ export class PandemoniumBoardsPanel extends LitElement {
     if (!project) return html``;
     const state = this._store.store.getFinalState();
     const reference = this._mode === 'reference';
-    const arr = state.R.boards.filter((o) => !!o.bd.ref === reference).sort(boardOrder);
-    const slots = boardSlots(state.R.boards);
+    const all = state.R.boards;
+    const linked = linkedBoards(all);
     const runs = boardRuns(project.boards);
     return html`
       <div class="shell" style="--pane-bg:var(--bg)">
         <div class="chrome">
           ${this.#title()}
-          <div class="modes">
-            <button class=${this._mode === 'final' ? 'on' : ''} @click=${() => { this._mode = 'final'; }}>Final</button>
-            <button class=${this._mode === 'reference' ? 'on' : ''} @click=${() => { this._mode = 'reference'; }}>Reference</button>
-          </div>
           <div class="tools">
             ${this._dragging
               ? html`<pd-button variant="pink">Drop here to add as new board</pd-button>`
               : html`
-                <pd-button title=${this._showScript ? 'Hide the script text between frames' : 'Show the script text between frames'} @click=${() => { this._showScript = !this._showScript; }}>${this._showScript ? 'Hide script' : 'Show script'}</pd-button>
-                <pd-button variant="pink" title="Play the linked storyboards full-screen" @click=${() => this.#startSlideshow()}>Start Show</pd-button>
-                <pd-button title="Add images or video as storyboard frames" @click=${() => this.#addBoard()}>Add Media</pd-button>
-                <pd-button title="Storyboard settings" @click=${(e) => this.#openSettings(e)}>⚙</pd-button>`}
+                <pd-button icon variant=${this._showScript ? 'dark' : 'default'}
+                  title=${this._showScript ? 'Hide the script text between frames' : 'Show the script text between frames'}
+                  @click=${() => { this._showScript = !this._showScript; }}
+                ><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M240-320h320v-80H240v80Zm400 0h80v-80h-80v80ZM240-480h80v-80h-80v80Zm160 0h320v-80H400v80ZM160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h640q33 0 56.5 23.5T880-720v480q0 33-23.5 56.5T800-160H160Zm0-80h640v-480H160v480Zm0 0v-480 480Z"/></svg></pd-button>
+                <pd-button icon title="Add images or video as storyboard frames" @click=${() => this.#addBoard()}
+                  ><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M160-240v-480 480Zm80-80v-200h360v200H240Zm-80 160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h640q33 0 56.5 23.5T880-720v240h-80v-240H160v480h360v80H160Zm500-320v-100H360v-60h360v160h-60Zm60 400v-120H600v-80h120v-120h80v120h120v80H800v120h-80Z"/></svg></pd-button>
+                <pd-button icon title="Add a blank storyboard: no image yet, but it can carry a note" @click=${() => this.#addBlank()}
+                  ><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M440-280h80v-160h160v-80H520v-160h-80v160H280v80h160v160ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z"/></svg></pd-button>
+                <pd-button variant="pink" title="Play the linked storyboards full-screen" @click=${() => this.#startSlideshow()}>Preview</pd-button>`}
           </div>
         </div>
         <div class="pbody"
           @dragover=${(e) => this.#onDragOver(e)}
           @dragleave=${(e) => this.#onDragLeave(e)}
           @drop=${(e) => this.#onDrop(e)}>
-          ${arr.length || slots.length
-            ? (this._showScript ? this.#scriptView(state, arr, slots, runs) : this.#framesOnly(state, arr, slots, runs))
+          ${all.length
+            ? (this._showScript ? this.#scriptView(state, all, linked, runs) : this.#framesOnly(state, all, linked, runs))
             : html`<div class="noboards">
                 <img src="/boards-empty.png" alt="">
                 <p>drop ${reference ? 'reference images' : 'images'} here to use as storyboard panels</p>
               </div>`}
+        </div>
+        <div class="modes">
+          <button class=${this._mode === 'final' ? 'on' : ''} @click=${() => { this._mode = 'final'; }}>Final</button>
+          <button class=${this._mode === 'reference' ? 'on' : ''} @click=${() => { this._mode = 'reference'; }}>Reference</button>
         </div>
       </div>
       <input type="file" id="fileImg" accept=${BOARD_MEDIA_ACCEPT} multiple style="display:none" @change=${(e) => this.#onFilePicked(e)}>

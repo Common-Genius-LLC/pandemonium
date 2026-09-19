@@ -199,7 +199,23 @@ export class PandemoniumTopbar extends LitElement {
       items.push({ label: 'Share...', fn: () => dispatch(this, 'pandemonium-open-share', {}) });
     }
     items.push({ label: 'Export', fn: () => this.#openExportMenu(anchor) });
+    items.push({ label: 'Storyboard settings', fn: () => this.#openBoardSettingsMenu(anchor) });
     dispatch(this, 'pandemonium-open-menu', { anchor, items });
+  }
+
+  // Was its own gear button in the boards panel; moved here with the rest of
+  // the project-level settings now that the panel itself only needs to be
+  // about the boards in it.
+  #openBoardSettingsMenu(anchor) {
+    const store = this._store.store;
+    const toRef = store.project.dropToReference !== false;
+    dispatch(this, 'pandemonium-open-menu', {
+      anchor,
+      items: [
+        { label: 'Drops from script/timeline → Reference', selected: toRef, fn: () => store.setDropToReference(true) },
+        { label: 'Drops from script/timeline → Final', selected: !toRef, fn: () => store.setDropToReference(false) },
+      ],
+    });
   }
 
   #openExportMenu(anchor) {
@@ -212,7 +228,12 @@ export class PandemoniumTopbar extends LitElement {
           label: 'Script PDF (print)',
           fn: () => {
             const script = store.activeScript();
-            printScript(script, getParsed(script));
+            const parsed = getParsed(script);
+            if (!parsed.blocks.some((b) => b.line != null && b.plain && b.plain.trim())) {
+              dispatch(this, 'pandemonium-toast', { message: 'Write some script before you export it.' });
+              return;
+            }
+            printScript(script, parsed);
           },
         },
         {

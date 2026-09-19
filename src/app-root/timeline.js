@@ -5,7 +5,9 @@ import { StoreController } from '../state/store-controller.js';
 import { sectionsOf } from '../fountain/blocks.js';
 import { fmtT } from '../utils/format.js';
 import { dispatch } from '../utils/events.js';
+import { describeSlideshowGap } from '../state/selectors.js';
 import { panelStyles } from '../styles/shared.js';
+import { readFileAsDataURL, isBoardMediaFile } from '../utils/files.js';
 import '../components/ui/panel-picker.js';
 import '../components/ui/button.js';
 
@@ -36,7 +38,7 @@ function elementSeconds(b) {
 }
 
 export class PandemoniumTimeline extends LitElement {
-  static properties = { leafId: {} };
+  static properties = { leafId: {}, _dragBi: { state: true } };
 
   static styles = [panelStyles, css`
     .chrome .est{align-self:center;margin-left:auto;padding-right:10px;font-size:11px;color:var(--mut);white-space:nowrap}
@@ -61,12 +63,29 @@ export class PandemoniumTimeline extends LitElement {
        linked one takes its row colour. */
     .track{position:relative;height:22px;display:flex;gap:1px;background:var(--ph);overflow:hidden}
     .seg{position:relative;min-width:2px;cursor:pointer;background:transparent}
+    /* Final storyboard is solid green, reference-only is solid yellow (the
+       same green/yellow split the editor highlight, minimap and script view
+       use). This replaced a green hatch for reference: a plain color reads
+       faster than a diagonal at this bar height, and needs no shared
+       pattern origin to stay seamless across adjacent bars. */
     .track.b .seg.on{background:var(--board-strong)}
-    /* Reference-only frames read as a hatched fill, final as solid. */
-    .track.b .seg.ref{background:repeating-linear-gradient(45deg,var(--board-strong) 0 3px,transparent 3px 6px)}
+    .track.b .seg.ref{background:var(--act)}
     .track.r .seg.on{background:var(--res)}
     .seg:hover{outline:1px solid var(--ui);outline-offset:-1px;z-index:2}
-    .track .seg.flash{background:var(--act)}
+    /* Click-to-jump flash: --ui rather than --act, which would vanish on a
+       yellow reference bar. */
+    .track .seg.flash{background:var(--ui)}
+    /* Dragging a file over a specific element: a solid pink outline marks
+       exactly which element the drop will attach to (see .dragcard below for
+       the accompanying label, since the browser won't hand over the image's
+       bytes to preview until the drop actually happens). */
+    .track.b .seg.dragover{outline:2px solid var(--res);outline-offset:-2px;z-index:2}
+    /* A measured duration (recorded in the slideshow) vs. a word-count guess:
+       the only place today that told them apart was the header label, one
+       word for the whole project even if just one element was ever recorded.
+       This marks the specific bars that are measured. --ui (dark) so the
+       tick reads on both the green and the yellow bar. */
+    .track.b .seg.paced::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--ui)}
     .none{flex:1;background:var(--ph);opacity:.45}
 
     /* Act markers span both bars, label hanging under the lower one. */
@@ -74,11 +93,19 @@ export class PandemoniumTimeline extends LitElement {
     .mark{position:absolute;top:0;bottom:0;width:2px;background:var(--ui)}
     .mark span{position:absolute;bottom:-15px;left:3px;font-size:8px;font-weight:600;
       letter-spacing:.05em;color:var(--mut);white-space:nowrap;text-transform:uppercase}
+
+    /* The floating card that names the target element while a file is
+       dragged over the Storyboarded row. */
+    .dragcard{position:fixed;z-index:80;max-width:280px;padding:6px 10px;border-radius:var(--r);
+      background:var(--res);color:#fff;font-family:var(--sans);font-size:11px;line-height:1.4;
+      pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.25);transform:translate(-50%,-100%);
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   `];
 
   constructor() {
     super();
     this._store = new StoreController(this);
+    this._dragBi = null;
   }
 
   #jump(bi, el) {
@@ -94,16 +121,20 @@ export class PandemoniumTimeline extends LitElement {
   // Every drawable paragraph element as a bar, with its estimated seconds and
   // whether it is boarded / sourced (an anchor resolves onto its block index).
   #elements(state) {
-    // Final boards draw solid; reference-only boards draw hatched. An element
-    // with a final board is "final" even if it also has a reference one.
+    // A storyboard with a final image draws green; one whose only image is the
+    // reference draws yellow. An element with a final image is "final" even if
+    // it also has a reference one, and a blank storyboard (no image in either
+    // frame) draws nothing: it is claimed, not drawn (hard rule 3).
     const finalSet = new Set();
     const refSet = new Set();
     const durByBi = new Map(); // recorded pacing (board.dur) mapped onto the element it lands on
     for (const it of state.R.boards) {
-      if (!it.ok || !it.bd.img) continue;
+      if (!it.ok) continue;
+      const hasFinal = !!it.bd.img;
+      if (!hasFinal && !it.bd.refImg) continue;
       (it.res || []).forEach((r) => {
         if (!r) return;
-        (it.bd.ref ? refSet : finalSet).add(r.bi);
+        (hasFinal ? finalSet : refSet).add(r.bi);
         if (it.bd.dur) durByBi.set(r.bi, Math.max(durByBi.get(r.bi) || 0, it.bd.dur));
       });
     }
@@ -123,9 +154,66 @@ export class PandemoniumTimeline extends LitElement {
       }));
   }
 
+  // Dropping a file on a specific element of the Storyboarded row attaches a
+  // new board straight to that element's whole passage (same anchor shape
+  // script-editor.js uses for a section board: the block's full plain text).
+  // The browser only hands over file bytes on the actual drop, not while
+  // dragging, so the "which element" question is answered live via the
+  // outline + #dragcard label, and the "here's the image" confirmation only
+  // exists after drop (the board flashes into view via highlightBoard).
+  #onSegDragOver(e, kind, el) {
+    if (kind !== 'b') return;
+    if (![...e.dataTransfer.types].includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    if (this._dragBi !== el.bi) this._dragBi = el.bi;
+  }
+
+  #onSegDragLeave(e, kind) {
+    if (kind !== 'b') return;
+    if (e.relatedTarget && e.currentTarget.contains(e.relatedTarget)) return;
+    this._dragBi = null;
+  }
+
+  async #onSegDrop(e, kind, el, state) {
+    if (kind !== 'b') return;
+    e.preventDefault();
+    this._dragBi = null;
+    const file = [...(e.dataTransfer.files || [])].find(isBoardMediaFile);
+    if (!file) return;
+    const b = state.fparsed.blocks[el.bi];
+    if (!b) return;
+    const store = this._store.store;
+    const img = await readFileAsDataURL(file);
+    const mode = store.project.dropToReference !== false ? 'reference' : 'final';
+    // Fills that frame of a storyboard already on this element if it is empty,
+    // else starts one (its other frame empty).
+    const board = store.placeFrame({ parts: [{ q: b.plain, b: b.i, s: 0 }], img, caption: '', mode });
+    store.setUI({ highlightBoard: board.id, highlightMode: mode });
+    dispatch(this, 'pandemonium-toast', { message: 'Board added and linked to that line.' });
+  }
+
+  // The floating label that names the target element while dragging, since
+  // there is no image to preview yet (see the comment above #onSegDragOver).
+  #dragCard(state) {
+    if (this._dragBi == null) return '';
+    const b = state.fparsed.blocks[this._dragBi];
+    const el = this.renderRoot.querySelector(`.seg[data-bi="${this._dragBi}"]`);
+    if (!b || !el) return '';
+    const r = el.getBoundingClientRect();
+    const text = (b.plain || '').trim();
+    const excerpt = text.length > 70 ? text.slice(0, 70) + '...' : text;
+    return html`<div class="dragcard" style="left:${r.left + r.width / 2}px;top:${r.top - 8}px">Link to: ${excerpt || b.type}</div>`;
+  }
+
   #recordPacing() {
     // Opens the slideshow in record mode: stepping through it times each beat
     // and saves the pacing, which then drives these bars and the duration.
+    // Record mode always plays the final storyboard (there is no mode toggle
+    // here), so the gap check looks at 'final' specifically.
+    const state = this._store.store.getFinalState();
+    const gap = describeSlideshowGap(state.fparsed, state.R.boards, 'final', 'record pacing');
+    if (gap) { dispatch(this, 'pandemonium-toast', { message: gap }); return; }
     dispatch(this, 'pandemonium-open-slideshow', { record: true });
   }
 
@@ -149,21 +237,28 @@ export class PandemoniumTimeline extends LitElement {
   #barTitle(el, kind) {
     if (kind === 'b') {
       const status = el.refOnly ? 'reference only' : el.boarded ? 'storyboarded' : 'not storyboarded yet';
-      return `${el.type} · ~${fmtT(el.secs)} · ${status}`;
+      const pacing = el.paced ? ', measured pacing' : ', estimated from word count';
+      return `${el.type} · ~${fmtT(el.secs)} · ${status}${pacing}`;
     }
     return `${el.type} · ~${fmtT(el.secs)} · ${el.sourced ? 'sourced' : 'not sourced yet'}`;
   }
 
-  #track(kind, els) {
+  #track(kind, els, state) {
     return html`<div class="track ${kind}">
       ${els.map((el) => {
         const on = kind === 'b' ? el.boarded : el.sourced;
         const refOnly = kind === 'b' && el.refOnly;
+        const dragover = kind === 'b' && this._dragBi === el.bi;
+        const paced = kind === 'b' && el.paced;
         return html`
-        <div class="seg ${on ? 'on' : ''} ${refOnly ? 'ref' : ''}"
+        <div class="seg ${on ? 'on' : ''} ${refOnly ? 'ref' : ''} ${dragover ? 'dragover' : ''} ${paced ? 'paced' : ''}"
+          data-bi=${el.bi}
           style="flex-grow:${el.secs}"
           title=${this.#barTitle(el, kind)}
-          @click=${(e) => this.#jump(el.bi, e.currentTarget)}></div>`;
+          @click=${(e) => this.#jump(el.bi, e.currentTarget)}
+          @dragover=${(e) => this.#onSegDragOver(e, kind, el)}
+          @dragleave=${(e) => this.#onSegDragLeave(e, kind)}
+          @drop=${(e) => this.#onSegDrop(e, kind, el, state)}></div>`;
       })}
     </div>`;
   }
@@ -200,14 +295,15 @@ export class PandemoniumTimeline extends LitElement {
               ${!els.length
                 ? html`<div class="track"><div class="none"></div></div><div class="track"><div class="none"></div></div>`
                 : html`
-                  ${this.#track('b', els)}
-                  ${this.#track('r', els)}
+                  ${this.#track('b', els, state)}
+                  ${this.#track('r', els, state)}
                   <div class="markers">
                     ${markers.map((m) => html`<div class="mark" style="left:${m.x}%"><span>${m.name}</span></div>`)}
                   </div>`}
             </div>
           </div>
         </div>
+        ${this.#dragCard(state)}
       </div>
     `;
   }

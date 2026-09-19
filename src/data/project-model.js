@@ -184,51 +184,130 @@ function nextSeq(project, parts) {
   return max + 1;
 }
 
-// The seq of the first slot at this anchor that has a board in the OTHER
-// mode but none yet in `ref`'s mode -- an open counterpart waiting to be
-// filled. Null when every existing slot already has both, or the anchor has
-// no boards at all yet, so the caller should start a fresh slot instead (via
-// nextSeq). Letting the new board take that exact seq is what keeps it paired
-// with the frame that already claimed the position, so switching final/
-// reference for that passage shows the same beat either way.
-export function openCounterpartSeq(boards, parts, ref) {
-  const key = anchorKey(parts);
-  const mine = new Set();
-  const theirs = [];
-  for (const b of boards) {
-    if (anchorKey((b.anchor && b.anchor.parts) || []) !== key) continue;
-    if (!!b.ref === ref) mine.add(b.seq || 0);
-    else theirs.push(b.seq || 0);
-  }
-  const open = theirs.filter((s) => !mine.has(s)).sort((a, b) => a - b);
-  return open.length ? open[0] : null;
+// ---- storyboards ----
+//
+// A storyboard is ONE script passage and the two frames that can stand for it:
+// `img` is the final frame and `refImg` the reference frame (inspiration, never
+// counted as boarded: hard rule 3). Either can be empty; a storyboard with both
+// empty is a blank one, a claim on the passage with nothing drawn yet. So
+// making a storyboard from either side always makes the other side too, empty,
+// and both modes show the same passage: the frames are all that differs.
+// `note` is the storyboard's own comment. It is separate from script comments
+// (project.comments), which anchor to script text and know nothing of frames.
+//
+// The array is still called `boards` (merge, sync and the server key on that
+// name); each entry is a storyboard.
+
+export const FRAME_KEY = { final: 'img', reference: 'refImg' };
+
+export function otherMode(mode) { return mode === 'reference' ? 'final' : 'reference'; }
+
+// The image a storyboard holds for a mode ('final' | 'reference'), or null.
+export function frameImg(bd, mode) {
+  return (bd && bd[FRAME_KEY[mode === 'reference' ? 'reference' : 'final']]) || null;
 }
 
-export function addBoard(project, { parts, img, caption, seq, ref }) {
+// Boards written before storyboards paired their frames were one board per
+// frame, `{img, ref: true|false}`, matched only by sharing an anchor and a
+// seq. Fold each such pair into one storyboard, and give every board the
+// fields the new shape has. A final board with no reference partner keeps an
+// empty reference frame; a reference board with no final partner becomes a
+// storyboard whose final frame is empty (its image moves to `refImg`, its id
+// is kept). Unlinked boards (no anchor) never pair: nothing says they belong
+// together.
+//
+// Idempotent: a project that is already in the new shape comes back as the
+// same object, so it is safe to run on every load and on both sides of a merge.
+export function migrateBoards(project) {
+  const boards = project.boards || [];
+  const stale = boards.some((b) => 'ref' in b || !('refImg' in b) || !('note' in b));
+  if (!stale) return project;
+
+  const partsOf = (b) => (b.anchor && b.anchor.parts) || [];
+  const pairKey = (b) => anchorKey(partsOf(b)) + '\x1F' + (b.seq || 0);
+
+  const finalByKey = new Map();
+  for (const b of boards) {
+    if (b.ref || !partsOf(b).length) continue;
+    const k = pairKey(b);
+    if (!finalByKey.has(k)) finalByKey.set(k, b);
+  }
+  const partnerOf = new Map(); // final id -> the reference board folded into it
+  const folded = new Set(); // reference board ids that no longer stand alone
+  for (const b of boards) {
+    if (!b.ref || !partsOf(b).length) continue;
+    const f = finalByKey.get(pairKey(b));
+    if (f && !partnerOf.has(f.id)) { partnerOf.set(f.id, b); folded.add(b.id); }
+  }
+
+  const out = [];
+  for (const b of boards) {
+    if (folded.has(b.id)) continue;
+    const { ref, ...rest } = b;
+    const partner = partnerOf.get(b.id);
+    const next = { ...rest, note: rest.note || '' };
+    if (ref) {
+      // Reference-only: its image is the reference frame, the final is empty.
+      next.refImg = rest.img || null;
+      next.img = null;
+    } else {
+      next.img = rest.img || null;
+      next.refImg = (partner && partner.img) || rest.refImg || null;
+      if (partner) {
+        if (!next.caption && partner.caption) next.caption = partner.caption;
+        if (next.dur == null && partner.dur != null) next.dur = partner.dur;
+      }
+    }
+    out.push(next);
+  }
+  return { ...project, boards: out };
+}
+
+// `mode` picks which frame the image goes in ('final' by default); the other
+// frame starts empty and can be filled any time.
+export function addBoard(project, { parts, img, caption, note, seq, mode }) {
   const board = {
     id: uid(),
     anchor: { parts },
-    img: img || null,
+    img: null,
+    refImg: null,
     caption: caption || '',
+    note: note || '',
     seq: seq != null ? seq : nextSeq(project, parts),
-    // A reference board is inspiration for a beat, not the final frame: it never
-    // counts toward boarded coverage (hard rule 3) and lives in the panel's
-    // Reference view. Default false = a final board.
-    ref: !!ref,
   };
+  board[FRAME_KEY[mode === 'reference' ? 'reference' : 'final']] = img || null;
   return { project: { ...project, boards: [...project.boards, board] }, board };
 }
 
-// A board with no image yet, created from a script section: the writer knows a
-// beat needs boarding before there is a frame to put there. Identical to any
-// other board from here on, so it appears in the panel in sequence and plays
-// back as an empty slide that an image can be dropped onto.
+// A storyboard with no image in either frame, created from a script section:
+// the writer knows a beat needs boarding before there is anything to put
+// there. It appears in both storyboards in sequence, plays back as an empty
+// slide an image can be dropped onto, and can carry a note.
 //
 // It does NOT count toward the boarded percentage. See coverage() in
 // state/selectors.js: claiming a section is not the same as having drawn it,
 // and hard rule 3 does not let the timeline report the one as the other.
-export function addBlankBoard(project, { parts, caption }) {
-  return addBoard(project, { parts, img: null, caption });
+export function addBlankBoard(project, { parts, caption, note }) {
+  return addBoard(project, { parts, img: null, caption, note });
+}
+
+// Put an image in `mode`'s frame for a passage. If a storyboard already on
+// that passage has that frame empty (say it was made from the other side), the
+// image fills it rather than starting a second storyboard, which is what keeps
+// a beat's final and reference together. Otherwise a new storyboard is made.
+// Unlinked images (no parts) always start their own.
+export function placeFrame(project, { parts, img, mode, caption }) {
+  if (parts && parts.length) {
+    const key = anchorKey(parts);
+    const open = project.boards
+      .filter((b) => anchorKey((b.anchor && b.anchor.parts) || []) === key && !frameImg(b, mode))
+      .sort((a, b) => (a.seq || 0) - (b.seq || 0))[0];
+    if (open) {
+      const next = replaceBoardImage(project, open.id, img, mode);
+      return { project: next, board: next.boards.find((b) => b.id === open.id) };
+    }
+  }
+  return addBoard(project, { parts, img, caption, mode });
 }
 
 // Move a board within the run of boards that share its anchor. Boards attached
@@ -256,8 +335,16 @@ export function updateBoardCaption(project, id, caption) {
   return { ...project, boards: project.boards.map((b) => (b.id === id ? { ...b, caption } : b)) };
 }
 
-export function replaceBoardImage(project, id, img) {
-  return { ...project, boards: project.boards.map((b) => (b.id === id ? { ...b, img } : b)) };
+// Set (or, with null, clear) one frame of a storyboard. Defaults to the final
+// frame; the other frame is never touched.
+export function replaceBoardImage(project, id, img, mode = 'final') {
+  const key = FRAME_KEY[mode === 'reference' ? 'reference' : 'final'];
+  return { ...project, boards: project.boards.map((b) => (b.id === id ? { ...b, [key]: img || null } : b)) };
+}
+
+// The storyboard's own comment, separate from script comments.
+export function setBoardNote(project, id, note) {
+  return { ...project, boards: project.boards.map((b) => (b.id === id ? { ...b, note: note || '' } : b)) };
 }
 
 // Recorded pacing: how long this board held the screen, in seconds, captured by
@@ -267,9 +354,13 @@ export function setBoardDuration(project, id, secs) {
   return { ...project, boards: project.boards.map((b) => (b.id === id ? { ...b, dur: secs } : b)) };
 }
 
-// Move a board between the final and reference storyboards.
-export function setBoardRef(project, id, ref) {
-  return { ...project, boards: project.boards.map((b) => (b.id === id ? { ...b, ref: !!ref } : b)) };
+// Swap a storyboard's two frames. With one side empty this is a move: the image
+// goes to the other frame and this one is left empty, still on the same passage.
+export function swapBoardFrames(project, id) {
+  return {
+    ...project,
+    boards: project.boards.map((b) => (b.id === id ? { ...b, img: b.refImg || null, refImg: b.img || null } : b)),
+  };
 }
 
 // A moved board takes a fresh seq at its new anchor: carrying its old position

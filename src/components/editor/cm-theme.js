@@ -31,13 +31,28 @@ export const fountainTheme = EditorView.theme({
     // overflow-x hidden so the full-bleed row-hover band (which extends far past
     // the text column, see .cm-sec-hover) is clipped to the panel instead of
     // creating a horizontal scrollbar. lineWrapping means there is no real
-    // horizontal content to scroll.
+    // horizontal content to scroll. The desk the page sits on (script-panel.js
+    // sets --pane-bg to --panel for this reason, not --bg).
     overflowX: 'hidden',
     overflowY: 'auto',
+    backgroundColor: 'var(--panel)',
   },
+  // A page, not a full-bleed column: paper width, its own fill lifted off the
+  // desk with a shadow, margins as padding since CodeMirror owns this box's
+  // geometry for its own cursor/scroll math (an outer margin would be
+  // invisible to it). overflow:hidden bounds .cm-sec-hover's -50vw band (below)
+  // to the page's own edges instead of the old full-bleed panel edges.
   '.cm-content': {
-    padding: '10px 10px 40vh 10px',
+    maxWidth: '600px',
+    margin: '40px auto 0 auto',
+    padding: '60px 50px 50vh 50px',
+    backgroundColor: 'var(--bg)',
+    boxShadow: '0 2px 14px rgba(0,0,0,.2), 0 0 0 1px rgba(0,0,0,.06)',
     caretColor: 'var(--ink)',
+    overflow: 'hidden',
+    // A stacking context of its own, so .cm-sec-hover's z-index:-1 band paints
+    // above this element's opaque page fill instead of behind it.
+    isolation: 'isolate',
   },
   // "Start with a summary of the script", shown only over an empty document.
   // Styled exactly like a Fountain synopsis line (.cm-line.cmf-synopsis
@@ -111,8 +126,12 @@ export const fountainTheme = EditorView.theme({
     fontFamily: 'var(--script)', fontSize: 'inherit', padding: '2px 0',
   },
   '.cm-line.cmf-transition': {
+    // Muted like paren: a technical directive (CUT TO:, FADE OUT:), not story
+    // content, so it recedes a step rather than competing with it for
+    // attention. Same tier as paren, not synopsis's lighter --mut, since it's
+    // still a craft element a writer reads deliberately, not a summary aside.
     textAlign: 'right', maxWidth: 'none', margin: '0', textTransform: 'uppercase',
-    fontWeight: '400', fontStyle: 'italic', color: 'var(--ink)', letterSpacing: 'normal',
+    fontWeight: '400', fontStyle: 'italic', color: 'var(--ui)', letterSpacing: 'normal',
     fontFamily: 'var(--script)', fontSize: 'inherit', padding: '10px 0 2px 0',
   },
   '.cm-line.cmf-centered': {
@@ -121,8 +140,11 @@ export const fountainTheme = EditorView.theme({
     fontFamily: 'var(--script)', fontSize: 'inherit', padding: '2px 0',
   },
   '.cm-line.cmf-lyric': {
+    // Muted for the same reason as transition: it's marked ~like this~
+    // precisely because it's a secondary reading, sung rather than spoken,
+    // and should read as a step removed from ordinary dialogue.
     textAlign: 'left', maxWidth: 'none', margin: '0', textTransform: 'none',
-    fontWeight: '400', fontStyle: 'italic', color: 'var(--ink)', letterSpacing: 'normal',
+    fontWeight: '400', fontStyle: 'italic', color: 'var(--ui)', letterSpacing: 'normal',
     fontFamily: 'var(--script)', fontSize: 'inherit', padding: '2px 0 2px 1.5em',
   },
   '.cm-line.cmf-section': {
@@ -145,9 +167,16 @@ export const fountainTheme = EditorView.theme({
   '.cmf-note': { color: 'var(--mut)', fontStyle: 'italic' },
   '.cmf-syntax': { opacity: '0.45' },
 
+  // Storyboard links: green for a final board, yellow for a reference board.
+  // The yellow is the action token softened with color-mix, not a new color,
+  // so it sits next to the soft --board green at a similar weight in both
+  // themes.
   '.hb': { background: 'var(--board)', cursor: 'pointer', borderRadius: '1px' },
+  '.hbr': { background: 'color-mix(in srgb, var(--act) 55%, transparent)', cursor: 'pointer', borderRadius: '1px' },
   '.hr': { background: 'var(--res)', color: '#fff', cursor: 'pointer', borderRadius: '1px' },
+  '.hb.hbr': { background: 'linear-gradient(180deg,var(--board) 50%,color-mix(in srgb, var(--act) 55%, transparent) 50%)', cursor: 'pointer', borderRadius: '1px' },
   '.hb.hr': { background: 'linear-gradient(180deg,var(--board) 50%,var(--res) 50%)', color: 'var(--ink)', cursor: 'pointer', borderRadius: '1px' },
+  '.hbr.hr': { background: 'linear-gradient(180deg,color-mix(in srgb, var(--act) 55%, transparent) 50%,var(--res) 50%)', color: 'var(--ink)', cursor: 'pointer', borderRadius: '1px' },
   '.hp': { background: 'var(--pend)', borderRadius: '1px' },
   // Comments read as an annotation underline, not a filled highlight, so they
   // stay legible even where they overlap a board/research span.

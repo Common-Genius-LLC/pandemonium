@@ -11,7 +11,7 @@
 import { resolvePart } from '../fountain/resolve.js';
 import { sceneIndexOf } from '../fountain/blocks.js';
 import { clamp, fmtT } from '../utils/format.js';
-import { anchorKey } from '../data/project-model.js';
+import { frameImg } from '../data/project-model.js';
 
 // Resolves every board/link anchor against the final draft's freshly parsed
 // blocks, plus (if a link-in-progress exists) the pending selection as its
@@ -29,9 +29,12 @@ export function computeResolved(parsed, scenes, project, ui) {
     const ok = res.some(Boolean);
     let firstBi = Infinity;
     res.forEach((r) => { if (r && r.bi < firstBi) firstBi = r.bi; });
-    // Final and reference boards both count as boarded and both paint the
-    // highlight; they differ only in how the timeline draws them (see below).
-    res.forEach((r) => add(r, 'hb', bd.id, 'b'));
+    // A storyboard paints green ('hb') unless its only image is the reference
+    // one, when it paints yellow ('hbr'): the same green/yellow split the
+    // timeline, minimap and script view use. A blank storyboard is still a
+    // real link, so it paints green like any other.
+    const refOnly = !bd.img && !!bd.refImg;
+    res.forEach((r) => add(r, refOnly ? 'hbr' : 'hb', bd.id, 'b'));
     return { bd, res, ok, firstBi: ok ? firstBi : Infinity, sceneIdx: ok ? sceneIndexOf(scenes, firstBi) : -1 };
   });
   const links = project.links.map((lk) => {
@@ -68,19 +71,16 @@ export function coverage(scenes, R) {
     it.res.forEach((r) => { if (r) { const sc = scenes[sceneIndexOf(scenes, r.bi)]; if (sc) sc[setKey].add(r.bi); } });
   };
 
-  // A blank board (no image yet) is a claim that a beat needs boarding, not
-  // evidence that it has been boarded. It is a real link, so it still paints
-  // its highlight in the script and is still reported to the reader, but it
-  // is counted into nbPending and contributes nothing to bset. Per hard rule
-  // 3 the boarded percentage may never include work that has not happened,
-  // and "a placeholder exists" is not the work.
-  //
-  // Reference boards sit out of this entirely: a reference frame is
-  // inspiration for a beat, not the final chosen one (see addBoard in
-  // project-model.js), so it is neither boarded nor pending here. Only the
-  // final storyboard is what "the section is drawn" means.
+  // A storyboard with no FINAL image is a claim that a beat needs boarding, not
+  // evidence that it has been boarded, whether it is blank or holds only a
+  // reference frame. It is a real link, so it still paints its highlight in
+  // the script and is still reported to the reader, but it is counted into
+  // nbPending and contributes nothing to bset. Per hard rule 3 the boarded
+  // percentage may never include work that has not happened, and "a
+  // placeholder exists" is not the work. Reference frames are inspiration for a
+  // beat, not the chosen one, so they never lift a storyboard out of pending.
   for (const it of R.boards) {
-    if (!it.ok || it.bd.ref) continue;
+    if (!it.ok) continue;
     const sc = scenes[it.sceneIdx];
     if (!it.bd.img) { if (sc) sc.nbPending++; continue; }
     if (sc) sc.nb++;
@@ -100,6 +100,62 @@ export function coverage(scenes, R) {
   }
 }
 
+// Which blocks a storyboard link lands on, and which color each gets, for
+// anything that paints a per-line marker (the minimap gutter, the boards
+// panel's script view). Mirrors what the editor highlights: every storyboard
+// that resolves, blank or not (a blank one is still a real link). A storyboard
+// reads as `ref` only when its sole image is the reference one; anything else
+// (a final image, or blank) reads as `final`, and final wins where a block is
+// covered by both. Returns Map<blockIndex, {final, ref}>.
+export function boardLinkKinds(resolvedBoards) {
+  const kinds = new Map();
+  for (const it of resolvedBoards) {
+    if (!it.ok) continue;
+    const refOnly = !it.bd.img && !!it.bd.refImg;
+    for (const r of it.res || []) {
+      if (!r) continue;
+      const k = kinds.get(r.bi) || { final: false, ref: false };
+      if (refOnly) k.ref = true; else k.final = true;
+      kinds.set(r.bi, k);
+    }
+  }
+  return kinds;
+}
+
+// The minimap's gutter marks: {lineNumber: color}, 1-based, from the parsed
+// blocks and boardLinkKinds. A multi-line block (a wrapped action paragraph)
+// marks every line it spans; final wins where a block is linked both ways.
+// Colors come in from the caller as concrete strings (the gutter is a canvas,
+// where a CSS var() does not resolve).
+export function gutterRecord(blocks, kinds, colors) {
+  const rec = {};
+  for (const [bi, k] of kinds) {
+    const b = blocks[bi];
+    if (!b || b.line == null) continue;
+    const color = k.final ? colors.final : colors.ref;
+    if (!color) continue;
+    const extra = (b.text.match(/\n/g) || []).length;
+    for (let i = 0; i <= extra; i++) rec[b.line + 1 + i] = color;
+  }
+  return rec;
+}
+
+// Guardrail messaging for actions that assume a playable storyboard already
+// exists (the slideshow, pacing recording): rather than opening on nothing
+// and leaving the user to guess why it's empty, name the specific thing
+// missing. `action` is a verb phrase, e.g. "record pacing" or "preview the
+// show". Returns null when there is enough to proceed.
+export function describeSlideshowGap(fparsed, boards, mode, action) {
+  const hasScript = fparsed.blocks.some((b) => b.line != null && b.plain && b.plain.trim());
+  if (!hasScript) return `Write some script before you ${action}.`;
+  const reference = mode === 'reference';
+  const kind = reference ? 'reference' : 'storyboard';
+  const imaged = boards.filter((it) => frameImg(it.bd, mode));
+  if (!imaged.length) return `Add ${kind} frames before you ${action}.`;
+  if (!imaged.some((it) => it.ok)) return `Link your ${kind} frames to the script before you ${action}.`;
+  return null;
+}
+
 // The order boards are read and played in: down the script by resolved
 // position, then by the board's own seq. The second term is not a tiebreak
 // nicety. Several boards attached to one passage all resolve to the same
@@ -109,34 +165,14 @@ export function boardOrder(a, b) {
   return (a.firstBi - b.firstBi) || ((a.bd.seq || 0) - (b.bd.seq || 0));
 }
 
-// Resolved, ok boards grouped into shared slots: one entry per (anchor, seq),
-// carrying whichever board exists there in either mode. A slot with only a
-// reference board still gets a place when reading the final storyboard (see
-// slotBoard), and vice versa, so switching final/reference never changes how
-// many frames a passage has, only which image fills them -- the same anchor,
-// the same seq, is the same beat either way. Ordered like boardOrder: by
-// document position, then seq within a shared passage.
-export function boardSlots(resolvedBoards) {
-  const byKey = new Map();
-  for (const o of resolvedBoards) {
-    if (!o.ok) continue;
-    const seq = o.bd.seq || 0;
-    const key = anchorKey(o.bd.anchor.parts || []) + '\x1F' + seq;
-    let slot = byKey.get(key);
-    if (!slot) {
-      slot = { parts: o.bd.anchor.parts, seq, firstBi: o.firstBi, sceneIdx: o.sceneIdx, final: null, ref: null };
-      byKey.set(key, slot);
-    }
-    if (o.bd.ref) slot.ref = o; else slot.final = o;
-  }
-  return [...byKey.values()].sort((a, b) => (a.firstBi - b.firstBi) || (a.seq - b.seq));
-}
-
-// The resolved board a slot shows for a given mode, or null when that mode
-// has not filled this slot -- the other mode has, which is the only reason
-// the slot exists at all.
-export function slotBoard(slot, reference) {
-  return reference ? slot.ref : slot.final;
+// The storyboards that resolve onto the script, in the order they are read and
+// played: down the script, then by seq within a shared passage. There is one
+// entry per storyboard, and every storyboard has BOTH a final and a reference
+// frame (either may be empty), so the final and reference views list exactly
+// the same beats and switching between them changes only which image fills
+// each one.
+export function linkedBoards(resolvedBoards) {
+  return resolvedBoards.filter((o) => o.ok).sort(boardOrder);
 }
 
 export function labelScenes(scenes) {

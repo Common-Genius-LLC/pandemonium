@@ -68,7 +68,7 @@ export function printBoards(finalState, projectName) {
     const scn = o.ok ? finalState.fscenes[o.sceneIdx] : null;
     html += '<div class="cell">' +
       (o.bd.img ? '<img src="' + o.bd.img + '">' : '<div class="noimg"></div>') +
-      '<div class="cap">' + (scn ? esc(scn.pre ? 'Opening' : 'Sc ' + scn.label) + ' · ' : '') + esc(o.bd.caption || '') + '</div>' +
+      '<div class="cap">' + (scn ? esc(scn.pre ? 'Opening' : 'Sc ' + scn.label) + ' · ' : '') + esc(o.bd.caption || o.bd.note || '') + '</div>' +
       '<div class="q">' + esc(q) + '</div></div>';
   }
   html += '</div>';

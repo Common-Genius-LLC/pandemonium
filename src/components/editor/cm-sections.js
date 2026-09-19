@@ -246,6 +246,11 @@ export function sectionAffordances({ getParsed, onAct, onLink, onElement, onDrop
           return {
             show: true,
             top: Math.max(0, coords.top - scRect.top + v.scrollDOM.scrollTop),
+            // Anchored to the page's right edge, not the scroller's: the page
+            // is narrower than the scroller (centered on a desk) and the
+            // minimap sits inside the scroller's right edge, so a fixed
+            // right:10px put the rail under the minimap.
+            right: scRect.right - v.contentDOM.getBoundingClientRect().right + 10,
             label: this.elementLabelForSection ? this.elementLabelForSection(sec) : '',
           };
         },
@@ -253,6 +258,7 @@ export function sectionAffordances({ getParsed, onAct, onLink, onElement, onDrop
           if (!data || !data.show) { this.acts.style.display = 'none'; return; }
           this.acts.style.display = 'flex';
           this.acts.style.top = data.top + 'px';
+          this.acts.style.right = data.right + 'px';
           if (this.eltBtn) this.eltBtn.textContent = data.label || 'Element';
           // Link and comment are final-draft-only (only the final draft owns
           // links); every other draft gets just the element pill.

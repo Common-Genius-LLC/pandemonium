@@ -123,8 +123,9 @@ export class PandemoniumSearchField extends LitElement {
       for (const bd of project.boards) {
         if (boardCount >= CAP) break;
         const cap = bd.caption || '';
+        const note = bd.note || '';
         const qq = (bd.anchor.parts[0] && bd.anchor.parts[0].q) || '';
-        if (cap.toLowerCase().includes(q) || qq.toLowerCase().includes(q)) { results.push({ group: 'Boards', t: cap || qq, sub: 'storyboard', go: { k: 'board', id: bd.id } }); boardCount++; }
+        if (cap.toLowerCase().includes(q) || note.toLowerCase().includes(q) || qq.toLowerCase().includes(q)) { results.push({ group: 'Boards', t: cap || note || qq, sub: 'storyboard', go: { k: 'board', id: bd.id } }); boardCount++; }
       }
     }
     this._results = results.map((r) => ({ ...r, q }));

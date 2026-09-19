@@ -69,6 +69,16 @@ export class PandemoniumScriptPanel extends LitElement {
     dispatch(this, 'pandemonium-toast', { message: 'New draft created. Start writing in Fountain.' });
   }
 
+  // Focused writing: show only this pane, full width, without touching the
+  // saved split tree (panel-layout.js reads ui.focusedLeaf to short-circuit
+  // its render). Toggling it again, from anywhere -- this pane is the only
+  // one on screen while focused -- restores the normal layout.
+  #toggleFocus() {
+    const store = this._store.store;
+    const focused = store.ui.focusedLeaf === this.leafId;
+    store.setUI({ focusedLeaf: focused ? null : this.leafId });
+  }
+
   render() {
     const store = this._store.store;
     const project = this._store.project;
@@ -79,6 +89,7 @@ export class PandemoniumScriptPanel extends LitElement {
     const words = parsed.blocks.reduce((a, b) => a + (CONTENT_TYPES[b.type] ? b.words : 0), 0);
     const secs = scenesOf(parsed).reduce((a, s) => a + s.secs, 0);
     const wc = words ? words.toLocaleString() + ' w · est ' + fmtT(secs) : '';
+    const focused = this._store.ui && this._store.ui.focusedLeaf === this.leafId;
 
     return html`
       <div class="shell" style="--pane-bg:var(--bg)">
@@ -87,6 +98,9 @@ export class PandemoniumScriptPanel extends LitElement {
           <div class="tabs">
             ${project.scripts.map((s) => html`<pandemonium-draft-chip .script=${s} .leafId=${this.leafId}></pandemonium-draft-chip>`)}
             <button class="addtab" title="Add a new draft" @click=${() => this.#addScript()}>+</button>
+          </div>
+          <div class="tools">
+            <pd-button title=${focused ? 'Exit focused writing' : 'Focused writing: hide every other pane'} @click=${() => this.#toggleFocus()}>${focused ? 'Exit focus' : 'Focus'}</pd-button>
           </div>
         </div>
         <div class="pbody">

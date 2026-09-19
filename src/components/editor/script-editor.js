@@ -9,10 +9,12 @@ import { dispatch } from '../../utils/events.js';
 import { fountainDecorations } from './cm-fountain-plugin.js';
 import { sectionAffordances, hoverSectionField, pinnedSectionField, setPinnedSection } from './cm-sections.js';
 import { fountainTheme } from './cm-theme.js';
+import { fountainMinimap, minimapTheme, setMinimapMarks } from './cm-minimap.js';
+import { boardLinkKinds, gutterRecord } from '../../state/selectors.js';
 import { captureFromSelection } from './selection-capture.js';
 import { openSourceDialog } from '../research/source-dialog.js';
 import { parseFountain } from '../../fountain/parse.js';
-import { resolvePart } from '../../fountain/resolve.js';
+import { resolvePart, snapToWords } from '../../fountain/resolve.js';
 import { plainPosToRaw, rawOffsetToPlainPos, blockRawRange } from '../../fountain/doc-map.js';
 import { elementOfBlock, ELEMENT_LABELS, ELEMENT_MENU } from '../../fountain/element-ops.js';
 import { activeElementField, autoUppercase, applyElementAtCaret, elementKeymap } from './cm-autoformat.js';
@@ -22,7 +24,7 @@ import { summaryDefault } from './cm-summary-default.js';
 import { linkToItems } from '../linking/link-actions.js';
 import { elementMenu } from './element-menu.js';
 import { readFileAsDataURL, isBoardMediaFile, BOARD_MEDIA_ACCEPT } from '../../utils/files.js';
-import { openCounterpartSeq } from '../../data/project-model.js';
+import { frameImg } from '../../data/project-model.js';
 import { imageFromClipboard } from '../../utils/clipboard.js';
 import { openPair } from '../../state/actions.js';
 import { clamp } from '../../utils/format.js';
@@ -51,6 +53,7 @@ export class PandemoniumScriptEditor extends LitElement {
 
   #view = null;
   #plugin = null;
+  #lastMarksKey = null;
   #loadedScriptId = null;
   #connRAF = 0;
   #selRAF = 0;
@@ -86,6 +89,8 @@ export class PandemoniumScriptEditor extends LitElement {
         placeholder('Start with a summary of the script'),
         EditorView.lineWrapping,
         fountainTheme,
+        fountainMinimap,
+        minimapTheme,
         this.#plugin,
         activeElementField,
         // Both fields belong to the element flow: the journal records what a
@@ -154,6 +159,28 @@ export class PandemoniumScriptEditor extends LitElement {
     const script = store.scriptForLeaf(this.leafId);
     if (!script || !script.final) return {};
     return store.getFinalState().R.biMap;
+  }
+
+  // The minimap's gutter marks: a bar beside every line a storyboard link
+  // lands on, green for a final board and yellow for a reference one. Only the
+  // final draft owns links, so any other draft gets none. Colors are read off
+  // the DOM (the gutter is a canvas, where var() does not resolve). Returns
+  // the new {line: color} record, or null when it is unchanged since last time
+  // so an unrelated store update does not repaint the minimap.
+  #minimapMarks() {
+    const store = this._store.store;
+    const script = store.scriptForLeaf(this.leafId);
+    let rec = {};
+    if (script && script.final) {
+      const state = store.getFinalState();
+      const cs = getComputedStyle(this);
+      const colors = { final: cs.getPropertyValue('--board-strong').trim(), ref: cs.getPropertyValue('--act').trim() };
+      rec = gutterRecord(state.fparsed.blocks, boardLinkKinds(state.R.boards), colors);
+    }
+    const key = JSON.stringify(rec);
+    if (key === this.#lastMarksKey) return null;
+    this.#lastMarksKey = key;
+    return rec;
   }
 
   // CodeMirror finalizes a pointer/keyboard selection in its OWN mouseup /
@@ -229,8 +256,12 @@ export class PandemoniumScriptEditor extends LitElement {
       parts = captureFromSelection(parsed, this.#view.state.doc, sel.from, sel.to) || [];
     }
     const img = await readFileAsDataURL(file);
-    store.addBoard({ parts, img, caption: '' });
-    dispatch(this, 'pandemonium-toast', { message: parts.length ? 'Board added.' : 'Board added. Select a script passage anytime to attach it.' });
+    // Pasted images always go in the reference frame (see the same note in
+    // pandemonium-app.js's document-level paste fallback). placeFrame fills the
+    // reference frame of a storyboard already on this passage if it has one
+    // empty, so the beat keeps a single storyboard.
+    store.placeFrame({ parts, img, caption: '', mode: 'reference' });
+    dispatch(this, 'pandemonium-toast', { message: parts.length ? 'Reference image added.' : 'Reference image added. Select a script passage anytime to attach it.' });
   }
 
   // The section rail (cm-sections.js) fires these for a whole Fountain
@@ -249,6 +280,7 @@ export class PandemoniumScriptEditor extends LitElement {
       input.click();
       return;
     }
+    if (act === 'blank') { this.#blankStoryboard(this.#boardParts(sec)); return; }
     if (act === 'source') {
       if (!store.project.research.length) { openSourceDialog(this, store, sec.parts, 'link'); return; }
       store.setUI({ linking: { from: 'script', parts: sec.parts }, openDoc: null });
@@ -260,7 +292,20 @@ export class PandemoniumScriptEditor extends LitElement {
     }
   }
 
-  // The "link to" pill's menu (Figma node 86-632): Storyboard, Research, Sound.
+  // A storyboard with no image in either frame, on this passage: the beat is
+  // claimed before there is anything to put there. It shows in both the Final
+  // and Reference views, can carry a note, and takes an image in either frame
+  // later. The boards panel is revealed and flashes it so it is not invisible.
+  #blankStoryboard(parts) {
+    const store = this._store.store;
+    store.revealContent('boards');
+    const board = store.addBlankBoard({ parts });
+    store.setUI({ highlightBoard: board.id, highlightMode: 'final' });
+    dispatch(this, 'pandemonium-toast', { message: 'Blank storyboard added. Give it a note, or drop an image on either frame.' });
+  }
+
+  // The "link to" pill's menu (Figma node 86-632): Storyboard, Blank
+  // storyboard, Research, Sound.
   // Storyboard and Research route into the same section actions the rail used to
   // trigger directly; Sound is a planned link kind with no backing model yet, so
   // it says so rather than pretending. Colored to the app's link palette
@@ -270,6 +315,7 @@ export class PandemoniumScriptEditor extends LitElement {
     this.#pinHoverForMenu();
     const items = linkToItems({
       onStoryboard: () => this.#onSectionAct('board', sec),
+      onBlankStoryboard: () => this.#onSectionAct('blank', sec),
       onResearch: () => this.#onSectionAct('source', sec),
       onSound: () => dispatch(this, 'pandemonium-toast', { message: 'Sound linking is coming soon.' }),
     });
@@ -341,40 +387,40 @@ export class PandemoniumScriptEditor extends LitElement {
   }
 
   // Dropping an image onto a paragraph boards it. External drops (from outside
-  // the storyboard panel) default to the REFERENCE storyboard (see
-  // dropToReference, changeable from the panel's gear icon). If the target
-  // mode already has a frame on this exact passage, the image replaces it
-  // after a confirm. Otherwise, if the OTHER mode already boarded this
-  // passage, the new board takes that slot's seq so the two stay paired (see
-  // boardSlots in selectors.js) -- with no counterpart either, it starts a
-  // fresh slot (with cue/dialogue pairing, see #boardParts). Either way the
-  // boards panel is revealed and switched to show wherever the image landed,
+  // the storyboard panel) go in the REFERENCE frame by default (see
+  // dropToReference, set under File > Storyboard settings). The image goes in
+  // that frame of a storyboard already on this passage if it is empty (so the
+  // beat keeps ONE storyboard with both frames); if every storyboard on the
+  // passage already has that frame filled, the first is replaced after a
+  // confirm. With no storyboard there at all, a new one is made (with cue/
+  // dialogue pairing, see #boardParts) and its other frame starts empty. Either
+  // way the boards panel is revealed and switched to the frame that changed,
   // scrolled to and flashed, so the drop is never invisible.
   async #dropImageOnSection(sec, file) {
     const store = this._store.store;
     store.revealContent('boards');
     const parts = this.#boardParts(sec);
     const firstBlock = parts[0] && parts[0].b;
-    const ref = store.project.dropToReference !== false;
-    const existing = store.getFinalState().R.boards.find((o) => o.ok && o.firstBi === firstBlock && !!o.bd.ref === ref);
+    const mode = store.project.dropToReference !== false ? 'reference' : 'final';
+    const here = store.getFinalState().R.boards.filter((o) => o.ok && o.firstBi === firstBlock);
     const img = await readFileAsDataURL(file);
-    if (existing) {
+    const filled = here.find((o) => frameImg(o.bd, mode));
+    if (filled && here.every((o) => frameImg(o.bd, mode))) {
       dispatch(this, 'pandemonium-open-dialog', {
         title: 'Replace storyboard frame?',
-        body: html`<p>This passage already has a storyboard frame. Replace its image with the one you dropped?</p>`,
+        body: html`<p>This passage already has a ${mode} frame. Replace its image with the one you dropped?</p>`,
         okLabel: 'Replace',
         onOk: () => {
-          store.replaceBoardImage(existing.bd.id, img);
-          store.setUI({ highlightBoard: existing.bd.id });
+          store.replaceBoardImage(filled.bd.id, img, mode);
+          store.setUI({ highlightBoard: filled.bd.id, highlightMode: mode });
           dispatch(this, 'pandemonium-toast', { message: 'Frame replaced.' });
         },
       });
       return;
     }
-    const seq = openCounterpartSeq(store.project.boards, parts, ref);
-    const board = store.addBoard({ parts, img, caption: '', seq: seq != null ? seq : undefined, ref });
-    store.setUI({ highlightBoard: board.id });
-    dispatch(this, 'pandemonium-toast', { message: `Added to the ${ref ? 'reference' : 'final'} storyboard.` });
+    const board = store.placeFrame({ parts, img, caption: '', mode });
+    store.setUI({ highlightBoard: board.id, highlightMode: mode });
+    dispatch(this, 'pandemonium-toast', { message: `Added to the ${mode} frame.` });
   }
 
   #sectionRect(sec) {
@@ -393,11 +439,15 @@ export class PandemoniumScriptEditor extends LitElement {
     const parts = this.#pendingBoardParts || [];
     this.#pendingBoardParts = null;
     if (!files.length) return;
+    // Final frames: "Storyboard" from the link menu is the deliberate "this
+    // is the frame" action. The first fills an empty final frame already on
+    // the section (say a blank storyboard, or one made from a reference
+    // image); each further file starts its own storyboard.
     for (const file of files) {
-      this._store.store.addBoard({ parts, img: await readFileAsDataURL(file), caption: '' });
+      this._store.store.placeFrame({ parts, img: await readFileAsDataURL(file), caption: '', mode: 'final' });
     }
     dispatch(this, 'pandemonium-toast', {
-      message: files.length === 1 ? 'Board added.' : files.length + ' boards added to this section.',
+      message: files.length === 1 ? 'Storyboard added.' : files.length + ' storyboards added to this section.',
     });
   }
 
@@ -454,9 +504,13 @@ export class PandemoniumScriptEditor extends LitElement {
       if (!nb) return pt;
       const nlf = lineFrom(nextDoc, nb);
       const rng = blockRawRange(nb, nlf);
-      const ps = rawOffsetToPlainPos(nb, nlf, Math.max(nFrom, rng.from), true);
-      const pe = rawOffsetToPlainPos(nb, nlf, Math.min(nTo, rng.to), false);
+      let ps = rawOffsetToPlainPos(nb, nlf, Math.max(nFrom, rng.from), true);
+      let pe = rawOffsetToPlainPos(nb, nlf, Math.min(nTo, rng.to), false);
       if (pe <= ps) return pt;
+      // Keep the re-derived anchor on whole-word bounds, same as a fresh
+      // capture, so editing a word the anchor already covers (typing inside
+      // it, extending it) doesn't leave the boundary sitting mid-word.
+      ({ s: ps, e: pe } = snapToWords(nb.plain, ps, pe));
       const q = nb.plain.slice(ps, pe);
       if (!q.trim()) return pt;
       if (q === pt.q && nb.i === pt.b && ps === pt.s) return pt;
@@ -571,8 +625,10 @@ export class PandemoniumScriptEditor extends LitElement {
     // *this* editor's own doc/selection changed -- e.g. a board was
     // relinked from the Boards panel, or the debounced text-sync emit
     // landed -- both change what store.getFinalState().R.biMap returns
-    // without CodeMirror itself having dispatched anything.
-    this.#view.dispatch({});
+    // without CodeMirror itself having dispatched anything. The minimap
+    // gutter marks ride the same dispatch when they changed.
+    const marks = this.#minimapMarks();
+    this.#view.dispatch(marks ? { effects: setMinimapMarks.of(marks) } : {});
 
     this.#syncConnector(ui);
   }

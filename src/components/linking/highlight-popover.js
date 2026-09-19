@@ -3,6 +3,7 @@
 import { LitElement, html, css } from 'lit';
 import { StoreController } from '../../state/store-controller.js';
 import { clamp } from '../../utils/format.js';
+import { frameImg } from '../../data/project-model.js';
 
 // The small popover that appears when clicking a board highlight inside the
 // script (not a research link -- those open a pair + connector instead).
@@ -13,8 +14,9 @@ export class PandemoniumHighlightPopover extends LitElement {
   static styles = css`
     :host{position:fixed;inset:0;z-index:70;pointer-events:none}
     .pop{position:fixed;width:250px;background:var(--panel);border-radius:var(--r);overflow:hidden;pointer-events:auto;font-family:var(--sans)}
-    .img{aspect-ratio:16/9;background:var(--ph);overflow:hidden}
+    .img{aspect-ratio:16/9;background:var(--ph);overflow:hidden;cursor:pointer}
     .img img{width:100%;height:100%;object-fit:cover;display:block}
+    .pnote{height:100%;box-sizing:border-box;padding:10px 12px;font-size:12px;line-height:1.35;color:var(--ink);overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere}
     .meta{padding:8px 10px;display:flex;align-items:center;gap:8px;font-size:11px}
     .cap{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
     button{height:24px;padding:0 10px;background:var(--bg);color:var(--ui);font-size:11px;font-weight:500;border:0;border-radius:var(--r);cursor:pointer;font-family:var(--sans)}
@@ -67,18 +69,31 @@ export class PandemoniumHighlightPopover extends LitElement {
   #openInBoards() {
     // Reveals the board wherever a Thumbnails pane is visible (window-division
     // layout has no single/split modes to switch into).
-    this._store.store.setUI({ highlightBoard: this._board.id });
+    // Show the view that has this storyboard's image (final first), so the
+    // card that opens is not a blank one.
+    const bd = this._board;
+    this._store.store.setUI({ highlightBoard: bd.id, highlightMode: frameImg(bd, 'final') ? 'final' : frameImg(bd, 'reference') ? 'reference' : null });
     this.close();
+  }
+
+  #unlink() {
+    const id = this._board.id;
+    this._store.store.reattachBoard(id, []);
+    this.close();
+    this.dispatchEvent(new CustomEvent('pandemonium-toast', { detail: { message: 'Storyboard unlinked from the script. Both frames are kept.' }, bubbles: true, composed: true }));
   }
 
   render() {
     if (!this._open) return html``;
     const bd = this._board;
+    // A storyboard holds a final and a reference frame; show whichever has an
+    // image (final first). A blank one shows its note in the empty frame.
+    const img = frameImg(bd, 'final') || frameImg(bd, 'reference');
     const q = ((bd.anchor && bd.anchor.parts[0] && bd.anchor.parts[0].q) || '').slice(0, 80);
     return html`
       <div class="pop" style="left:${this._x || 0}px;top:${this._y || 0}px">
-        <div class="img">${bd.img ? html`<img alt="" src=${bd.img}>` : ''}</div>
-        <div class="meta"><span class="cap">${bd.caption || q || 'Storyboard panel'}</span><button @click=${() => this.#openInBoards()}>Boards</button></div>
+        <div class="img" title="Open in Boards" @click=${() => this.#openInBoards()}>${img ? html`<img alt="" src=${img}>` : (bd.note ? html`<div class="pnote">${bd.note}</div>` : '')}</div>
+        <div class="meta"><span class="cap">${bd.caption || (img && bd.note) || q || 'Storyboard'}</span><button @click=${() => this.#unlink()}>Unlink</button></div>
       </div>
     `;
   }

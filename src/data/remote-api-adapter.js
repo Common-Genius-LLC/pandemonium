@@ -42,12 +42,20 @@ async function loadAssetDataUrl(assetId) {
   return out.dataUrl;
 }
 
+// A storyboard holds two image frames, and each goes through the asset store on
+// its own: `img` (final) as `imgAssetId`, `refImg` (reference) as `refImgAssetId`.
+// A frame that is empty stays a plain null in the stored document.
+const FRAME_ASSETS = [['img', 'imgAssetId'], ['refImg', 'refImgAssetId']];
+
 async function hydrateProject(project) {
   const boards = await Promise.all((project.boards || []).map(async (b) => {
-    if (isDataUrl(b.img) || !b.imgAssetId) return b;
-    const img = await loadAssetDataUrl(b.imgAssetId);
-    const next = { ...b, img };
-    delete next.imgAssetId;
+    let next = b;
+    for (const [key, idKey] of FRAME_ASSETS) {
+      if (isDataUrl(next[key]) || !next[idKey]) continue;
+      const data = await loadAssetDataUrl(next[idKey]);
+      next = { ...next, [key]: data };
+      delete next[idKey];
+    }
     return next;
   }));
 
@@ -65,10 +73,13 @@ async function hydrateProject(project) {
 
 async function prepareProjectForRemote(project) {
   const boards = await Promise.all((project.boards || []).map(async (b) => {
-    if (!isDataUrl(b.img)) return b;
-    const assetId = await uploadAsset(b.img, `${b.id || 'board'}.png`);
-    const next = { ...b, imgAssetId: assetId };
-    delete next.img;
+    let next = b;
+    for (const [key, idKey] of FRAME_ASSETS) {
+      if (!isDataUrl(next[key])) continue;
+      const assetId = await uploadAsset(next[key], `${b.id || 'board'}-${key}.png`);
+      next = { ...next, [idKey]: assetId };
+      delete next[key];
+    }
     return next;
   }));
 

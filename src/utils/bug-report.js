@@ -107,10 +107,15 @@ export const bugReporter = new BugReporter();
 function redactProject(project) {
   if (!project) return null;
   let imagesRemoved = 0;
+  // A storyboard has two image frames, final (img) and reference (refImg).
   const boards = (project.boards || []).map((b) => {
-    if (!b.img) return b;
-    imagesRemoved += 1;
-    return { ...b, img: `[image removed: ${b.img.length} chars]` };
+    let next = b;
+    for (const key of ['img', 'refImg']) {
+      if (!next[key]) continue;
+      imagesRemoved += 1;
+      next = { ...next, [key]: `[image removed: ${next[key].length} chars]` };
+    }
+    return next;
   });
   return { ...project, boards, imagesRemoved };
 }

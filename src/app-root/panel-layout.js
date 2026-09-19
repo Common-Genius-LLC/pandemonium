@@ -67,7 +67,7 @@ export class PandemoniumPanelLayout extends LitElement {
        padding so every gap in the layout is identical. The hover bar keeps the
        purple resize tint but no corner rounding, matching the sharp panes. */
     .divider{flex:none;position:relative;z-index:3}
-    .divider::after{content:"";position:absolute;background:transparent;border-radius:0;transition:background .12s}
+    .divider::after{content:"";position:absolute;background:transparent;border-radius:20px;transition:background .12s}
     .divider.v{width:6px;cursor:col-resize}
     .divider.v::after{inset:0 2px}
     .divider.h{height:6px;cursor:row-resize}
@@ -115,7 +115,7 @@ export class PandemoniumPanelLayout extends LitElement {
        neighbor, or merging -- so the preview always reads as "this is the area
        you are about to get"; a merge (which swallows a whole neighbor) is drawn
        fainter so the larger, more destructive reach still looks different. */
-    .ghost{position:fixed;z-index:40;pointer-events:none;border-radius:4px;background:var(--res);opacity:.34}
+    .ghost{position:fixed;z-index:40;pointer-events:none;border-radius:20px;background:var(--res);opacity:.34}
     .ghost.merge{opacity:.2}
 
     @media (max-width:1100px){
@@ -372,7 +372,17 @@ export class PandemoniumPanelLayout extends LitElement {
 
   render() {
     if (!this._store.project) return html``;
-    return this.#node(this.#layout());
+    const layout = this.#layout();
+    // Focused writing mode: show only the focused leaf, without touching the
+    // saved split tree. If the leaf no longer exists (pane was closed while
+    // focused), fall through to the normal full-tree render.
+    const focusedId = this._store.ui && this._store.ui.focusedLeaf;
+    if (focusedId) {
+      const path = pathTo(layout, focusedId);
+      const leafNode = path && path[path.length - 1];
+      if (leafNode) return this.#leaf(leafNode);
+    }
+    return this.#node(layout);
   }
 }
 

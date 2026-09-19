@@ -116,6 +116,7 @@ export class PandemoniumSelectionToolbar extends LitElement {
     const parts = this._parts;
     const items = linkToItems({
       onStoryboard: () => this.#boardFromParts(parts),
+      onBlankStoryboard: () => this.#blankFromParts(parts),
       onResearch: () => this.#sourceFromParts(parts),
       onSound: () => dispatch(this, 'pandemonium-toast', { message: 'Sound linking is coming soon.' }),
     });
@@ -136,12 +137,23 @@ export class PandemoniumSelectionToolbar extends LitElement {
     input.onchange = async () => {
       const files = [...(input.files || [])].filter(isBoardMediaFile);
       if (!files.length) return;
-      for (const file of files) store.addBoard({ parts, img: await readFileAsDataURL(file), caption: '' });
+      // Final frames (the deliberate "this is the frame" action); the first
+      // fills an empty final frame already on this passage, see placeFrame.
+      for (const file of files) store.placeFrame({ parts, img: await readFileAsDataURL(file), caption: '', mode: 'final' });
       dispatch(this, 'pandemonium-toast', {
-        message: files.length === 1 ? 'Board added.' : files.length + ' boards added to this passage.',
+        message: files.length === 1 ? 'Storyboard added.' : files.length + ' storyboards added to this passage.',
       });
     };
     input.click();
+  }
+
+  // A storyboard with no image in either frame, on the selected passage.
+  #blankFromParts(parts) {
+    const store = this._store.store;
+    store.revealContent('boards');
+    const board = store.addBlankBoard({ parts });
+    store.setUI({ highlightBoard: board.id, highlightMode: 'final' });
+    dispatch(this, 'pandemonium-toast', { message: 'Blank storyboard added. Give it a note, or drop an image on either frame.' });
   }
 
   #sourceFromParts(parts) {

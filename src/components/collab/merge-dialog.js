@@ -87,7 +87,7 @@ export class PdMergeDialog extends LitElement {
 
   #describeRecord(collection, rec) {
     if (!rec) return null;
-    if (collection === 'boards') return (rec.caption ? rec.caption + ' · ' : '') + (rec.img ? 'has image' : 'blank board');
+    if (collection === 'boards') return (rec.caption ? rec.caption + ' · ' : '') + (rec.img || rec.refImg ? 'has image' : 'blank storyboard');
     if (collection === 'research') return (rec.title || 'Untitled') + (rec.url ? ' · ' + rec.url : '');
     if (collection === 'comments') return rec.body || '(empty comment)';
     if (collection === 'links') return 'link to ' + (rec.researchId || 'a source');
