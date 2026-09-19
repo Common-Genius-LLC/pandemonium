@@ -13,7 +13,7 @@ import { getParsed } from '../fountain/cache.js';
 import { formStyles, chipStyles } from '../styles/shared.js';
 import '../components/ui/logo.js';
 import '../components/ui/button.js';
-import '../components/ui/theme-toggle.js';
+import '../components/ui/settings-dialog.js';
 import '../components/search/search-field.js';
 
 // Figma "Title bar" (node 39:72): the grey gradient chrome, the white wordmark
@@ -199,22 +199,21 @@ export class PandemoniumTopbar extends LitElement {
       items.push({ label: 'Share...', fn: () => dispatch(this, 'pandemonium-open-share', {}) });
     }
     items.push({ label: 'Export', fn: () => this.#openExportMenu(anchor) });
-    items.push({ label: 'Storyboard settings', fn: () => this.#openBoardSettingsMenu(anchor) });
+    items.push({ divider: true });
+    items.push({ label: 'Settings...', fn: () => this.#openAppSettings() });
     dispatch(this, 'pandemonium-open-menu', { anchor, items });
   }
 
-  // Was its own gear button in the boards panel; moved here with the rest of
-  // the project-level settings now that the panel itself only needs to be
-  // about the boards in it.
-  #openBoardSettingsMenu(anchor) {
-    const store = this._store.store;
-    const toRef = store.project.dropToReference !== false;
-    dispatch(this, 'pandemonium-open-menu', {
-      anchor,
-      items: [
-        { label: 'Drops from script/timeline → Reference', selected: toRef, fn: () => store.setDropToReference(true) },
-        { label: 'Drops from script/timeline → Final', selected: !toRef, fn: () => store.setDropToReference(false) },
-      ],
+  // One window for every preference. The theme used to be a glyph in the title
+  // bar and a row on every right-click menu, and the storyboard drop target a
+  // submenu two levels into File: three corners for two decisions. The only
+  // button is Done, because every control acts as it is touched.
+  #openAppSettings() {
+    dispatch(this, 'pandemonium-open-dialog', {
+      title: 'Settings',
+      width: 440,
+      doneOnly: true,
+      body: html`<pd-settings></pd-settings>`,
     });
   }
 
@@ -270,7 +269,6 @@ export class PandemoniumTopbar extends LitElement {
       </div>
       <div id="actions">
         <span id="saveDot" class=${syncStatus.state} title=${this.#syncTitle()}></span>
-        <pd-theme-toggle></pd-theme-toggle>
         <pd-button @click=${(e) => this.#openFileMenu(e)} title="New, open, save, share and export">File</pd-button>
         <pd-button variant=${session.isAuthed() ? 'default' : 'pink'} @click=${() => this.#openAccount()}
           title=${session.isAuthed() ? 'Your account and cloud projects' : 'Sign in to sync your projects'}>

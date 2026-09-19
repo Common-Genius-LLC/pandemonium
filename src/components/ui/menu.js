@@ -10,7 +10,8 @@ import { clamp } from '../../utils/format.js';
 // at a raw viewport point (the right-click context menus in panel-layout.js
 // and pandemonium-app.js use this form, since there is no anchor element for a
 // cursor position). `items` entries are either {label, selected, danger, fn}
-// or {divider: true} for a separator line. Pass variant:'pills' for the
+// or {divider: true} for a separator line, or {swatches: [{color, label,
+// selected, fn}]} for a single row of round colour buttons. Pass variant:'pills' for the
 // "link to" menu (Figma 101-2170): a bare stack of solid colored pills where
 // each item's `accent` is its fill color.
 export class PdMenu extends LitElement {
@@ -32,6 +33,19 @@ export class PdMenu extends LitElement {
        check, so the labels stay a clean column. */
     button.on,button.on:hover{background:var(--res);color:#fff}
     button.danger{color:#ffb3c1}
+    /* A swatch row: {swatches:[...]} becomes one row of round colour buttons
+       rather than six labelled rows. Colour is the one choice where the word
+       for it is worth less than the thing itself, and six words down a menu
+       cost six lines to say what one row says at a glance. */
+    .swatches{display:flex;gap:7px;padding:4px 6px 6px}
+    .swatches button{
+      width:18px;height:18px;flex:none;padding:0;border:0;border-radius:50%;cursor:pointer;
+      transition:transform .1s;
+    }
+    .swatches button:hover{transform:scale(1.18)}
+    /* The chosen one wears a ring the colour of the menu it sits on, then a
+       light one outside it, so the mark reads on every swatch in the row. */
+    .swatches button.on{box-shadow:0 0 0 2px var(--overlay),0 0 0 3.5px rgba(255,255,255,.92)}
     .sep{height:1px;margin:3px 6px;background:rgba(255,255,255,.16);flex:none}
     /* Pills variant: the "link to" menu (Figma node 101-2170) is a bare,
        right-aligned stack of solid colored pills (storyboard / research /
@@ -117,9 +131,17 @@ export class PdMenu extends LitElement {
     }
     return html`
       <div class="pop" style="left:${this._x || 0}px;top:${this._y || 0}px">
-        ${this._items.map((it) => it.divider ? html`<div class="sep"></div>` : html`<button
-          class="${it.danger ? 'danger' : ''} ${it.selected ? 'on' : ''}"
-          @click=${() => this.#pick(it)}>${it.label}</button>`)}
+        ${this._items.map((it) => {
+          if (it.divider) return html`<div class="sep"></div>`;
+          if (it.swatches) {
+            return html`<div class="swatches">${it.swatches.map((sw) => html`<button
+              class=${sw.selected ? 'on' : ''} style="background:${sw.color}" title=${sw.label || ''}
+              @click=${() => this.#pick(sw)}></button>`)}</div>`;
+          }
+          return html`<button
+            class="${it.danger ? 'danger' : ''} ${it.selected ? 'on' : ''}"
+            @click=${() => this.#pick(it)}>${it.label}</button>`;
+        })}
       </div>
     `;
   }

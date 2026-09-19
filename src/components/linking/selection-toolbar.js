@@ -4,7 +4,6 @@ import { LitElement, html, css } from 'lit';
 import { StoreController } from '../../state/store-controller.js';
 import { dispatch } from '../../utils/events.js';
 import { readFileAsDataURL, isBoardMediaFile, BOARD_MEDIA_ACCEPT } from '../../utils/files.js';
-import { openSourceDialog } from '../research/source-dialog.js';
 import { linkToItems } from './link-actions.js';
 import { clamp } from '../../utils/format.js';
 
@@ -104,6 +103,9 @@ export class PandemoniumSelectionToolbar extends LitElement {
       return;
     }
     if (act === 'tolink') {
+      // The script has to be on screen to be selected in, the mirror of
+      // #sourceFromParts revealing Research for the other direction.
+      store.revealContent('script');
       store.setUI({ linking: { from: 'research', docId: store.ui.openDoc, rParts: this._parts } });
     }
   }
@@ -156,9 +158,13 @@ export class PandemoniumSelectionToolbar extends LitElement {
     dispatch(this, 'pandemonium-toast', { message: 'Blank storyboard added. Give it a note, or drop an image on either frame.' });
   }
 
+  // One flow whether or not a source exists yet: reveal the panel and arm the
+  // pick. Anything created in the panel while it is armed links itself to this
+  // passage (see #consumePendingLink in research-panel.js), so there is no
+  // "you have nothing yet" branch and no modal form.
   #sourceFromParts(parts) {
     const store = this._store.store;
-    if (!store.project.research.length) { openSourceDialog(this, store, parts, 'link'); return; }
+    store.revealContent('research'); // the source has to be pickable to be picked
     store.setUI({ linking: { from: 'script', parts }, openDoc: null });
   }
 

@@ -48,6 +48,28 @@
   --ok:#1f8c62;
   --pend:#dbe6f9;        /* pending selection while linking */
   --warn:#f9dbdb;        /* needs attention */
+  /* Research source colours. Not new hues: each is the muted, card-weight
+     tint of a hue the app already carries (yellow --act, green --board, pink
+     --res, blue --link, orange --sound), so colouring a source sorts it
+     without introducing a palette of its own. The label text stays --ink in
+     both themes, which is why the light set is pale and the dark set deep
+     rather than one set used twice. */
+  --note-plain:#eeeeee;
+  --note-yellow:#fbf0cf;
+  --note-green:#e3f1d3;
+  --note-pink:#f7dcef;
+  --note-blue:#dbe6f9;
+  --note-orange:#fbe2d1;
+  /* The same six as swatches. A card fill is a large quiet surface and a
+     swatch is an 18px dot, so they cannot be the same value: at that size the
+     pale fills are indistinguishable from each other and from the menu behind
+     them. These are the saturated, slightly darker reading of each. */
+  --note-plain-dot:#b0b0b0;
+  --note-yellow-dot:#e0a92b;
+  --note-green-dot:#6fa84a;
+  --note-pink-dot:#c93d9d;
+  --note-blue-dot:#3b82d6;
+  --note-orange-dot:#e0702c;
   /* Chrome, from the Figma "Button-Standard-Component" (21:69),
      "panel-dropdown" (31:188) and "Title bar" (39:72) components. */
   --btn-line:#b8b8b8;    /* button border, at rest */
@@ -115,6 +137,21 @@
   --ok:#3fae86;
   --pend:#25334a;
   --warn:#3d2529;
+  /* Deep rather than pale, for the same --ink label on a dark page. */
+  --note-plain:#212327;
+  --note-yellow:#3a3220;
+  --note-green:#26301f;
+  --note-pink:#35202f;
+  --note-blue:#212d3f;
+  --note-orange:#37271c;
+  /* Lifted rather than deepened: a swatch sits on the floating menu, which on
+     this theme is lighter than the page, not darker. */
+  --note-plain-dot:#6b6e74;
+  --note-yellow-dot:#d4a72c;
+  --note-green-dot:#7fb055;
+  --note-pink-dot:#d254ad;
+  --note-blue-dot:#5aa9ef;
+  --note-orange-dot:#e8813f;
   --btn-line:#3a3d43;
   --btn-line-on:#4d5057;
   --btn-bg:#232529;

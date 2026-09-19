@@ -2,6 +2,7 @@
 
 import { LitElement, html, css, nothing } from 'lit';
 import { StoreController } from '../../state/store-controller.js';
+import { docTitle } from '../../data/research-doc.js';
 
 // Purely reactive: visibility and message are entirely derived from
 // ui.pendingRelink / ui.linking / ui.pair, so nothing needs to imperatively
@@ -53,7 +54,7 @@ export class PandemoniumLinkbar extends LitElement {
     }
     if (ui.linking) {
       const message = ui.linking.from === 'script'
-        ? 'Pick the source: select a passage inside a doc, or click a card to link the whole document.'
+        ? 'Pick the source in the Research panel: click a card to link the whole source, or open one and select a passage inside it.'
         : 'Now select the matching passage in the script.';
       return html`<div class="bar"><span>${message}</span><button @click=${() => this.#cancel()}>Cancel</button></div>`;
     }
@@ -61,9 +62,11 @@ export class PandemoniumLinkbar extends LitElement {
       const project = this._store.project;
       const link = project.links.find((l) => l.id === ui.pair);
       const doc = link ? project.research.find((d) => d.id === link.researchId) : null;
+      // docTitle, not doc.title: a source titled by nothing but its file name
+      // or its host still has a name worth showing here.
       return html`
         <div class="bar">
-          <span>Linked to "${(doc && doc.title) || 'source'}"</span>
+          <span>Linked to "${doc ? docTitle(doc) : 'source'}"</span>
           <button @click=${() => this.#unlink()}>Unlink</button>
           <button @click=${() => this.#close()}>Close</button>
         </div>

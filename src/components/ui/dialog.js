@@ -13,7 +13,7 @@ export class PdDialog extends LitElement {
   static properties = {
     _open: { state: true }, _title: { state: true }, _body: { state: true },
     _okLabel: { state: true }, _width: { state: true },
-    _bare: { state: true },
+    _bare: { state: true }, _doneOnly: { state: true },
   };
 
   static styles = [formStyles, chipStyles, css`
@@ -63,13 +63,19 @@ export class PdDialog extends LitElement {
   // `width` overrides the default 380px for bodies that need more room.
   // `bare` drops the panel and the footer: dismissing IS the commit, so there
   // is no Cancel to offer and no Save to press.
-  open({ title, body, onOk, okLabel, width, bare }) {
+  // `doneOnly` is for a body whose controls act the moment they are touched
+  // (Settings): the footer keeps one button, Done, and loses Cancel, which
+  // would promise a revert that nothing implements. Done rather than no
+  // footer at all, because Escape and a backdrop click are real exits but
+  // invisible ones, and a window should always show the way out of itself.
+  open({ title, body, onOk, okLabel, width, bare, doneOnly }) {
     this._title = title;
     this._body = body;
     this._onOk = onOk || null;
     this._okLabel = okLabel || 'Save';
     this._width = width || null;
     this._bare = !!bare;
+    this._doneOnly = !!doneOnly;
     this._open = true;
     this.setAttribute('data-open', '');
     this.updateComplete.then(() => {
@@ -105,7 +111,10 @@ export class PdDialog extends LitElement {
         <div class="dlg ${this._bare ? 'bare' : ''}" style=${this._width ? `--dlg-w:${this._width}px` : ''}>
           ${this._title ? html`<h3>${this._title}</h3>` : ''}
           ${this._body}
-          ${this._bare ? '' : html`
+          ${this._bare ? '' : this._doneOnly ? html`
+            <div class="foot">
+              <pd-button variant="act" @click=${() => this.close()}>Done</pd-button>
+            </div>` : html`
             <div class="foot">
               <pd-button @click=${() => this.close()}>Cancel</pd-button>
               <pd-button variant="act" @click=${() => this.#ok()}>${this._okLabel}</pd-button>

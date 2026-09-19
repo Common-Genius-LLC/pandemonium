@@ -12,7 +12,6 @@ import { fountainTheme } from './cm-theme.js';
 import { fountainMinimap, minimapTheme, setMinimapMarks } from './cm-minimap.js';
 import { boardLinkKinds, gutterRecord } from '../../state/selectors.js';
 import { captureFromSelection } from './selection-capture.js';
-import { openSourceDialog } from '../research/source-dialog.js';
 import { parseFountain } from '../../fountain/parse.js';
 import { resolvePart, snapToWords } from '../../fountain/resolve.js';
 import { plainPosToRaw, rawOffsetToPlainPos, blockRawRange } from '../../fountain/doc-map.js';
@@ -282,7 +281,13 @@ export class PandemoniumScriptEditor extends LitElement {
     }
     if (act === 'blank') { this.#blankStoryboard(this.#boardParts(sec)); return; }
     if (act === 'source') {
-      if (!store.project.research.length) { openSourceDialog(this, store, sec.parts, 'link'); return; }
+      // Reveal the Research panel first, exactly as Storyboard reveals Boards
+      // above. Without this, choosing Research on the default layout (which
+      // carries no research pane at all) armed an invisible picking mode and
+      // put up a bar asking the user to click a card that was not on screen.
+      // The panel then handles both cases, an existing source or a new one,
+      // with the same pick: no branch here on whether any source exists yet.
+      store.revealContent('research');
       store.setUI({ linking: { from: 'script', parts: sec.parts }, openDoc: null });
       return;
     }
@@ -388,7 +393,7 @@ export class PandemoniumScriptEditor extends LitElement {
 
   // Dropping an image onto a paragraph boards it. External drops (from outside
   // the storyboard panel) go in the REFERENCE frame by default (see
-  // dropToReference, set under File > Storyboard settings). The image goes in
+  // dropToReference, set under File > Settings). The image goes in
   // that frame of a storyboard already on this passage if it is empty (so the
   // beat keeps ONE storyboard with both frames); if every storyboard on the
   // passage already has that frame filled, the first is replaced after a

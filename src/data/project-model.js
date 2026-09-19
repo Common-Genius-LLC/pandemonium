@@ -10,6 +10,7 @@
 
 import { uid, CHIPCOLORS } from '../utils/format.js';
 import { defaultFountain } from './schema.js';
+import { researchKind } from './research-doc.js';
 
 // ---- scripts ----
 
@@ -375,20 +376,51 @@ export function deleteBoard(project, id) {
 }
 
 // ---- research ----
+//
+// One record per source, holding any combination of media, a URL and notes.
+// `kind` is not chosen by the caller any more: it is derived from what the
+// source actually holds (see researchKind) and re-derived on every edit, so a
+// note that gains a URL, or a link that gains notes, tells the truth about
+// itself afterwards. Callers may still pass a kind; it is ignored, which is
+// what keeps old call sites honest instead of silently authoritative.
 
-export function addResearch(project, { kind, title, url, body, attachment } = {}) {
-  const doc = { id: uid(), kind: kind || 'note', title: (title || '').trim() || 'Untitled', url: (url || '').trim(), body: body || '' };
-  if (attachment) doc.attachment = attachment; // {name, mime, data: dataURL}: opaque, not span-linkable
+export function addResearch(project, { title, url, body, attachment, color } = {}) {
+  const doc = {
+    id: uid(),
+    // Empty, not the literal string "Untitled": every surface names a source
+    // through docTitle(), which falls back to the file name, the host, or the
+    // first line of the notes. Storing the word put it in the title FIELD, so
+    // the writer had to clear it before typing a real name.
+    title: (title || '').trim(),
+    url: (url || '').trim(),
+    body: body || '',
+    color: color || null,
+    // Topics this source belongs to. Free text, deduped, and the project's
+    // whole label list is derived from these (see allLabels): nothing to set
+    // up before using one, nothing left behind when the last use goes.
+    labels: [],
+    createdAt: Date.now(),
+  };
+  if (attachment) doc.attachment = attachment; // {name, mime, data: dataURL}
+  doc.kind = researchKind(doc);
   return { project: { ...project, research: [...project.research, doc] }, doc };
 }
 
-export function updateResearchTitle(project, id, title) {
-  return { ...project, research: project.research.map((d) => (d.id === id ? { ...d, title } : d)) };
+// The one research edit. Everything else (title, body, url, colour, a piece of
+// media arriving later) goes through here so `kind` can never drift from the
+// content: patching any field re-derives it.
+export function updateResearch(project, id, patch) {
+  return {
+    ...project,
+    research: project.research.map((d) => {
+      if (d.id !== id) return d;
+      const next = { ...d, ...patch };
+      next.kind = researchKind(next);
+      return next;
+    }),
+  };
 }
 
-export function updateResearchBody(project, id, body) {
-  return { ...project, research: project.research.map((d) => (d.id === id ? { ...d, body } : d)) };
-}
 
 export function deleteResearch(project, id) {
   return {

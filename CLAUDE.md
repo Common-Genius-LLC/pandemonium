@@ -374,6 +374,128 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
     the menu and type. The rows stay reachable by arrows, Enter, click, or
     lowercase. **Done.**
 
+15. Research panel, first pass. **One record, not three kinds.** A note and a
+    link were never two things: the stored record has always been
+    `{title, url, body, attachment}`, and the `+ Note` / `+ Link` buttons opened
+    the same dialog with a different preset, after which a "note" could hold a
+    URL and a "link" could hold a body with only the card's background colour
+    noticing. `kind` is now derived from what a source holds
+    (`researchKind` in `src/data/research-doc.js`, re-derived by
+    `updateResearch` on every edit) instead of being asked for, the Kind select
+    is gone from the dialog, and the URL is a field on every source in the
+    reader. Old files need no migration: the stored `kind` is never read back,
+    only recomputed. **Media works.** A dropped file made a record whose card
+    was blank and whose reader said "Nothing here yet", and `files.js` pointed
+    at a `research/attachment-viewer.js` that did not exist; it exists now and
+    renders image, video, audio and PDF inline (blob URL, since Chrome will not
+    navigate to or frame a `data:` PDF) with Open and Download for anything
+    else. Upload is a toolbar button, not just an unadvertised drop target. A
+    text-shaped file (`isTextShaped`, previously dead code) is read into the
+    notes instead, so its passages are linkable. **Colour.** Six muted fills
+    (`--note-*` in `tokens.css`, both themes), set from the card's overflow menu
+    or the reader's, using a new `accent` swatch on `pd-menu` items. **Finding
+    things.** Search across title, notes, URL and file name, plus an "unlinked
+    only" filter, both pure in `filterResearch` and tested. **The other end of
+    the link is visible.** The reader lists the script passages a source backs,
+    each row jumping to the passage, unlinking, or reattaching a lost one; the
+    card's link count is a button that jumps rather than a statistic.
+    **Bug: the research link path was unreachable on the default layout.**
+    `link to > Research` armed `ui.linking` without revealing a research pane
+    (the storyboard path has always called `revealContent`), so on the default
+    layout it put up a bar telling the user to click a card that was not on
+    screen; `openPair` had the same hole. Both reveal now. **Bug: nothing could
+    be created mid-link.** Anything created while the script waits for a source
+    (note, file, link, dialog) now answers that wait and links itself. Also:
+    URL and image drops and pastes onto the panel, `addResearch` storing an
+    empty title rather than the literal word "Untitled", and the empty pane
+    carrying its own invitation. **Not done**: Read and Write are still two
+    modes (only Read can resolve a selection to an anchor; Phase 3's CodeMirror
+    surface unifies them, as it did for the script), Write does not show the
+    media beside the notes, and a link is stored as typed with no title or
+    favicon fetched. Superseded in part by item 16, which removes the mode.
+
+16. Research panel, second pass: nothing to be told before using it.
+    **The edit mode is gone.** Read / Write meant the same surface did
+    different things depending on a toggle: in one you could link a passage but
+    not fix a typo, in the other the reverse. Notes are edited where they are
+    read, a paragraph at a time, reusing the slideshow's in-place line editing
+    (`keyed()` to remount a contenteditable, `composedPath` for document-level
+    keys). Enter splits at the caret, Backspace at the start merges upward,
+    Escape reverts through `execCommand`, clicking under the notes puts the
+    caret at their end. The splicing is pure and tested (`parasToBody`,
+    `setPara`, `splitPara`, `mergePara`); anchors need no re-derivation because
+    a research anchor is a quoted string searched across paragraphs. A commit
+    carries the edit generation it was rendered in, so a blur fired by a
+    browser that removed the element it just split cannot write the pre-split
+    text back over the first half. `ui.readerEdit` is retired for
+    `ui.openDocFocus` ("start with the caret here"). A link highlight stays an
+    object: the cursor turns from caret to pointer over it, and mousedown is
+    suppressed so clicking opens the pair rather than placing a caret.
+    **One way to create.** The `+ New source` tile heads the grid, card-shaped
+    because it makes a card, naming the two faster routes (drop a file, paste a
+    link) where they are used. The creation modal is deleted: the script's
+    `link to > Research` no longer branches on whether any source exists, it
+    reveals the panel and arms the pick, and anything created while armed links
+    itself (`#consumePendingLink`). **Open like a card.** A source opens as the
+    card it came from, same rounding and same colour, holding its material,
+    then its labels, then its notes, then the passages it backs; closing is a
+    `×` at the far right (and Escape), not a back.
+    **Link previews** (`src/data/link-preview.js`, tested): YouTube, Vimeo,
+    direct image/video/audio/PDF and ordinary pages, recognised from the URL
+    alone. Nothing is fetched and no unfurl service is asked, because handing a
+    third party the reading list for an unreleased screenplay is not worth a
+    thumbnail; previews come from the link's own origin. A video loads its
+    player only on click, through `youtube-nocookie.com`. The cost is no
+    fetched titles, which would need a server-side unfurl in `server/` with its
+    own SSRF guards. **Labels** group sources into topics: free text, deduped
+    case-insensitively, the whole list derived from what is in use
+    (`allLabels`), so there is no label manager and no orphans. Chips on the
+    card and in the reader, a topic row above the grid that filters (several
+    topics widen, the search box narrows). Labels stay neutral on purpose: a
+    source already has a colour, and two colour systems would be one more thing
+    to keep straight. **Also:** newest first (insertion order buried every new
+    source below the fold), right-click a card for its menu with the global
+    items, the unlinked filter says "Unlinked" rather than wearing a
+    broken-chain glyph, `revealContent('script')` on the research-to-script
+    direction (the mirror of item 15's fix), the empty "backs" block teaches
+    linking from both ends, and hidden hover controls get `pointer-events:none`
+    so they stop eating clicks. **Not done**: no drag to reorder the grid, no
+    fetched link titles, and a source's notes still commit on blur rather than
+    continuously.
+
+17. Research panel, third pass, plus settings.
+    **Bug: the link field and the label field could not be used at all.** The
+    click handler that puts the caret at the end of the notes lived on the
+    whole scroller and held off with a list of selectors to ignore. Clicking
+    "+ Label" or "Edit link" was caught there and turned into "focus the
+    notes", so neither could be reached. The handlers belong to a `.notes`
+    container now and to nothing else, which fixes it by construction and
+    leaves no blacklist to keep in step as sections are added.
+    **The notes are a sticky note.** 17px text, no field, no border, no focus
+    outline, a tall clickable surface: what it looks like is what tells you it
+    is yours to write on.
+    **Colour is a swatch row.** `pd-menu` takes `{swatches: [...]}` and renders
+    one row of round buttons at the top of the menu instead of six labelled
+    rows, because colour is the one choice where the word is worth less than
+    the thing. Each colour is now two tokens, the muted card fill (`--note-*`)
+    and a saturated, slightly darker dot (`--note-*-dot`), since one value
+    cannot serve both a large quiet surface and an 18px circle. "Open" left the
+    card's menu: clicking the card is what opens it.
+    **Settings.** File > Settings, one window (`pd-settings`), no Save because
+    every control acts as it is touched (`doneOnly` on `pd-dialog`: a single Done, no Cancel promising a revert). It holds
+    the theme, which gains "Match system" (the title-bar toggle could only flip
+    light and dark, so the preference that follows the desktop had no way
+    back), and the storyboard drop target, moved out of its File submenu. The
+    title-bar theme glyph and `pd-theme-toggle` are deleted, and "Toggle theme"
+    is gone from the right-click menu, which is about what was clicked again;
+    `withGlobalItems` no longer emits a trailing divider when nothing follows
+    it. **Script panel** is one white surface, chrome strip and desk alike,
+    matching every other panel (the desk was grey and the strip a second,
+    slightly different grey). The page takes `--field` rather than `--bg`, or
+    on the dark theme it would be the same colour as the desk it lies on and
+    stop reading as a page; inactive tabs keep `--chrome-panel` so the cut-out
+    still works.
+
 ---
 
 ## Working context

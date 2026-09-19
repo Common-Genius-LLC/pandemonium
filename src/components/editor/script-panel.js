@@ -29,10 +29,14 @@ export class PandemoniumScriptPanel extends LitElement {
        the one open, matching the design's two variants: the draft that owns
        the storyboard and research links is the one that looks different. */
     .pbody{position:relative;display:flex;flex-direction:column}
-    /* The one panel that keeps the chrome grey: its tabs are cut out of it.
-       No bottom padding: the active tab must reach the pbody with no gap so
-       it reads as one continuous surface with the working area under it. */
-    .chrome{background:var(--chrome-panel);padding-bottom:0}
+    /* The chrome takes the pane's own fill like every other panel's does; the
+       rule stays only for the padding. The whole pane is one surface now,
+       strip and desk alike, so the script panel matches the others instead of
+       being the one that is grey. Inactive tabs keep --chrome-panel and so
+       still read as sitting behind it, which is what the cut-out needs. No
+       bottom padding: the active tab must reach the pbody with no gap so it
+       reads as one continuous surface with the working area. */
+    .chrome{padding-bottom:0}
     /* Word count floats at the working area's top right. */
     .wc{position:absolute;top:6px;right:10px;z-index:2;color:var(--mut);font-size:10px;white-space:nowrap;pointer-events:none}
     .addtab{

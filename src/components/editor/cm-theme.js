@@ -31,11 +31,15 @@ export const fountainTheme = EditorView.theme({
     // overflow-x hidden so the full-bleed row-hover band (which extends far past
     // the text column, see .cm-sec-hover) is clipped to the panel instead of
     // creating a horizontal scrollbar. lineWrapping means there is no real
-    // horizontal content to scroll. The desk the page sits on (script-panel.js
-    // sets --pane-bg to --panel for this reason, not --bg).
+    // horizontal content to scroll.
+    //
+    // The desk is the pane's own fill, inherited: script-panel.js sets
+    // --pane-bg on the shell and custom properties cross shadow roots, so the
+    // desk can never drift from the chrome strip above it. It used to be grey,
+    // which made this the one pane that did not match the others.
     overflowX: 'hidden',
     overflowY: 'auto',
-    backgroundColor: 'var(--panel)',
+    backgroundColor: 'var(--pane-bg)',
   },
   // A page, not a full-bleed column: paper width, its own fill lifted off the
   // desk with a shadow, margins as padding since CodeMirror owns this box's
@@ -46,7 +50,13 @@ export const fountainTheme = EditorView.theme({
     maxWidth: '600px',
     margin: '40px auto 0 auto',
     padding: '60px 50px 50vh 50px',
-    backgroundColor: 'var(--bg)',
+    // --field, not --bg: the desk is the pane's fill now, and a page the same
+    // colour as the desk it lies on is not a page, it is a hole. On the light
+    // theme --field resolves to the same white and the page's shadow does the
+    // separating; on the dark one it is a step lighter, which is what keeps
+    // the paper reading as paper. The token is right by meaning too, being
+    // the fill of the surfaces you type on.
+    backgroundColor: 'var(--field)',
     boxShadow: '0 2px 14px rgba(0,0,0,.2), 0 0 0 1px rgba(0,0,0,.06)',
     caretColor: 'var(--ink)',
     overflow: 'hidden',

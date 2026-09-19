@@ -10,9 +10,12 @@ export function openPair(store, id) {
   const finalState = store.getFinalState();
   const item = finalState.R.links.find((o) => o.lk.id === id);
   if (!item) return;
-  // With the window-division layout, revealing a pair just opens the linked
-  // doc and marks the pair; it shows wherever a Research pane is visible.
-  const patch = { pair: id, openDoc: item.lk.researchId, readerEdit: false };
+  // Revealing a pair opens the linked source and marks the pair. It shows
+  // wherever a Research pane is visible, so make sure one is: clicking a
+  // research highlight in the script used to do nothing visible at all on a
+  // layout with no research pane.
+  store.revealContent('research');
+  const patch = { pair: id, openDoc: item.lk.researchId };
   if (store.activeScript().id !== finalState.fsc.id) patch.draftId = finalState.fsc.id;
   store.setUI(patch);
 }

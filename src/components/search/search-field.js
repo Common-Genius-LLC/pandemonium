@@ -3,7 +3,8 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { StoreController } from '../../state/store-controller.js';
 import { getParsed } from '../../fountain/cache.js';
-import { docParas } from '../../data/research-doc.js';
+import { docParas, docTitle } from '../../data/research-doc.js';
+import { sourceLabel } from '../research/icons.js';
 import { esc } from '../../utils/format.js';
 
 // Search across scripts, research and boards, as a real field in the title bar
@@ -114,9 +115,13 @@ export class PandemoniumSearchField extends LitElement {
       let researchCount = 0;
       for (const d of project.research) {
         if (researchCount >= CAP) break;
-        if ((d.title || '').toLowerCase().includes(q)) { results.push({ group: 'Research', t: d.title || 'Untitled', sub: d.kind, go: { k: 'doc', id: d.id } }); researchCount++; }
+        // A source is one record holding media, a URL and notes at once, so the
+        // heading matches on any of the three: searching a file name or a host
+        // has to find the source that carries it, not only its typed title.
+        const head = [d.title, d.url, d.attachment && d.attachment.name].filter(Boolean).join(' ').toLowerCase();
+        if (head.includes(q)) { results.push({ group: 'Research', t: docTitle(d), sub: sourceLabel(d), go: { k: 'doc', id: d.id } }); researchCount++; }
         docParas(d).forEach((p, pi) => {
-          if (researchCount < CAP && p.toLowerCase().includes(q)) { results.push({ group: 'Research', t: p, sub: d.title || 'Untitled', go: { k: 'doc', id: d.id, pi } }); researchCount++; }
+          if (researchCount < CAP && p.toLowerCase().includes(q)) { results.push({ group: 'Research', t: p, sub: docTitle(d), go: { k: 'doc', id: d.id, pi } }); researchCount++; }
         });
       }
       let boardCount = 0;
@@ -151,7 +156,7 @@ export class PandemoniumSearchField extends LitElement {
     if (g.k === 'script') {
       store.setUI({ draftId: g.sid, scrollToBlock: g.bi });
     } else if (g.k === 'doc') {
-      const patch = { openDoc: g.id, readerEdit: false };
+      const patch = { openDoc: g.id };
       if (typeof g.pi === 'number') patch.scrollToParagraph = g.pi;
       store.setUI(patch);
     } else if (g.k === 'board') {

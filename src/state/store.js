@@ -299,8 +299,9 @@ export class PandemoniumStore extends EventTarget {
     this.#applyProject(project);
     return doc;
   }
-  updateResearchTitle(id, title) { this.#applyProject(model.updateResearchTitle(this.#project, id, title)); }
-  updateResearchBody(id, body) { this.#applyProject(model.updateResearchBody(this.#project, id, body)); }
+  // Patch any subset of a source's fields ({title, body, url, color,
+  // attachment}); `kind` re-derives itself from the result.
+  updateResearch(id, patch) { this.#applyProject(model.updateResearch(this.#project, id, patch)); }
   deleteResearch(id) {
     this.#applyProject(model.deleteResearch(this.#project, id));
     if (this.#ui.openDoc === id) this.setUI({ openDoc: null });
@@ -429,7 +430,11 @@ function defaultUI(draftId) {
     draftId,
     paneDrafts: {}, // { [leafId]: scriptId } -- per-pane draft override (see scriptForLeaf)
     openDoc: null,
-    readerEdit: false,
+    // A source that was just created opens with the caret already in its
+    // notes. There is no reader "edit mode" for this to be confused with any
+    // more: a source's notes are always editable in place, so this says where
+    // to start, not what is permitted.
+    openDocFocus: false,
     linking: null, // {from:'script', parts} | {from:'research', docId, rParts}
     pair: null, // id of the link currently shown with its connector
     pendingRelink: null, // {type:'board'|'link', id} -- reattaching an existing board/link to a new passage
@@ -451,11 +456,11 @@ function defaultUI(draftId) {
 // Layout is deliberately absent here: it is project state now, and setLayout
 // reports its own view change.
 function viewPatchAffectsView(prev, next) {
-  return prev.draftId !== next.draftId || prev.paneDrafts !== next.paneDrafts || prev.openDoc !== next.openDoc || prev.readerEdit !== next.readerEdit;
+  return prev.draftId !== next.draftId || prev.paneDrafts !== next.paneDrafts || prev.openDoc !== next.openDoc;
 }
 
 // A virtual view is described structurally: which panel arrangement is on
-// screen, and whether a research doc is open for reading or editing.
+// screen, and whether a research source is open.
 //
 // Deliberately no project name, script name, or research doc title. Those are
 // the user's unreleased screenplay material and must not leave the browser in
@@ -463,10 +468,8 @@ function viewPatchAffectsView(prev, next) {
 // paths would shard every row into a long tail of one-off URLs.
 function viewInfo(project, ui) {
   if (!project || !ui) return { title: 'Start screen', path: '/start' };
-  if (ui.openDoc) {
-    const mode = ui.readerEdit ? 'edit' : 'read';
-    return { title: 'Research ' + mode, path: '/project/research/' + mode };
-  }
+  // One view, not a read one and a write one: the reader has no modes.
+  if (ui.openDoc) return { title: 'Research source', path: '/project/research/source' };
   const layout = project.layout;
   const singleLeaf = layout && layout.type === 'leaf';
   if (!singleLeaf) return { title: 'Workspace', path: '/project/workspace' };
