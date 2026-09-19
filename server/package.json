@@ -11,9 +11,11 @@
     "db:show": "bun scripts/db-show.ts",
     "db:sql": "bun scripts/db-sql.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "validate:link-preview": "bun scripts/validate-link-preview.ts"
   },
   "dependencies": {
+    "entities": "^8.1.0",
     "hono": "^4.12.31"
   },
   "devDependencies": {

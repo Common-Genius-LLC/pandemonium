@@ -183,21 +183,26 @@ export class PandemoniumResearchCard extends LitElement {
   // tile. A source with no media has no tile at all, so a wall of notes stays
   // a wall of notes rather than a wall of empty frames.
   //
-  // A link is previewed from the link itself where that is possible at all: a
-  // video's still comes from the video's own host, an image URL is the image
-  // (see data/link-preview.js for why nothing is fetched to learn more).
-  // loading="lazy" so a grid scrolled past does not go and get forty of them.
+  // loading="lazy" so a grid scrolled past does not go and get forty of them,
+  // and no referrer, because many image hosts refuse a hotlink by Referer and
+  // the page the writer is on is nobody else's business.
   #thumb() {
     const att = this.doc.attachment;
     if (att && att.data) {
       if (mediaKind(att) === 'image') return html`<div class="thumb"><img alt="" src=${att.data}></div>`;
       return html`<div class="thumb">${sourceIcon(this.doc)}</div>`;
     }
-    const p = this.doc.url ? previewOf(this.doc.url) : null;
-    if (p && p.thumb) {
+    // The server's image when the source has been read (stored on it, so the
+    // grid draws offline and never fans out one request per card), else what
+    // the URL alone can promise (a video's own still, an image link).
+    const url = this.doc.url;
+    const local = url ? previewOf(url) : null;
+    const stored = this.doc.preview && this.doc.preview.url === url ? this.doc.preview : null;
+    const src = (stored && stored.image) || (local && local.thumb);
+    if (src) {
       return html`<div class="thumb">
-        <img alt="" src=${p.thumb} loading="lazy" @error=${(e) => { e.target.remove(); }}>
-        ${p.embed ? html`<span class="playdot">&#9654;</span>` : nothing}
+        <img alt="" src=${src} loading="lazy" decoding="async" referrerpolicy="no-referrer" @error=${(e) => { e.target.remove(); }}>
+        ${local && local.embed ? html`<span class="playdot">&#9654;</span>` : nothing}
       </div>`;
     }
     return nothing;

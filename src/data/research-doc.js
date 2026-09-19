@@ -131,12 +131,14 @@ export function hostOf(url) {
   try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
 }
 
-// A source's title when it has none of its own: the host for a link, the file
-// name for a piece of media, the first words of the notes otherwise.
+// A source's title when it has none of its own: the file name for a piece of
+// media, the page's own title for a link the server has read, its host for
+// one it has not, the first words of the notes otherwise.
 export function docTitle(doc) {
   const given = (doc.title || '').trim();
   if (given && given !== 'Untitled') return given;
   if (doc.attachment && doc.attachment.name) return doc.attachment.name;
+  if (doc.preview && doc.preview.title && doc.preview.url === doc.url) return doc.preview.title;
   const host = hostOf(doc.url || '');
   if (host) return host;
   const first = (doc.body || '').trim().split('\n')[0];
@@ -148,6 +150,8 @@ export function docTitle(doc) {
 export function docSnippet(doc) {
   const body = (doc.body || '').trim();
   if (body) return body.slice(0, 180);
+  const p = doc.preview && doc.preview.url === doc.url ? doc.preview : null;
+  if (p && p.description) return p.description.slice(0, 180);
   if ((doc.url || '').trim()) return doc.url;
   if (doc.attachment && doc.attachment.mime) return doc.attachment.mime;
   return '';
@@ -229,7 +233,8 @@ export function filterResearch(research, { query = '', unlinkedOnly = false, lin
     if (unlinkedOnly && linked && linked.has(d.id)) return false;
     if (want && !(d.labels || []).some((l) => want.includes(normalizeLabel(l).toLowerCase()))) return false;
     if (!q) return true;
-    const hay = [d.title, d.body, d.url, d.attachment && d.attachment.name, ...(d.labels || [])]
+    const hay = [d.title, d.body, d.url, d.attachment && d.attachment.name, ...(d.labels || []),
+      d.preview && d.preview.title, d.preview && d.preview.description]
       .filter(Boolean).join('\n').toLowerCase();
     return hay.includes(q);
   });

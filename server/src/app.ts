@@ -11,6 +11,7 @@ import { HttpError } from './errors';
 import authRoutes from './auth/routes';
 import assetRoutes from './routes/assets';
 import projectRoutes from './routes/projects';
+import linkPreviewRoutes from './routes/link-preview';
 import { shares as shareRoutes, sharedPublic } from './routes/shares';
 import type { AppEnv } from './types';
 
@@ -37,8 +38,10 @@ app.route('/v1/assets', assetRoutes);
 // router must claim its /shares and /share-link subpaths first.
 app.route('/v1/projects', shareRoutes);
 app.route('/v1/projects', projectRoutes);
-// The one unauthenticated data surface: read-link resolution (see shares.ts).
+// The unauthenticated surfaces: read-link resolution (see shares.ts), and
+// link previews (see routes/link-preview.ts for how that one is fenced).
 app.route('/v1/shared', sharedPublic);
+app.route('/v1/link-preview', linkPreviewRoutes);
 
 app.notFound((c) => c.json({ error: 'not found' }, 404));
 

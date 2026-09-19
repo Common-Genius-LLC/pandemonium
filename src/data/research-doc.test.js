@@ -334,3 +334,28 @@ describe('filterResearch by label', () => {
     expect(filterResearch(docs, { query: 'costume' }).map((d) => d.id)).toEqual(['a', 'c']);
   });
 });
+
+// A research source keeps the server's preview of its link (see
+// storablePreview), and uses it where nothing the writer typed says more.
+describe('a stored link preview', () => {
+  const url = 'https://open.spotify.com/track/x';
+  const preview = { url, domain: 'open.spotify.com', title: 'Mr. Brightside', description: 'The Killers · Hot Fuss', image: 'https://i.scdn.co/a' };
+  it('names an untitled link after its page', () => {
+    expect(docTitle({ url, preview })).toBe('Mr. Brightside');
+  });
+  it('never outranks a title the writer gave it', () => {
+    expect(docTitle({ title: 'Song for the bar scene', url, preview })).toBe('Song for the bar scene');
+  });
+  it('is ignored once the link has changed under it', () => {
+    expect(docTitle({ url: 'https://www.bbc.co.uk/', preview })).toBe('bbc.co.uk');
+  });
+  it('previews the page in the grid when there are no notes, and gives way to notes', () => {
+    expect(docSnippet({ url, preview })).toBe('The Killers · Hot Fuss');
+    expect(docSnippet({ url, preview, body: 'use for the chase' })).toBe('use for the chase');
+  });
+  it('makes the page title and description searchable', () => {
+    const docs = [{ id: 'a', title: '', url, preview }, { id: 'b', title: 'Other' }];
+    expect(filterResearch(docs, { query: 'brightside' }).map((d) => d.id)).toEqual(['a']);
+    expect(filterResearch(docs, { query: 'hot fuss' }).map((d) => d.id)).toEqual(['a']);
+  });
+});

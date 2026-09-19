@@ -1,4 +1,12 @@
-// What a URL is, worked out from the URL itself.
+// What a URL is, worked out from the URL itself, plus the helpers for the
+// server's Open Graph preview (GET /v1/link-preview, see
+// server/src/link-preview/). The two are layers, not rivals: the server reads
+// the page and knows its real title, description and image; this file knows
+// only the URL, and is what still works with no server at all (offline, or
+// the API down). The card prefers the server's answer and keeps this one for
+// what the page cannot say: whether a link can be played inline.
+//
+// The rest of this header describes the URL-only layer.
 //
 // A research panel full of bare blue strings tells the writer nothing, so a
 // link gets a preview. The question is where the preview comes from, and the
@@ -99,4 +107,31 @@ export function previewLabel(p) {
     video: 'Video', audio: 'Audio', pdf: 'PDF', page: 'Page',
   }[p.kind] || 'Page';
   return what + ' on ' + p.host;
+}
+
+// ---- the server's preview ----
+
+// Whether a server preview has anything a card could show beyond the URL
+// itself. A page that could not be read comes back with its URL as its title
+// and nothing else, and a card made of that is just a link wearing a box.
+export function isRichPreview(p) {
+  if (!p) return false;
+  return !!((p.sources && p.sources.title && p.sources.title !== 'url') || p.description || p.image);
+}
+
+// What a research source keeps of a preview: enough to draw its card in the
+// grid offline and to name the source, and nothing time-stamped. Two devices
+// that fetch the same URL get the same cached answer, so what they store is
+// identical and the sync merge never sees a conflict that is not really one.
+// A preview with nothing rich in it is not kept at all, so it is asked for
+// again next time instead of a block being remembered forever.
+export function storablePreview(p) {
+  if (!isRichPreview(p)) return null;
+  return {
+    url: p.url,
+    domain: p.domain || '',
+    title: p.sources && p.sources.title !== 'url' ? p.title : null,
+    description: p.description || null,
+    image: p.image || null,
+  };
 }

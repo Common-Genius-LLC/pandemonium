@@ -358,16 +358,16 @@ export class PandemoniumApp extends LitElement {
         </div>
       `}
       <pd-toast id="toast"></pd-toast>
-      <pd-dialog id="dialog"></pd-dialog>
+      <pd-dialog id="dialog" data-clarity-mask="true"></pd-dialog>
       <pd-menu id="menu"></pd-menu>
       <pandemonium-selection-toolbar id="selToolbar"></pandemonium-selection-toolbar>
-      <pandemonium-linkbar></pandemonium-linkbar>
-      <pandemonium-highlight-popover id="boardPopover"></pandemonium-highlight-popover>
-      <pandemonium-comment-popover id="commentPopover"></pandemonium-comment-popover>
-      <pandemonium-slideshow id="slideshow"></pandemonium-slideshow>
-      <pd-account-dialog id="accountDialog"></pd-account-dialog>
-      <pd-merge-dialog></pd-merge-dialog>
-      <pd-share-dialog id="shareDialog"></pd-share-dialog>
+      <pandemonium-linkbar data-clarity-mask="true"></pandemonium-linkbar>
+      <pandemonium-highlight-popover id="boardPopover" data-clarity-mask="true"></pandemonium-highlight-popover>
+      <pandemonium-comment-popover id="commentPopover" data-clarity-mask="true"></pandemonium-comment-popover>
+      <pandemonium-slideshow id="slideshow" data-clarity-mask="true"></pandemonium-slideshow>
+      <pd-account-dialog id="accountDialog" data-clarity-mask="true"></pd-account-dialog>
+      <pd-merge-dialog data-clarity-mask="true"></pd-merge-dialog>
+      <pd-share-dialog id="shareDialog" data-clarity-mask="true"></pd-share-dialog>
       ${BETA ? html`<pd-bug-report-dialog id="bugReport"></pd-bug-report-dialog>` : ''}
     `;
   }

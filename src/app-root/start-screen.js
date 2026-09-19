@@ -154,7 +154,7 @@ export class PandemoniumStartScreen extends LitElement {
           manage and streamline pre-production
         </div>
 
-        <pd-project-card id="newCard"></pd-project-card>
+        <pd-project-card id="newCard" data-clarity-mask="true"></pd-project-card>
 
         <div class="actions">
           <pd-button @click=${() => this.#create()}>Create Project</pd-button>
@@ -173,7 +173,7 @@ export class PandemoniumStartScreen extends LitElement {
                 ? html`<div class="recents-msg">Loading…</div>`
                 : this._recents.length === 0
                   ? html`<div class="recents-msg">No cloud projects yet. Anything you create while signed in will show up here.</div>`
-                  : html`<div class="recents-row">
+                  : html`<div class="recents-row" data-clarity-mask="true">
                       ${this._recents.map((p) => html`
                         <pd-project-card compact closed .scale=${0.62}
                           .projectName=${p.name || 'Untitled'} .workspace=${p.workspace || ''}

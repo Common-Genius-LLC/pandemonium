@@ -263,7 +263,7 @@ export class PandemoniumBoardsPanel extends LitElement {
                 <pd-button variant="pink" title="Play the linked storyboards full-screen" @click=${() => this.#startSlideshow()}>Preview</pd-button>`}
           </div>
         </div>
-        <div class="pbody"
+        <div class="pbody" data-clarity-mask="true"
           @dragover=${(e) => this.#onDragOver(e)}
           @dragleave=${(e) => this.#onDragLeave(e)}
           @drop=${(e) => this.#onDrop(e)}>

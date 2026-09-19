@@ -306,7 +306,7 @@ export class PandemoniumResearchPanel extends LitElement {
   #tools(hasAny) {
     return html`
       ${hasAny ? html`
-        <div class="find">
+        <div class="find" data-clarity-mask="true">
           ${icon('search')}
           <input type="text" placeholder="Find in sources" aria-label="Find in sources"
             .value=${this._query} @input=${(e) => { this._query = e.target.value; }}>
@@ -327,7 +327,7 @@ export class PandemoniumResearchPanel extends LitElement {
     const labels = allLabels(project.research);
     if (!labels.length) return nothing;
     return html`
-      <div class="topics">
+      <div class="topics" data-clarity-mask="true">
         ${labels.map((l) => html`<button class=${this._labels.has(l.label) ? 'on' : ''}
           title=${this._labels.has(l.label) ? 'Stop showing only ' + l.label : 'Show only ' + l.label}
           @click=${() => this.#toggleLabel(l.label)}>${l.label} <i>${l.count}</i></button>`)}
@@ -350,7 +350,7 @@ export class PandemoniumResearchPanel extends LitElement {
     if (!linking || linking.from !== 'script') return nothing;
     const q = ((linking.parts && linking.parts[0] && linking.parts[0].q) || '').slice(0, 60);
     return html`
-      <div class="picking">
+      <div class="picking" data-clarity-mask="true">
         <span>Pick the source for ${q ? html`"${q}"` : 'this passage'}: click a card to link the whole source, or open one and select a passage inside it.</span>
         <button @click=${() => this.#newSource()}>New source</button>
         <button @click=${() => this._store.store.setUI({ linking: null })}>Cancel</button>
@@ -422,7 +422,7 @@ export class PandemoniumResearchPanel extends LitElement {
         </div>
         ${openDoc ? nothing : this.#picking(ui.linking)}
         ${openDoc || !hasAny ? nothing : this.#topics(project)}
-        <div class="pbody">
+        <div class="pbody" data-clarity-mask="true">
           ${openDoc
             ? html`<pandemonium-research-reader .doc=${openDoc}></pandemonium-research-reader>`
             : (hasAny ? this.#grid(project) : this.#empty())}

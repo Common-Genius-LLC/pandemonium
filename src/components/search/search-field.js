@@ -118,7 +118,7 @@ export class PandemoniumSearchField extends LitElement {
         // A source is one record holding media, a URL and notes at once, so the
         // heading matches on any of the three: searching a file name or a host
         // has to find the source that carries it, not only its typed title.
-        const head = [d.title, d.url, d.attachment && d.attachment.name].filter(Boolean).join(' ').toLowerCase();
+        const head = [d.title, d.url, d.attachment && d.attachment.name, d.preview && d.preview.title].filter(Boolean).join(' ').toLowerCase();
         if (head.includes(q)) { results.push({ group: 'Research', t: docTitle(d), sub: sourceLabel(d), go: { k: 'doc', id: d.id } }); researchCount++; }
         docParas(d).forEach((p, pi) => {
           if (researchCount < CAP && p.toLowerCase().includes(q)) { results.push({ group: 'Research', t: p, sub: docTitle(d), go: { k: 'doc', id: d.id, pi } }); researchCount++; }

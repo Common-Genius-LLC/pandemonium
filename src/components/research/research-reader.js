@@ -19,7 +19,8 @@ import { clamp } from '../../utils/format.js';
 import { openPair } from '../../state/actions.js';
 import { formStyles } from '../../styles/shared.js';
 import './attachment-viewer.js';
-import './link-card.js';
+import '../ui/link-preview.js';
+import { storablePreview } from '../../data/link-preview.js';
 
 // One open source: its media, the page it came from, the notes about it, and
 // the script passages it backs, down one page.
@@ -82,25 +83,22 @@ export class PandemoniumResearchReader extends LitElement {
        dismiss, not a back. */
     .close{font-size:12px}
 
-    /* The link slot. Empty, it is a rounded field inviting a link; filled, it
-       is the link itself as a card (link-card.js), because a bare blue string
-       says nothing a preview does not say better. Editing is one control, not
-       a raw input parked under every source forever. */
-    .linkwrap{position:relative}
-    .editlink{
-      position:absolute;top:8px;right:8px;z-index:2;
-      height:22px;padding:0 10px;font-family:var(--sans);font-size:11px;font-weight:500;
-      background:var(--overlay);color:var(--overlay-ink);border:0;border-radius:20px;cursor:pointer;
-      opacity:0;transition:opacity .12s;pointer-events:none;
+    /* The link box. On the note's own colour at rest, white on hover and
+       while editing: the hover shows what a click will do, so the box needs no
+       Edit button and no border to say it is editable. */
+    .linkbox{
+      display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:12.36px;
+      background:transparent;cursor:text;transition:background .12s;
     }
-    .linkwrap:hover .editlink,.editlink:focus-visible{opacity:1;pointer-events:auto}
-    .addlink{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg);border-radius:12.36px}
-    .addlink svg{width:13px;height:13px;flex:none;fill:var(--mut)}
-    .addlink input{
+    .linkbox:hover,.linkbox:focus-within{background:var(--bg)}
+    .linkbox svg{width:13px;height:13px;flex:none;fill:var(--mut)}
+    .linkbox input{
       flex:1;min-width:0;height:20px;padding:0;font-size:12px;
       background:transparent;border:0;border-radius:0;color:var(--link);
+      text-overflow:ellipsis;cursor:text;
     }
-    .addlink input::placeholder{color:var(--mut)}
+    .linkbox input:focus-visible{border:0;outline:0}
+    .linkbox input::placeholder{color:var(--mut)}
 
     /* Topics. Neutral chips on purpose: the source's own colour is the other
        way of sorting, and two colour systems on one card would be one more
@@ -180,7 +178,7 @@ export class PandemoniumResearchReader extends LitElement {
     }
   `];
 
-  static properties = { doc: { type: Object }, _adding: { state: true }, _editingUrl: { state: true } };
+  static properties = { doc: { type: Object }, _adding: { state: true } };
 
   #connRAF = 0;
   #lastPulsed = null;
@@ -197,7 +195,6 @@ export class PandemoniumResearchReader extends LitElement {
     super();
     this._store = new StoreController(this);
     this._adding = false; // the label input is open
-    this._editingUrl = false; // the link slot is showing its field instead of its card
   }
 
   connectedCallback() {
@@ -229,7 +226,22 @@ export class PandemoniumResearchReader extends LitElement {
   // normalising mid-entry would fight the caret.
   #url(e) {
     const typed = e.target.value.trim();
-    this._store.store.updateResearch(this.doc.id, { url: typed ? (normalizeUrl(typed) || typed) : '' });
+    const url = typed ? (normalizeUrl(typed) || typed) : '';
+    if (url === (this.doc.url || '')) return;
+    // The old preview described the old page: dropped with it, so the grid
+    // never shows one page's card under another page's link.
+    this._store.store.updateResearch(this.doc.id, { url, preview: null });
+  }
+
+  // The server's read of the page, kept on the source so the grid can draw
+  // its card offline and the source can be named after the page. Written only
+  // when it says something new, so reopening a source is not an edit.
+  #keepPreview(p) {
+    const next = storablePreview(p);
+    const d = this.doc;
+    if (!next || next.url !== d.url) return;
+    if (JSON.stringify(next) === JSON.stringify(d.preview || null)) return;
+    this._store.store.updateResearch(d.id, { preview: next });
   }
 
   // ---- editing the notes in place ----
@@ -659,29 +671,36 @@ export class PandemoniumResearchReader extends LitElement {
     >${unsafeHTML(blockHTML(paraAsBlock(p), map[pi]) || '')}</p>`)}`);
   }
 
-  // The URL is a slot, not a text field that happens to be there. Empty, it
-  // invites a link; filled, it IS the link, previewed as a card (see
-  // link-card.js), with editing behind one control rather than a raw input
-  // sitting under every source forever.
-  #linkSlot(doc) {
-    if (this._editingUrl || !doc.url) {
-      return html`
-        <div class="addlink">
-          ${icon('link')}
-          <input type="url" placeholder="Paste a link" .value=${doc.url || ''}
-            @keydown=${(e) => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') { e.stopPropagation(); this._editingUrl = false; } }}
-            @change=${(e) => this.#url(e)}
-            @blur=${() => { this._editingUrl = false; }}>
-        </div>
-      `;
-    }
+  // The link is one box, and the box is the editor. At rest it sits on the
+  // note's own colour and reads as the link; hover turns its background white,
+  // which is exactly how it looks while being edited, so the hover IS the
+  // invitation; a click puts the caret in it. No Edit button, no second state
+  // to switch into. Enter or leaving it commits, Escape puts it back.
+  //
+  // Opening the page is the preview card's job (below), not this box's: one
+  // control that both opened a link and edited it would have to guess which
+  // the click meant.
+  #linkBox(doc) {
     return html`
-      <div class="linkwrap">
-        <pandemonium-link-card .url=${doc.url}></pandemonium-link-card>
-        <button class="editlink" title="Change or remove this link"
-          @click=${() => { this._editingUrl = true; this.#focusAfterRender('.addlink input'); }}>Edit link</button>
-      </div>
+      <label class="linkbox" title=${doc.url ? 'Click to change the link' : 'Paste a link'}>
+        ${icon('link')}
+        <input type="url" placeholder="Paste a link" spellcheck="false" .value=${doc.url || ''}
+          @keydown=${(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
+            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); e.target.value = doc.url || ''; e.target.blur(); }
+          }}
+          @change=${(e) => this.#url(e)}>
+      </label>
     `;
+  }
+
+  // The page the link points at, as a card inside the note. quiet: when there
+  // is nothing rich to show (the page could not be read), it shows nothing,
+  // because the box above already shows the link itself.
+  #linkPreview(doc) {
+    if (!doc.url) return nothing;
+    return html`<div class="media"><pd-link-preview quiet .url=${doc.url} .data=${doc.preview || null}
+      @pd-link-preview-load=${(e) => this.#keepPreview(e.detail.preview)}></pd-link-preview></div>`;
   }
 
   render() {
@@ -707,7 +726,8 @@ export class PandemoniumResearchReader extends LitElement {
         </div>
         <div id="readerBody">
           ${att && att.data ? html`<div class="media"><pandemonium-attachment-viewer .attachment=${att}></pandemonium-attachment-viewer></div>` : nothing}
-          <div class="media">${this.#linkSlot(doc)}</div>
+          <div class="media">${this.#linkBox(doc)}</div>
+          ${this.#linkPreview(doc)}
           ${this.#labels(doc)}
           <div class="notes"
             @mousedown=${(e) => this.#onBodyMouseDown(e)}

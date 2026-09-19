@@ -164,9 +164,21 @@ JWT_SECRET=<at least 32 random bytes>
 CORS_ORIGIN=https://pandemonium.commongenius.in
 DATABASE_URL=postgres://pandemonium:<strong-password>@db:5432/pandemonium
 COOKIE_SECURE=true
+TRUST_PROXY=true
 ```
 
 Notes:
+- `TRUST_PROXY=true` is required behind the nginx in B6. The link-preview
+  endpoint rate-limits per client, and without this every request arrives from
+  the proxy's address, so all users share ONE bucket and hit the limit
+  together. It makes the API read `X-Real-IP`, which that nginx config SETS
+  from the real peer (overwriting anything a client sends). Only safe while
+  port 8787 is unreachable except through nginx (see B3, and B8 below).
+- Optional link-preview tuning: `LINK_PREVIEW_RATE_PER_MINUTE` (default 60),
+  `LINK_PREVIEW_USER_AGENT` (the desktop-Chrome string tried first; bump the
+  version now and then) and `LINK_PREVIEW_BOT_USER_AGENT` (the honest bot
+  name tried second; see server/src/link-preview/service.ts for why there are
+  two).
 - `CORS_ORIGIN` must be the exact frontend origin (add the `*.pages.dev` URL too
   if you use it). It cannot be `*` because credentials are sent.
 - `COOKIE_SECURE=true` switches the refresh cookie to Secure + SameSite=None,
@@ -268,6 +280,50 @@ curl https://api.pandemonium.commongenius.in/health
 ```
 
 Expect `{"ok":true,"service":"pandemonium-api"}`.
+
+Then check link previews end to end against the deployed API (seven real
+sites, one per failure mode: plain OG, no tags, video, an app deep link, a
+bot wall, a redirect, Japanese text):
+
+```bash
+cd server && bun run validate:link-preview --api https://api.pandemonium.commongenius.in/v1
+```
+
+### B8. Harden the link-preview fetcher (recommended)
+
+`GET /v1/link-preview` makes this server fetch URLs that anyone supplies. The
+code refuses private, loopback and link-local addresses on every redirect hop
+(server/src/link-preview/ssrf.ts), but one gap cannot be closed in code: DNS
+rebinding, where a hostile DNS server answers the check with a public address
+and the fetch a moment later with a private one. Close it at the network
+layer instead, where it cannot be talked around:
+
+1. **Instance metadata to v2 only.** OCI console: the instance, Edit,
+   Instance metadata service, allow version 2 only. v2 refuses any request
+   without the `Authorization: Bearer Oracle` header, which the fetcher never
+   sends, so even a request that reached 169.254.169.254 would get nothing.
+
+2. **Drop the containers' route to the metadata range.** Docker filters
+   container traffic in its own `DOCKER-USER` chain (UFW does not see it):
+
+   ```bash
+   sudo iptables -I DOCKER-USER -d 169.254.0.0/16 -j DROP
+   sudo apt-get install -y iptables-persistent && sudo netfilter-persistent save
+   ```
+
+   The private ranges (10.0.0.0/8, 192.168.0.0/16) can be dropped the same way
+   if nothing in the API container needs them. Do NOT drop 172.16.0.0/12
+   without checking: Docker's own bridge networks live there, and the API
+   reaches Postgres across one.
+
+3. **Keep 8787 on loopback.** In `compose.prod.yml`, publish the port as
+   `"127.0.0.1:8787:8787"` rather than `"8787:8787"`. Docker writes its own
+   iptables rules and bypasses UFW, so a published port can be public even
+   when UFW says otherwise. (Checked from outside at the time of writing:
+   8787 did not answer, so the VCN security list is doing this job today.
+   Loopback binding makes it not depend on that.) This is also what keeps
+   `TRUST_PROXY` honest: nobody can reach the API directly to forge
+   `X-Real-IP`.
 
 ---
 

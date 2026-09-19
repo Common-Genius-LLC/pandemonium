@@ -99,7 +99,7 @@ export class PandemoniumScriptPanel extends LitElement {
       <div class="shell" style="--pane-bg:var(--bg)">
         <div class="chrome">
           ${this.#title()}
-          <div class="tabs">
+          <div class="tabs" data-clarity-mask="true">
             ${project.scripts.map((s) => html`<pandemonium-draft-chip .script=${s} .leafId=${this.leafId}></pandemonium-draft-chip>`)}
             <button class="addtab" title="Add a new draft" @click=${() => this.#addScript()}>+</button>
           </div>
@@ -107,7 +107,7 @@ export class PandemoniumScriptPanel extends LitElement {
             <pd-button title=${focused ? 'Exit focused writing' : 'Focused writing: hide every other pane'} @click=${() => this.#toggleFocus()}>${focused ? 'Exit focus' : 'Focus'}</pd-button>
           </div>
         </div>
-        <div class="pbody">
+        <div class="pbody" data-clarity-mask="true">
           <span class="wc">${wc}</span>
           ${this._editorReady
             ? html`<pandemonium-script-editor .leafId=${this.leafId}></pandemonium-script-editor>`

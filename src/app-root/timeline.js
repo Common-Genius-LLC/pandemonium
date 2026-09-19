@@ -291,7 +291,7 @@ export class PandemoniumTimeline extends LitElement {
               <div class="lab b">Storyboarded</div>
               <div class="lab r">Sourced</div>
             </div>
-            <div class="strip">
+            <div class="strip" data-clarity-mask="true">
               ${!els.length
                 ? html`<div class="track"><div class="none"></div></div><div class="track"><div class="none"></div></div>`
                 : html`

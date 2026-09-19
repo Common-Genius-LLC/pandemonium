@@ -5,7 +5,7 @@
 'use strict';
 
 import { describe, it, expect } from 'vitest';
-import { previewOf, previewLabel } from './link-preview.js';
+import { previewOf, previewLabel, isRichPreview, storablePreview } from './link-preview.js';
 
 describe('previewOf: YouTube', () => {
   it('finds the video in every shape YouTube hands out', () => {
@@ -103,5 +103,45 @@ describe('previewLabel', () => {
     expect(previewLabel(previewOf('https://a.com/x.jpg'))).toBe('Image on a.com');
     expect(previewLabel(previewOf('https://www.bbc.co.uk/news'))).toBe('Page on bbc.co.uk');
     expect(previewLabel(null)).toBe('');
+  });
+});
+
+// The server's preview (GET /v1/link-preview): when it is worth a card, and
+// what a research source keeps of it.
+describe('isRichPreview', () => {
+  const base = { url: 'https://a.com/', domain: 'a.com', title: 'https://a.com/', description: null, image: null };
+  it('is false for a preview made from the URL alone (a block, a timeout)', () => {
+    expect(isRichPreview({ ...base, sources: { title: 'url', description: null, image: null } })).toBe(false);
+    expect(isRichPreview(null)).toBe(false);
+  });
+  it('is true once any real field is present', () => {
+    expect(isRichPreview({ ...base, title: 'A', sources: { title: 'html' } })).toBe(true);
+    expect(isRichPreview({ ...base, description: 'd', sources: { title: 'url' } })).toBe(true);
+    expect(isRichPreview({ ...base, image: 'https://a.com/i.png', sources: { title: 'url' } })).toBe(true);
+  });
+});
+
+describe('storablePreview', () => {
+  const full = {
+    url: 'https://open.spotify.com/track/x', finalUrl: 'https://open.spotify.com/track/x', domain: 'open.spotify.com',
+    title: 'Mr. Brightside', description: 'The Killers', image: 'https://i.scdn.co/image/a',
+    sources: { title: 'og', description: 'og', image: 'og' }, fetched: true, status: 200, contentType: 'text/html',
+  };
+  it('keeps only what a card needs, and nothing time-stamped', () => {
+    expect(storablePreview(full)).toEqual({
+      url: 'https://open.spotify.com/track/x', domain: 'open.spotify.com',
+      title: 'Mr. Brightside', description: 'The Killers', image: 'https://i.scdn.co/image/a',
+    });
+  });
+  it('is identical for identical answers, so two devices never conflict over it', () => {
+    expect(JSON.stringify(storablePreview({ ...full }))).toBe(JSON.stringify(storablePreview({ ...full, status: 200 })));
+  });
+  it('does not store a URL-as-title as if it were the page title', () => {
+    const p = storablePreview({ ...full, title: full.url, sources: { title: 'url', description: 'og', image: 'og' } });
+    expect(p.title).toBeNull();
+    expect(p.image).toBe(full.image);
+  });
+  it('keeps nothing from a preview with nothing in it, so it is asked for again', () => {
+    expect(storablePreview({ ...full, title: full.url, description: null, image: null, sources: { title: 'url', description: null, image: null } })).toBeNull();
   });
 });

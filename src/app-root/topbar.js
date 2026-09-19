@@ -262,15 +262,15 @@ export class PandemoniumTopbar extends LitElement {
     return html`
       <div id="brand">
         <button id="homeBtn" title="Home" @click=${() => this.#newProject()}><pd-logo></pd-logo></button>
-        <button id="projName" title="Project settings" @click=${() => this.#openSettings()}>${project.name || 'Untitled'}</button>
+        <button id="projName" data-clarity-mask="true" title="Project settings" @click=${() => this.#openSettings()}>${project.name || 'Untitled'}</button>
       </div>
-      <div id="searchBox">
+      <div id="searchBox" data-clarity-mask="true">
         <pandemonium-search-field title=${'Search everything (' + (isMac ? '⌘K' : 'Ctrl K') + ')'}></pandemonium-search-field>
       </div>
       <div id="actions">
         <span id="saveDot" class=${syncStatus.state} title=${this.#syncTitle()}></span>
         <pd-button @click=${(e) => this.#openFileMenu(e)} title="New, open, save, share and export">File</pd-button>
-        <pd-button variant=${session.isAuthed() ? 'default' : 'pink'} @click=${() => this.#openAccount()}
+        <pd-button data-clarity-mask="true" variant=${session.isAuthed() ? 'default' : 'pink'} @click=${() => this.#openAccount()}
           title=${session.isAuthed() ? 'Your account and cloud projects' : 'Sign in to sync your projects'}>
           ${session.isAuthed() ? this.#accountLabel() : 'Sign in'}
         </pd-button>

@@ -50,6 +50,8 @@ docker compose --profile full up -d     # or run the API in a container too
 ```bash
 bun run typecheck             # tsc --noEmit
 bun test                      # full suite against in-memory SQLite (no infra)
+bun run validate:link-preview # link previews against 7 real sites (network)
+                              # add --api <base>/v1 to check a deployed API
 ```
 
 ## API (v1)
@@ -70,6 +72,7 @@ is an httpOnly cookie set on login/register and rotated on refresh.
 | GET | /v1/projects/:id | | -> { id, project, updatedAt } |
 | PUT | /v1/projects/:id | { project, baseUpdatedAt? } | 409 if baseUpdatedAt is stale |
 | DELETE | /v1/projects/:id | | 204 |
+| GET | /v1/link-preview?url= | | public, rate-limited; -> { url, finalUrl, domain, title, description, image, sources, fetched, status, contentType }. Open Graph with a fixed fallback per field, SSRF-guarded on every redirect hop, cached 24 h (failures 10 min). See src/link-preview/. |
 
 ## Invariants enforced server-side
 

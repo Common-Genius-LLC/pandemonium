@@ -16,4 +16,19 @@ export const config = {
   // lived, rotated on use, stored hashed in the db.
   accessTtlSec: 60 * 15,
   refreshTtlSec: 60 * 60 * 24 * 30,
+  // Behind a reverse proxy the socket address is the proxy's, so every caller
+  // would share one rate-limit bucket. With this on, the client address is
+  // read from X-Real-IP, which the nginx config in docs/DEPLOYMENT.md SETS
+  // (overwriting anything the client sent) rather than appends to. Leave it
+  // off anywhere the API is reachable without that proxy in front, or anyone
+  // could choose their own address by sending the header.
+  trustProxy: process.env.TRUST_PROXY === 'true',
+  linkPreview: {
+    // Requests per client per minute to /v1/link-preview. Cache hits count
+    // too: they are cheap, but a limit that only counted misses would be one
+    // any caller could reason about and walk around with unique URLs.
+    ratePerMinute: num(process.env.LINK_PREVIEW_RATE_PER_MINUTE, 60),
+    userAgent: process.env.LINK_PREVIEW_USER_AGENT || '',
+    botUserAgent: process.env.LINK_PREVIEW_BOT_USER_AGENT || '',
+  },
 };

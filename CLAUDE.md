@@ -496,6 +496,57 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
     stop reading as a page; inactive tabs keep `--chrome-panel` so the cut-out
     still works.
 
+18. Rich links for every site, and Clarity.
+    **Backend** `GET /v1/link-preview?url=` (`server/src/link-preview/`,
+    `server/src/routes/link-preview.ts`). Public by decision (signed-out users
+    are most users) and fenced accordingly: an SSRF guard on EVERY redirect hop
+    (`ssrf.ts`: http(s) only, no credentials, web ports only, and every address
+    a name resolves to must be public, including v4 hidden in
+    `::ffff:`/NAT64/6to4 forms, because Oracle Cloud's metadata service sits at
+    169.254.169.254), manual redirects capped at 5, an 8 s budget, a 1 MB read
+    cap, a global cap of 8 upstream fetches with a bounded queue, a per-IP
+    fixed-window limit (60/min, `rate-limit.ts`), an in-memory LRU cache (24 h,
+    failures 10 min) with in-flight de-duplication, and a response that is only
+    ever a metadata summary. Parsing is Bun's native HTMLRewriter plus the
+    `entities` package, because HTMLRewriter hands back `&amp;` undecoded.
+    Encoding is sniffed WHATWG-style (BOM, header, `<meta>` prescan). The
+    fallback per field is fixed and reported in `sources`: title og > twitter >
+    `<title>` > URL; description og > twitter > meta > first non-empty `<p>`;
+    image og > twitter > `link[rel=image_src]`, never an arbitrary `<img>`.
+    `domain` is the REQUESTED URL's host, not the post-redirect one, so a
+    shortener cannot dress one site up as another. **Two user agents**: a
+    desktop Chrome first, as specified, then `PandemoniumBot/1.0` only when
+    the first answer is thin. The live check showed why: Spotify gives Chrome
+    a metadata-free JavaScript shell and Amazon gives it a 202 challenge, and
+    both give a self-identified bot the full card. The bot is our own name,
+    not Facebook's or Slack's, and must not start with "Mozilla/5.0": Amazon
+    challenges anything that looks like a browser. Only 200/203 count as a
+    page. **Tests**: 70 offline cases in `server/test/link-preview.test.ts`
+    (every fallback tier, entities, encodings, the SSRF table, redirects,
+    blocks, timeouts, caps, caching, the two-agent strategy, the route), and
+    `bun run validate:link-preview [--api <base>]` for the seven live sites
+    (ogp.me, example.com, YouTube, Spotify, Amazon, http GitHub, ja.wikipedia),
+    all passing at the time of writing. Deploy needs `TRUST_PROXY=true` behind
+    nginx or every user shares one rate bucket; `docs/DEPLOYMENT.md` B8 has the
+    network-level backstop for DNS rebinding, which code cannot close.
+    **Frontend** `pd-link-preview` (`src/components/ui/link-preview.js`):
+    skeleton, then a social card laid out by container query (image on top at
+    1.91:1 when narrow, beside when wide), `object-fit:cover`, one-line
+    domain and title, two-line description, `referrerpolicy="no-referrer"`,
+    video still plays in place on click; any failure or empty answer degrades
+    to a plain link. A research source keeps `storablePreview` of it (no
+    timestamps, so two devices never conflict), which names untitled links,
+    fills the grid card and is searchable, and is dropped when the URL changes.
+    **Clarity** (`src/utils/clarity.js`, id in `.env.production` only). Masks
+    by `data-clarity-mask` on every surface holding the writer's words. Checked
+    against the live recorder (0.8.70): a node inherits its parent's privacy
+    and a shadow root's parent is its host, so a container mask covers its
+    whole shadow tree; dashboard selector masks cannot reach into shadow roots,
+    so the attributes in code are the only targeted control. Set Strict in the
+    dashboard as the backstop. **Not done**: a privacy notice and consent
+    banner (GA4 already needed the notice; Clarity's terms require one, and
+    `Clarity.consentV2` exists for EEA/UK/CH consent).
+
 ---
 
 ## Working context
