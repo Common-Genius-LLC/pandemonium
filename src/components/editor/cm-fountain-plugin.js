@@ -15,7 +15,8 @@
 'use strict';
 
 import { ViewPlugin, Decoration } from '@codemirror/view';
-import { parseFountain, isCharacterCueText } from '../../fountain/parse.js';
+import { isCharacterCueText } from '../../fountain/parse.js';
+import { parseText } from '../../fountain/cache.js';
 import { plainRangeToRaw, inlineDelimRanges } from '../../fountain/doc-map.js';
 import { activeElementField, pinOverridesParser } from './cm-autoformat.js';
 
@@ -173,12 +174,12 @@ export function buildDecorations(state, parsed, highlights) {
 export function fountainDecorations(getHighlights) {
   return ViewPlugin.fromClass(class {
     constructor(view) {
-      this.parsed = parseFountain(view.state.doc.toString());
+      this.parsed = parseText(view.state.doc.toString());
       this.decorations = buildDecorations(view.state, this.parsed, getHighlights(this.parsed));
     }
 
     update(update) {
-      if (update.docChanged) this.parsed = parseFountain(update.state.doc.toString());
+      if (update.docChanged) this.parsed = parseText(update.state.doc.toString());
       // Rebuild on selection changes too: the conceal/reveal depends on which
       // line the caret is on, not just on the text.
       this.decorations = buildDecorations(update.view.state, this.parsed, getHighlights(this.parsed));

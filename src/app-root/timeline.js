@@ -61,7 +61,12 @@ export class PandemoniumTimeline extends LitElement {
        The 1px gap shows the track's grey through, which is what separates the
        chunks; an unlinked element is transparent (reads as the grey track), a
        linked one takes its row colour. */
-    .track{position:relative;height:22px;display:flex;gap:1px;background:var(--ph);overflow:hidden}
+    /* Rounded one step down the app's radius scale, which divides by the golden
+       ratio each step: 20px panels, 12.36px storyboard frames, 7.64px here.
+       That keeps the bars in the same family as the pane they sit in without
+       turning a 22px bar into a pill (which would be 11px). overflow:hidden
+       lets the first and last segment take the track's corners. */
+    .track{position:relative;height:22px;display:flex;gap:1px;background:var(--ph);overflow:hidden;border-radius:7.64px}
     .seg{position:relative;min-width:2px;cursor:pointer;background:transparent}
     /* Final storyboard is solid green, reference-only is solid yellow (the
        same green/yellow split the editor highlight, minimap and script view
@@ -86,7 +91,7 @@ export class PandemoniumTimeline extends LitElement {
        This marks the specific bars that are measured. --ui (dark) so the
        tick reads on both the green and the yellow bar. */
     .track.b .seg.paced::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--ui)}
-    .none{flex:1;background:var(--ph);opacity:.45}
+    .none{flex:1;background:var(--ph);opacity:.45;border-radius:7.64px}
 
     /* Act markers span both bars, label hanging under the lower one. */
     .markers{position:absolute;left:0;right:0;top:0;bottom:0;pointer-events:none}

@@ -17,6 +17,7 @@ import { readFileAsDataURL } from '../../utils/files.js';
 import { clamp } from '../../utils/format.js';
 import { openPair } from '../../state/actions.js';
 import { formStyles } from '../../styles/shared.js';
+import { leaveRect, takeRect, growFrom } from '../../utils/motion.js';
 import './attachment-viewer.js';
 import '../ui/link-preview.js';
 import { storablePreview, previewPatch, urlsIn } from '../../data/link-preview.js';
@@ -216,7 +217,19 @@ export class PandemoniumResearchReader extends LitElement {
   }
 
   #close() {
+    const card = this.renderRoot.querySelector('.card');
+    if (card && this.doc) leaveRect('research-close:' + this.doc.id, card.getBoundingClientRect());
     this._store.store.setUI({ openDoc: null, openDocFocus: false, pair: null });
+  }
+
+  // Opening grows the source out of the card (or the New source tile) that
+  // was clicked, so the step from the grid into one source is a movement and
+  // not a page swap. Opened any other way (search, a link in the script),
+  // there is no origin and it simply appears.
+  firstUpdated() {
+    const from = takeRect('research-open');
+    const card = this.renderRoot.querySelector('.card');
+    if (from && card) growFrom(card, from, { content: [...card.children] });
   }
 
   #title(e) { this._store.store.updateResearch(this.doc.id, { title: e.target.value }); }

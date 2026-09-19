@@ -3,7 +3,10 @@
 import { LitElement, html, css } from 'lit';
 import { StoreController } from '../../state/store-controller.js';
 import { theme } from '../../state/theme.js';
+import { scriptPrefs, TEXT_SIZES } from '../../state/script-prefs.js';
+import { PAPERS, pageGrid } from '../../fountain/paginate.js';
 import { formStyles } from '../../styles/shared.js';
+import './segmented.js';
 
 // Everything that is a preference rather than an action, in one place, reached
 // from File > Settings.
@@ -35,40 +38,32 @@ export class PdSettings extends LitElement {
     .row:last-child{margin-bottom:0}
     .what{font-size:12px;color:var(--ink);margin-bottom:6px}
     .why{font-size:11px;line-height:1.5;color:var(--mut);margin:4px 0 0}
-    /* A segmented choice, because these are all "pick one of a few" and a
-       select would hide the alternatives behind a click. */
-    .seg{display:inline-flex;gap:3px;background:var(--panel);border-radius:20px;padding:3px}
-    .seg button{
-      height:24px;padding:0 12px;font-family:var(--sans);font-size:11px;font-weight:500;
-      color:var(--mut);background:transparent;border:0;border-radius:20px;cursor:pointer;
-    }
-    .seg button:hover{color:var(--ink)}
-    .seg button.on{background:var(--overlay);color:var(--overlay-ink)}
+
   `];
 
   constructor() {
     super();
     this._store = new StoreController(this);
-    this._onTheme = () => this.requestUpdate();
+    this._onPref = () => this.requestUpdate();
   }
 
   connectedCallback() {
     super.connectedCallback();
-    theme.addEventListener('change', this._onTheme);
+    theme.addEventListener('change', this._onPref);
+    scriptPrefs.addEventListener('change', this._onPref);
   }
 
   disconnectedCallback() {
-    theme.removeEventListener('change', this._onTheme);
+    theme.removeEventListener('change', this._onPref);
+    scriptPrefs.removeEventListener('change', this._onPref);
     super.disconnectedCallback();
   }
 
-  #seg(options, current, pick) {
-    return html`
-      <div class="seg">
-        ${options.map((o) => html`<button class=${o.value === current ? 'on' : ''}
-          @click=${() => pick(o.value)}>${o.label}</button>`)}
-      </div>
-    `;
+  // A segmented choice (ui/segmented.js), because these are all "pick one of
+  // a few" and a select would hide the alternatives behind a click.
+  #seg(options, current, pick, label) {
+    return html`<pd-segmented .options=${options} .value=${current} label=${label || ''}
+      @change=${(e) => pick(e.detail.value)}></pd-segmented>`;
   }
 
   render() {
@@ -91,11 +86,42 @@ export class PdSettings extends LitElement {
       </section>
     `;
 
-    if (!project) return appearance;
+    // The script's page. Both are about this screen, not the project, like
+    // the theme, and neither moves a page break: the grid is fixed per paper
+    // and the text size only scales how large the page is drawn.
+    const grid = pageGrid(scriptPrefs.paper);
+    const script = html`
+      <section>
+        <h4>Script</h4>
+        <div class="row">
+          <div class="what">Paper</div>
+          ${this.#seg(
+            Object.entries(PAPERS).map(([value, p]) => ({ value, label: p.label })),
+            scriptPrefs.paper,
+            (v) => scriptPrefs.set({ paper: v }),
+            'Paper size',
+          )}
+          <p class="why">${grid.cols} characters a line, ${grid.rows} lines a page, at the standard 12pt Courier.</p>
+        </div>
+        <div class="row">
+          <div class="what">Text size</div>
+          ${this.#seg(
+            TEXT_SIZES.map((pt) => ({ value: pt, label: pt === 12 ? '12pt' : String(pt) })),
+            scriptPrefs.textPt,
+            (v) => scriptPrefs.set({ textPt: v }),
+            'Script text size',
+          )}
+          <p class="why">12pt is the standard. Other sizes draw the page larger or smaller; page breaks and the page count stay where 12pt puts them.</p>
+        </div>
+      </section>
+    `;
+
+    if (!project) return html`${appearance}${script}`;
 
     const toRef = project.dropToReference !== false;
     return html`
       ${appearance}
+      ${script}
       <section>
         <h4>Storyboards</h4>
         <div class="row">

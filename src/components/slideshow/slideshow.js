@@ -1,6 +1,10 @@
 'use strict';
 
 import { LitElement, html, css, nothing } from 'lit';
+import '../ui/segmented.js';
+import { crossfade } from '../../utils/motion.js';
+
+const SB_OPTIONS = [{ value: 'final', label: 'Final' }, { value: 'reference', label: 'Reference' }];
 import { StoreController } from '../../state/store-controller.js';
 import { CONTENT_TYPES } from '../../fountain/blocks.js';
 import { linkedBoards } from '../../state/selectors.js';
@@ -57,11 +61,12 @@ export class PandemoniumSlideshow extends LitElement {
     .nav.prev{left:16px}
     .nav.next{right:16px}
     .bottom{flex:none;height:30%;min-height:200px;background:#0d0d0d;display:flex;flex-direction:column}
-    .sbswitch{position:absolute;top:14px;left:50%;transform:translateX(-50%);z-index:5;display:flex;gap:2px;
-      background:rgba(255,255,255,.12);border-radius:20px;padding:2px}
-    .sbswitch button{font-family:var(--sans);font-size:11px;font-weight:500;color:rgba(255,255,255,.7);
-      background:none;border:0;border-radius:20px;padding:5px 12px;cursor:pointer}
-    .sbswitch button.on{background:#fff;color:#111}
+    /* The shared sliding switch (ui/segmented.js), in the show's own
+       lights-down colours (this surface is one of the two documented places
+       literals are allowed). */
+    .sbswitch{position:absolute;top:14px;left:50%;transform:translateX(-50%);z-index:5;
+      --seg-track:rgba(255,255,255,.12);--seg-thumb:#fff;--seg-ink:rgba(255,255,255,.7);
+      --seg-ink-hover:#fff;--seg-ink-on:#111}
     .rec{position:absolute;top:14px;left:16px;z-index:5;display:flex;align-items:center;gap:6px;
       font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
       color:#fff;background:rgba(207,21,158,.9);padding:5px 10px;border-radius:20px}
@@ -277,7 +282,10 @@ export class PandemoniumSlideshow extends LitElement {
   #step(d) {
     // Advancing forward while recording commits the current slide's pacing.
     if (this._recording && d > 0) this.#recordCurrent();
+    const was = this._ix;
     this._ix = Math.max(0, Math.min(this._slides.length - 1, this._ix + d));
+    // A cut, softened: the next slide fades up rather than snapping in.
+    if (this._ix !== was) this.updateComplete.then(() => crossfade(this.renderRoot.querySelector('.stage'), { duration: 160 }));
   }
 
   // Switch between the final and reference frames mid-show. Both builds walk
@@ -297,6 +305,8 @@ export class PandemoniumSlideshow extends LitElement {
     this._slides = slides;
     this._ix = Math.min(this._ix, slides.length - 1);
     this._slideStart = performance.now();
+    // The same beat, the other frame: the picture turns over in place.
+    this.updateComplete.then(() => crossfade(this.renderRoot.querySelector('.stage')));
   }
 
   // The slide list is a snapshot taken at open(). Dropping an image changes
@@ -409,10 +419,10 @@ export class PandemoniumSlideshow extends LitElement {
         @drop=${(e) => this.#onDrop(e)}>
         <button class="x" title="Close slideshow (Esc)" aria-label="Close slideshow" @click=${() => this.close()}>×</button>
         ${this._recording ? html`<div class="rec" title="Recording pacing: click to advance at your intended pace. Each slide's on-screen time is saved.">● REC pacing</div>` : ''}
-        <div class="sbswitch" title="Switch storyboard (Up/Down)">
-          <button class=${this._sbMode !== 'reference' ? 'on' : ''} @click=${(e) => { e.stopPropagation(); this.#setMode('final'); }}>Final</button>
-          <button class=${this._sbMode === 'reference' ? 'on' : ''} @click=${(e) => { e.stopPropagation(); this.#setMode('reference'); }}>Reference</button>
-        </div>
+        <pd-segmented class="sbswitch" title="Switch storyboard (Up/Down)" label="Which frame to show"
+          .options=${SB_OPTIONS} .value=${this._sbMode === 'reference' ? 'reference' : 'final'}
+          @click=${(e) => e.stopPropagation()}
+          @change=${(e) => this.#setMode(e.detail.value)}></pd-segmented>
         <button class="nav prev" title="Previous slide (←)" aria-label="Previous slide"
           ?disabled=${this._ix === 0} @click=${() => this.#step(-1)}>‹</button>
         <button class="nav next" title="Next slide (→)" aria-label="Next slide"

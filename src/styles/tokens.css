@@ -87,6 +87,19 @@
   --chrome-panel:#f0f0f0;   /* panel shell and its tab strip */
   --tab-final-ink:#075495;  /* the final draft's tab label */
   --r:3px;
+  /* Motion. Three durations and two curves for the whole app, so every
+     movement belongs to one family:
+       --dur-1  hover, press, a colour settling (120ms)
+       --dur-2  a switch sliding, one state fading into another (200ms)
+       --dur-3  a surface growing into the next one, a card opening (320ms)
+     --ease-out lands softly (things arriving); --ease-in-out for things that
+     travel from one place to another. JS animations use the same values
+     (utils/motion.js). Theme-independent, so they live only here. */
+  --dur-1:120ms;
+  --dur-2:200ms;
+  --dur-3:320ms;
+  --ease-out:cubic-bezier(.2,.8,.2,1);
+  --ease-in-out:cubic-bezier(.45,0,.2,1);
   --sans:'Untitled Sans','Neue Haas Grotesk Text','Helvetica Neue',Helvetica,Arial,sans-serif;
   --mono:'Courier Prime','Courier New',Courier,monospace;
   --script:'Courier Prime Sans','Courier Prime','Courier New',monospace; /* screenplay editor */
@@ -163,4 +176,11 @@
   --scrim-b:#101113;
   --chrome-panel:#1b1c1f;
   --tab-final-ink:#69aae4;
+}
+
+/* Motion off for anyone who has asked their system for less of it: every
+   transition built on these tokens becomes instant, and utils/motion.js skips
+   its JS animations on the same query. */
+@media (prefers-reduced-motion: reduce){
+  :root{--dur-1:0ms;--dur-2:0ms;--dur-3:0ms}
 }

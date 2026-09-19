@@ -6,7 +6,7 @@ import { dispatch } from '../../utils/events.js';
 import { getParsed } from '../../fountain/cache.js';
 import { CONTENT_TYPES, scenesOf } from '../../fountain/blocks.js';
 import { fmtT } from '../../utils/format.js';
-import { panelStyles, tabStyles } from '../../styles/shared.js';
+import { panelStyles } from '../../styles/shared.js';
 import '../ui/button.js';
 import '../ui/panel-picker.js';
 import '../../app-root/draft-chip.js';
@@ -24,26 +24,40 @@ const EDITOR_TAG = 'pandemonium-script-editor';
 export class PandemoniumScriptPanel extends LitElement {
   static properties = { leafId: {}, _editorReady: { state: true } };
 
-  static styles = [panelStyles, tabStyles, css`
+  static styles = [panelStyles, css`
     /* The working area is the final draft's blue only while the final draft is
        the one open, matching the design's two variants: the draft that owns
        the storyboard and research links is the one that looks different. */
     .pbody{position:relative;display:flex;flex-direction:column}
-    /* The chrome takes the pane's own fill like every other panel's does; the
-       rule stays only for the padding. The whole pane is one surface now,
-       strip and desk alike, so the script panel matches the others instead of
-       being the one that is grey. Inactive tabs keep --chrome-panel and so
-       still read as sitting behind it, which is what the cut-out needs. No
-       bottom padding: the active tab must reach the pbody with no gap so it
-       reads as one continuous surface with the working area. */
-    .chrome{padding-bottom:0}
-    /* Word count floats at the working area's top right. */
-    .wc{position:absolute;top:6px;right:10px;z-index:2;color:var(--mut);font-size:10px;white-space:nowrap;pointer-events:none}
-    .addtab{
-      flex:none;height:30px;width:26px;font-size:15px;color:var(--mut);
-      background:transparent;border:0;border-radius:0;cursor:pointer;font-family:var(--sans);
+    /* The drafts: pills in a pill track, the same object as the storyboard
+       Final / Reference switch. One dark pill (.thumb) sits behind the row and
+       slides to whichever draft is active, so switching drafts is one motion
+       the eye can follow. The track scrolls sideways when there are more
+       drafts than fit, and the thumb scrolls with it. */
+    .tabs{
+      position:relative;display:flex;align-items:center;gap:2px;margin-left:10px;
+      align-self:center;min-width:0;max-width:100%;padding:3px;border-radius:20px;
+      background:var(--panel);overflow-x:auto;scrollbar-width:none;
     }
-    .addtab:hover{color:var(--ui)}
+    .tabs::-webkit-scrollbar{display:none}
+    .thumb{
+      position:absolute;top:3px;left:0;height:24px;width:0;border-radius:20px;
+      background:var(--overlay);pointer-events:none;z-index:0;opacity:0;
+      transition:transform var(--dur-2) var(--ease-in-out),width var(--dur-2) var(--ease-in-out),opacity var(--dur-1) linear;
+    }
+    .thumb.still{transition:none}
+    /* Word count floats at the working area's top left: the right edge
+       belongs to the minimap. */
+    .wc{position:absolute;top:8px;left:14px;z-index:2;color:var(--mut);font-size:10px;white-space:nowrap;pointer-events:none}
+    /* Outside the track on purpose: the track scrolls when the drafts
+       overflow it, and a button inside would scroll out of sight with them.
+       Here it always sits right after the last visible pill. */
+    .addtab{
+      flex:none;align-self:center;width:28px;height:28px;margin-left:4px;padding:0;border:0;border-radius:50%;
+      font-size:16px;line-height:28px;color:var(--ui);background:var(--panel);cursor:pointer;font-family:var(--sans);
+      transition:background var(--dur-1) var(--ease-out),color var(--dur-1) var(--ease-out);
+    }
+    .addtab:hover{color:var(--overlay-ink);background:var(--overlay)}
     pandemonium-script-editor{flex:1;min-height:0}
     .loading{flex:1;min-height:0}
     @media (max-width:760px){
@@ -63,6 +77,49 @@ export class PandemoniumScriptPanel extends LitElement {
 
   #title() {
     return html`<pd-panel-picker current="script" .leafId=${this.leafId}></pd-panel-picker>`;
+  }
+
+  // Moves the thumb under the active draft's pill. It waits for the chips to
+  // finish their own render (each decides whether it is active in its own
+  // update, after this panel's), and it does not animate the very first
+  // placement, so a pane opens with the pill already in place rather than
+  // sliding in from the left edge.
+  async #placeThumb() {
+    const thumb = this.renderRoot.querySelector('.thumb');
+    if (!thumb) return;
+    const chips = [...this.renderRoot.querySelectorAll('pandemonium-draft-chip')];
+    await Promise.all(chips.map((c) => c.updateComplete));
+    const id = this._store.store.scriptForLeaf(this.leafId).id;
+    const chip = chips.find((c) => c.getAttribute('data-script-id') === id);
+    if (!chip) { thumb.style.opacity = '0'; return; }
+    thumb.style.transform = `translateX(${chip.offsetLeft}px)`;
+    thumb.style.width = chip.offsetWidth + 'px';
+    thumb.style.opacity = '1';
+    if (thumb.classList.contains('still')) requestAnimationFrame(() => thumb.classList.remove('still'));
+    // Keep the active pill in view when the drafts overflow the strip.
+    const track = thumb.parentElement;
+    if (chip.offsetLeft < track.scrollLeft || chip.offsetLeft + chip.offsetWidth > track.scrollLeft + track.clientWidth) {
+      track.scrollTo({ left: chip.offsetLeft - 12, behavior: 'smooth' });
+    }
+  }
+
+  updated() {
+    this.#placeThumb();
+  }
+
+  firstUpdated() {
+    // A draft renamed to something longer changes its pill's width without
+    // this panel re-rendering; follow the track's size instead.
+    const track = this.renderRoot.querySelector('.tabs');
+    if (track && typeof ResizeObserver === 'function') {
+      this._tabsObserver = new ResizeObserver(() => this.#placeThumb());
+      this._tabsObserver.observe(track);
+    }
+  }
+
+  disconnectedCallback() {
+    if (this._tabsObserver) this._tabsObserver.disconnect();
+    super.disconnectedCallback();
   }
 
   #addScript() {
@@ -100,9 +157,10 @@ export class PandemoniumScriptPanel extends LitElement {
         <div class="chrome">
           ${this.#title()}
           <div class="tabs" data-clarity-mask="true">
+            <span class="thumb still" aria-hidden="true"></span>
             ${project.scripts.map((s) => html`<pandemonium-draft-chip .script=${s} .leafId=${this.leafId}></pandemonium-draft-chip>`)}
-            <button class="addtab" title="Add a new draft" @click=${() => this.#addScript()}>+</button>
           </div>
+          <button class="addtab" title="Add a new draft" aria-label="Add a new draft" @click=${() => this.#addScript()}>+</button>
           <div class="tools">
             <pd-button title=${focused ? 'Exit focused writing' : 'Focused writing: hide every other pane'} @click=${() => this.#toggleFocus()}>${focused ? 'Exit focus' : 'Focus'}</pd-button>
           </div>

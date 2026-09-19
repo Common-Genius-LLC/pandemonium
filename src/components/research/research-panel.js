@@ -7,6 +7,7 @@ import { readFileAsDataURL, readFileAsText, isTextShaped } from '../../utils/fil
 import { dispatch } from '../../utils/events.js';
 import { filterResearch, normalizeUrl, allLabels, normalizeLabel } from '../../data/research-doc.js';
 import { icon } from './icons.js';
+import { leaveRect } from '../../utils/motion.js';
 import '../ui/button.js';
 import '../ui/panel-picker.js';
 import './research-card.js';
@@ -99,7 +100,9 @@ export class PandemoniumResearchPanel extends LitElement {
 
     /* Drop feedback covers the whole working area and says what will happen,
        rather than tinting an outline and changing a button somewhere else. */
+    @keyframes drop-in{from{opacity:0}}
     .dropzone{
+      animation:drop-in var(--dur-1) var(--ease-out);
       position:absolute;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;
       background:var(--res);color:#fff;font-family:var(--sans);font-size:14px;font-weight:500;
       border-radius:20px;pointer-events:none;
@@ -172,7 +175,8 @@ export class PandemoniumResearchPanel extends LitElement {
   // asking for a title, a kind and a URL first: there is nothing to ask that
   // the writer would not rather just type, and an empty source shows its own
   // fields anyway.
-  #newSource() {
+  #newSource(e) {
+    if (e && e.currentTarget) leaveRect('research-open', e.currentTarget.getBoundingClientRect());
     const store = this._store.store;
     const doc = store.addResearch({});
     const linked = this.#consumePendingLink(doc.id);
@@ -338,7 +342,7 @@ export class PandemoniumResearchPanel extends LitElement {
 
   #newTile() {
     return html`
-      <button class="newcard" @click=${() => this.#newSource()}>
+      <button class="newcard" @click=${(e) => this.#newSource(e)}>
         <span class="plus">+</span>
         <span class="nm">New source</span>
         <span class="how">write, drop a file,<br>or paste a link</span>
@@ -352,7 +356,7 @@ export class PandemoniumResearchPanel extends LitElement {
     return html`
       <div class="picking" data-clarity-mask="true">
         <span>Pick the source for ${q ? html`"${q}"` : 'this passage'}: click a card to link the whole source, or open one and select a passage inside it.</span>
-        <button @click=${() => this.#newSource()}>New source</button>
+        <button @click=${(e) => this.#newSource(e)}>New source</button>
         <button @click=${() => this._store.store.setUI({ linking: null })}>Cancel</button>
       </div>
     `;

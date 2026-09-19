@@ -21,7 +21,9 @@ export class PandemoniumCommentPopover extends LitElement {
 
   static styles = css`
     :host{position:fixed;inset:0;z-index:72;pointer-events:none}
+    @keyframes pop-in{from{opacity:0;transform:translateY(-4px)}}
     .pop{
+      animation:pop-in var(--dur-1) var(--ease-out);
       position:fixed;width:240px;background:var(--act);border-radius:12px;padding:3px;
       pointer-events:auto;font-family:var(--sans);box-shadow:0 4px 16px rgba(0,0,0,.22);
       transform-origin:top right;animation:pop-in .12s ease-out;

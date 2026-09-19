@@ -16,10 +16,11 @@ export class PdToast extends LitElement {
     }
     .box{
       background:var(--overlay);color:var(--overlay-ink);padding:7px 14px;border-radius:var(--r);
-      font-size:12px;opacity:0;transition:opacity .18s;max-width:80vw;
+      font-size:12px;opacity:0;transform:translateY(8px);max-width:80vw;
       font-family:var(--sans);
+      transition:opacity var(--dur-2) var(--ease-out),transform var(--dur-2) var(--ease-out);
     }
-    .box.on{opacity:1}
+    .box.on{opacity:1;transform:none}
   `;
 
   constructor() {

@@ -5,6 +5,7 @@ import { StoreController } from '../state/store-controller.js';
 import { dispatch } from '../utils/events.js';
 import { clamp } from '../utils/format.js';
 import { withGlobalItems } from '../utils/context-menu.js';
+import { fadeIn } from '../utils/motion.js';
 import {
   defaultLayout, setRatio, setLeafContent, splitLeaf, splitLeafAt, closeLeaf, absorbAcross, growAcross, pathTo,
   PANEL_TYPES, PANEL_LABELS, leafCount,
@@ -368,6 +369,25 @@ export class PandemoniumPanelLayout extends LitElement {
     if (this._dragMove) removeEventListener('pointermove', this._dragMove);
     if (this._dragUp) removeEventListener('pointerup', this._dragUp);
     this._dragMove = this._dragUp = null;
+  }
+
+  // A pane whose panel type just changed fades its new panel in, so switching
+  // Script to Storyboards reads as the pane turning over rather than
+  // blinking. Only a change of type counts: a re-render of the same panel, a
+  // resize, or a split does not animate anything that did not change.
+  #contentByLeaf = new Map();
+
+  updated() {
+    const seen = new Map();
+    for (const leafEl of this.renderRoot.querySelectorAll('.leaf[data-leaf]')) {
+      const id = leafEl.getAttribute('data-leaf');
+      const panel = leafEl.firstElementChild;
+      const type = panel ? panel.tagName : '';
+      seen.set(id, type);
+      const before = this.#contentByLeaf.get(id);
+      if (before && before !== type) fadeIn(panel, { rise: 0, from: 0 });
+    }
+    this.#contentByLeaf = seen;
   }
 
   render() {

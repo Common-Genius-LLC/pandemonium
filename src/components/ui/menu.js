@@ -19,7 +19,11 @@ export class PdMenu extends LitElement {
 
   static styles = css`
     :host{position:fixed;inset:0;z-index:70;pointer-events:none}
+    /* Opens by dropping 4px into place while it fades in: fast (--dur-1),
+       because a menu is waited on, and a slow one feels like lag. */
+    @keyframes menu-in{from{opacity:0;transform:translateY(-4px) scale(.98)}}
     .pop{
+      animation:menu-in var(--dur-1) var(--ease-out);transform-origin:top left;
       position:fixed;background:var(--overlay);color:var(--overlay-ink);border-radius:var(--r);
       display:flex;flex-direction:column;min-width:150px;padding:3px;gap:2px;
       pointer-events:auto;font-family:var(--sans);

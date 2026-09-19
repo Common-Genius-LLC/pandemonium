@@ -4,12 +4,18 @@
 // inherit into CodeMirror's injected stylesheet the same way they inherit
 // into any other shadow root.
 //
-// Deliberately not replicating the old preview's vertical margins between
-// blocks (26px above a scene heading, etc): CodeMirror's own line-height
-// bookkeeping is not guaranteed to stay correct with margins on `.cm-line`,
-// so this uses padding instead, which is the supported way to add per-line
-// spacing. It reads slightly tighter than the old read-only preview did;
-// that's an acceptable trade next to breaking scroll/selection math.
+// The script is laid out as real pages (cm-pages.js, fountain/paginate.js):
+// 12pt Courier on a fixed grid of characters and rows, which is the only way
+// the browser's line wrapping and the page layout can agree. So every line
+// here is exactly one row high per wrapped row: no vertical padding or margin
+// on any element, no letter-spacing, no size or font that differs from the
+// script's own. Space between elements is what it is on a real page, the
+// blank lines in the text. Horizontal placement is in `ch` (one character),
+// with the same indents the print export uses.
+//
+// The page geometry arrives as custom properties set by script-editor.js
+// (--pg-font, --pg-lh, --pg-cols, --pg-w, --pg-left, --pg-top), because the
+// size follows the text-size preference and shrinks to fit a narrow pane.
 'use strict';
 
 import { EditorView } from '@codemirror/view';
@@ -21,13 +27,13 @@ export const fountainTheme = EditorView.theme({
     // the editor just fills it.
     backgroundColor: 'transparent',
     height: '100%',
-    fontSize: '16px',
+    fontSize: 'var(--pg-font, 16px)',
     // The element menu (element-menu.js) is positioned against this box.
     position: 'relative',
   },
   '.cm-scroller': {
     fontFamily: 'var(--script)',
-    lineHeight: '1.6',
+    lineHeight: 'var(--pg-lh, 16px)',
     // overflow-x hidden so the full-bleed row-hover band (which extends far past
     // the text column, see .cm-sec-hover) is clipped to the panel instead of
     // creating a horizontal scrollbar. lineWrapping means there is no real
@@ -41,28 +47,38 @@ export const fountainTheme = EditorView.theme({
     overflowY: 'auto',
     backgroundColor: 'var(--pane-bg)',
   },
-  // A page, not a full-bleed column: paper width, its own fill lifted off the
-  // desk with a shadow, margins as padding since CodeMirror owns this box's
-  // geometry for its own cursor/scroll math (an outer margin would be
-  // invisible to it). overflow:hidden bounds .cm-sec-hover's -50vw band (below)
-  // to the page's own edges instead of the old full-bleed panel edges.
+  // The text column of the pages. Its border box is exactly one sheet wide
+  // (paper width at the current size): the left and right paddings are the
+  // page margins, and the width between them is the grid's column count in
+  // characters, plus a hair, so the browser fits exactly that many characters
+  // on a row and never one fewer to a rounding error. The sheets themselves
+  // are drawn behind it by cm-pages.js (.cm-page-sheet), so this box is
+  // transparent. overflow:hidden bounds .cm-sec-hover's -50vw band to the
+  // page's edges; isolation keeps that band above the sheet.
   '.cm-content': {
-    maxWidth: '600px',
-    margin: '40px auto 0 auto',
-    padding: '60px 50px 50vh 50px',
-    // --field, not --bg: the desk is the pane's fill now, and a page the same
-    // colour as the desk it lies on is not a page, it is a hole. On the light
-    // theme --field resolves to the same white and the page's shadow does the
-    // separating; on the dark one it is a step lighter, which is what keeps
-    // the paper reading as paper. The token is right by meaning too, being
-    // the fill of the surfaces you type on.
-    backgroundColor: 'var(--field)',
-    boxShadow: '0 2px 14px rgba(0,0,0,.2), 0 0 0 1px rgba(0,0,0,.06)',
+    boxSizing: 'content-box',
+    flexGrow: '0',
+    flexShrink: '0',
+    width: 'calc(var(--pg-cols, 57) * 1ch + 0.3ch)',
+    maxWidth: 'none',
+    margin: '28px auto 38vh auto',
+    padding: 'var(--pg-top, 96px) calc(var(--pg-w, 794px) - var(--pg-left, 144px) - var(--pg-cols, 57) * 1ch - 0.3ch) 0 var(--pg-left, 144px)',
+    backgroundColor: 'transparent',
     caretColor: 'var(--ink)',
     overflow: 'hidden',
-    // A stacking context of its own, so .cm-sec-hover's z-index:-1 band paints
-    // above this element's opaque page fill instead of behind it.
     isolation: 'isolate',
+  },
+  // A sheet: the typing surface's own fill, set off from the white desk by a
+  // hairline in the theme's placeholder grey and the faintest lift.
+  '.cm-page-sheet': {
+    backgroundColor: 'var(--field)',
+    boxShadow: '0 0 0 1px var(--ph), 0 2px 6px rgba(0,0,0,.05)',
+  },
+  '.cm-page-gap': { position: 'relative' },
+  // The page number, top right of its page, at the right margin, as printed.
+  '.cm-page-num': {
+    position: 'absolute', right: '0', color: 'var(--mut)', fontFamily: 'var(--script)',
+    fontSize: 'inherit', lineHeight: 'var(--pg-lh, 16px)', pointerEvents: 'none',
   },
   // "Start with a summary of the script", shown only over an empty document.
   // Styled exactly like a Fountain synopsis line (.cm-line.cmf-synopsis
@@ -72,8 +88,8 @@ export const fountainTheme = EditorView.theme({
     color: 'var(--mut)',
     fontStyle: 'italic',
     fontWeight: '400',
-    fontFamily: 'var(--sans)',
-    fontSize: '13px',
+    fontFamily: 'var(--script)',
+    fontSize: 'inherit',
   },
   // The neutral line. Everything an element rule below can set is reset to its
   // plain-action value here, so a line with no element class (a blank line, or
@@ -83,7 +99,7 @@ export const fountainTheme = EditorView.theme({
     textAlign: 'left',
     maxWidth: 'none',
     margin: '0',
-    padding: '2px 0',
+    padding: '0',
     textTransform: 'none',
     fontWeight: '400',
     fontStyle: 'normal',
@@ -112,28 +128,32 @@ export const fountainTheme = EditorView.theme({
   // .cm-line prefix also keeps these off the marks inside a line.
   '.cm-line.cmf-scene': {
     textAlign: 'left', maxWidth: 'none', margin: '0', textTransform: 'uppercase',
-    fontWeight: '700', fontStyle: 'normal', color: 'var(--ink)', letterSpacing: '.02em',
-    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '18px 0 2px 0',
+    fontWeight: '700', fontStyle: 'normal', color: 'var(--ink)', letterSpacing: 'normal',
+    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0',
   },
   '.cm-line.cmf-action': {
     textAlign: 'left', maxWidth: 'none', margin: '0', textTransform: 'none',
     fontWeight: '400', fontStyle: 'normal', color: 'var(--ink)', letterSpacing: 'normal',
-    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '2px 0',
+    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0',
   },
+  // The cue 2.1in in, the parenthetical 1.6in in and 2.2in wide, the speech
+  // 1in in and 3.4in wide: the standard page, and the indents the print export
+  // and fountain/paginate.js ELEMENTS use. Widths get the same hair of slack
+  // as the column, so exactly that many characters fit.
   '.cm-line.cmf-character': {
-    textAlign: 'center', maxWidth: 'none', margin: '0', textTransform: 'uppercase',
+    textAlign: 'left', maxWidth: 'calc((var(--pg-cols, 57) - 21) * 1ch + 0.3ch)', margin: '0', textTransform: 'uppercase',
     fontWeight: '700', fontStyle: 'normal', color: 'var(--ink)', letterSpacing: 'normal',
-    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '10px 0 2px 0',
+    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0 0 0 21ch',
   },
   '.cm-line.cmf-paren': {
-    textAlign: 'center', maxWidth: 'none', margin: '0', textTransform: 'none',
+    textAlign: 'left', maxWidth: '22.3ch', margin: '0', textTransform: 'none',
     fontWeight: '400', fontStyle: 'normal', color: 'var(--ui)', letterSpacing: 'normal',
-    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '2px 0',
+    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0 0 0 16ch',
   },
   '.cm-line.cmf-dialogue': {
-    textAlign: 'left', maxWidth: '62%', margin: '0 auto', textTransform: 'none',
+    textAlign: 'left', maxWidth: '34.3ch', margin: '0', textTransform: 'none',
     fontWeight: '400', fontStyle: 'normal', color: 'var(--ink)', letterSpacing: 'normal',
-    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '2px 0',
+    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0 0 0 10ch',
   },
   '.cm-line.cmf-transition': {
     // Muted like paren: a technical directive (CUT TO:, FADE OUT:), not story
@@ -142,30 +162,30 @@ export const fountainTheme = EditorView.theme({
     // still a craft element a writer reads deliberately, not a summary aside.
     textAlign: 'right', maxWidth: 'none', margin: '0', textTransform: 'uppercase',
     fontWeight: '400', fontStyle: 'italic', color: 'var(--ui)', letterSpacing: 'normal',
-    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '10px 0 2px 0',
+    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0',
   },
   '.cm-line.cmf-centered': {
     textAlign: 'center', maxWidth: 'none', margin: '0', textTransform: 'none',
     fontWeight: '400', fontStyle: 'normal', color: 'var(--ink)', letterSpacing: 'normal',
-    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '2px 0',
+    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0',
   },
   '.cm-line.cmf-lyric': {
     // Muted for the same reason as transition: it's marked ~like this~
     // precisely because it's a secondary reading, sung rather than spoken,
     // and should read as a step removed from ordinary dialogue.
-    textAlign: 'left', maxWidth: 'none', margin: '0', textTransform: 'none',
+    textAlign: 'left', maxWidth: '34.3ch', margin: '0', textTransform: 'none',
     fontWeight: '400', fontStyle: 'italic', color: 'var(--ui)', letterSpacing: 'normal',
-    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '2px 0 2px 1.5em',
+    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0 0 0 10ch',
   },
   '.cm-line.cmf-section': {
     textAlign: 'left', maxWidth: 'none', margin: '0', textTransform: 'none',
-    fontWeight: '700', fontStyle: 'normal', color: 'var(--ink)', letterSpacing: '.01em',
-    fontFamily: 'var(--script)', fontSize: '17px', padding: '16px 0 2px 0',
+    fontWeight: '700', fontStyle: 'normal', color: 'var(--ink)', letterSpacing: 'normal',
+    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0',
   },
   '.cm-line.cmf-synopsis': {
     textAlign: 'left', maxWidth: 'none', margin: '0', textTransform: 'none',
     fontWeight: '400', fontStyle: 'italic', color: 'var(--mut)', letterSpacing: 'normal',
-    fontFamily: 'var(--sans)', fontSize: '13px', padding: '2px 0',
+    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0',
   },
 
   // Inline emphasis + Obsidian-style concealed syntax. Markers are hidden

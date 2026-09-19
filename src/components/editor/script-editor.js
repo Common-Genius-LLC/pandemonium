@@ -9,8 +9,10 @@ import { dispatch } from '../../utils/events.js';
 import { fountainDecorations } from './cm-fountain-plugin.js';
 import { sectionAffordances, hoverSectionField, pinnedSectionField, setPinnedSection } from './cm-sections.js';
 import { fountainTheme } from './cm-theme.js';
-import { fountainMinimap, minimapTheme, setMinimapMarks } from './cm-minimap.js';
-import { boardLinkKinds, gutterRecord } from '../../state/selectors.js';
+import { scriptPages, setPageMetrics } from './cm-pages.js';
+import { scriptMinimap, scriptMinimapTheme, MINIMAP_WIDTH } from './cm-script-minimap.js';
+import { scriptPrefs } from '../../state/script-prefs.js';
+import { pageGrid } from '../../fountain/paginate.js';
 import { captureFromSelection } from './selection-capture.js';
 import { parseFountain } from '../../fountain/parse.js';
 import { resolvePart, snapToWords } from '../../fountain/resolve.js';
@@ -52,7 +54,6 @@ export class PandemoniumScriptEditor extends LitElement {
 
   #view = null;
   #plugin = null;
-  #lastMarksKey = null;
   #loadedScriptId = null;
   #connRAF = 0;
   #selRAF = 0;
@@ -88,9 +89,12 @@ export class PandemoniumScriptEditor extends LitElement {
         placeholder('Start with a summary of the script'),
         EditorView.lineWrapping,
         fountainTheme,
-        fountainMinimap,
-        minimapTheme,
         this.#plugin,
+        // Real pages (cm-pages.js), and the minimap that draws the same pages
+        // small with every linked passage painted in (cm-script-minimap.js).
+        scriptPages,
+        scriptMinimap({ getHighlights: (v) => v.plugin(this.#plugin)?.decorations }),
+        scriptMinimapTheme,
         activeElementField,
         // Both fields belong to the element flow: the journal records what a
         // transform overwrote so Shift+Tab can give it back, and the exemption
@@ -139,11 +143,55 @@ export class PandemoniumScriptEditor extends LitElement {
       ],
     });
     this.#view = new EditorView({ state, parent: host, root: this.renderRoot });
+
+    // The page follows the writer's paper and text size (Settings), and
+    // shrinks to fit a pane narrower than the page. Neither moves a page
+    // break: the layout is in characters and rows (fountain/paginate.js).
+    this.#applyPageMetrics();
+    this._onPrefs = () => this.#applyPageMetrics();
+    scriptPrefs.addEventListener('change', this._onPrefs);
+    if (typeof ResizeObserver === 'function') {
+      this._pageRO = new ResizeObserver(() => {
+        cancelAnimationFrame(this._pageRAF);
+        this._pageRAF = requestAnimationFrame(() => this.#applyPageMetrics());
+      });
+      this._pageRO.observe(this.#view.scrollDOM);
+    }
+  }
+
+  // Pixels per inch for the page: the text size the writer chose (12pt is
+  // 96 px per inch, the standard), reduced only when the pane cannot hold a
+  // page that wide next to the minimap. The sizes reach the theme as custom
+  // properties, and the page layout gets the same numbers by effect.
+  #lastMetrics = '';
+  #applyPageMetrics() {
+    const view = this.#view;
+    if (!view) return;
+    const { paper, cols } = pageGrid(scriptPrefs.paper);
+    const wanted = scriptPrefs.textPt / 12;
+    const avail = view.scrollDOM.clientWidth - MINIMAP_WIDTH - 48;
+    const fit = avail > 0 ? avail / (paper.width * 96) : wanted;
+    const scale = Math.max(0.4, Math.min(wanted, fit));
+    const ppi = 96 * scale;
+    const key = scriptPrefs.paper + ':' + ppi.toFixed(3);
+    if (key === this.#lastMetrics) return;
+    this.#lastMetrics = key;
+    const host = this.renderRoot.querySelector('.host');
+    host.style.setProperty('--pg-font', (ppi / 6) + 'px');
+    host.style.setProperty('--pg-lh', (ppi / 6) + 'px');
+    host.style.setProperty('--pg-cols', String(cols));
+    host.style.setProperty('--pg-w', (paper.width * ppi) + 'px');
+    host.style.setProperty('--pg-left', (1.5 * ppi) + 'px');
+    host.style.setProperty('--pg-top', ppi + 'px');
+    view.dispatch({ effects: setPageMetrics.of({ paper: scriptPrefs.paper, ppi }) });
   }
 
   disconnectedCallback() {
     cancelAnimationFrame(this.#connRAF);
     cancelAnimationFrame(this.#selRAF);
+    cancelAnimationFrame(this._pageRAF);
+    if (this._onPrefs) scriptPrefs.removeEventListener('change', this._onPrefs);
+    if (this._pageRO) this._pageRO.disconnect();
     this.#view?.destroy();
     super.disconnectedCallback();
   }
@@ -158,28 +206,6 @@ export class PandemoniumScriptEditor extends LitElement {
     const script = store.scriptForLeaf(this.leafId);
     if (!script || !script.final) return {};
     return store.getFinalState().R.biMap;
-  }
-
-  // The minimap's gutter marks: a bar beside every line a storyboard link
-  // lands on, green for a final board and yellow for a reference one. Only the
-  // final draft owns links, so any other draft gets none. Colors are read off
-  // the DOM (the gutter is a canvas, where var() does not resolve). Returns
-  // the new {line: color} record, or null when it is unchanged since last time
-  // so an unrelated store update does not repaint the minimap.
-  #minimapMarks() {
-    const store = this._store.store;
-    const script = store.scriptForLeaf(this.leafId);
-    let rec = {};
-    if (script && script.final) {
-      const state = store.getFinalState();
-      const cs = getComputedStyle(this);
-      const colors = { final: cs.getPropertyValue('--board-strong').trim(), ref: cs.getPropertyValue('--act').trim() };
-      rec = gutterRecord(state.fparsed.blocks, boardLinkKinds(state.R.boards), colors);
-    }
-    const key = JSON.stringify(rec);
-    if (key === this.#lastMarksKey) return null;
-    this.#lastMarksKey = key;
-    return rec;
   }
 
   // CodeMirror finalizes a pointer/keyboard selection in its OWN mouseup /
@@ -631,9 +657,8 @@ export class PandemoniumScriptEditor extends LitElement {
     // relinked from the Boards panel, or the debounced text-sync emit
     // landed -- both change what store.getFinalState().R.biMap returns
     // without CodeMirror itself having dispatched anything. The minimap
-    // gutter marks ride the same dispatch when they changed.
-    const marks = this.#minimapMarks();
-    this.#view.dispatch(marks ? { effects: setMinimapMarks.of(marks) } : {});
+    // redraws off the same update, from the same decorations.
+    this.#view.dispatch({});
 
     this.#syncConnector(ui);
   }

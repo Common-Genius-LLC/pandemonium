@@ -3,6 +3,7 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { fetchLinkPreview, peekLinkPreview } from '../../data/link-preview-client.js';
 import { previewOf, isRichPreview, cardLayout, previewMeta, optimizeImage } from '../../data/link-preview.js';
+import { fadeIn } from '../../utils/motion.js';
 
 // <pd-link-preview url="..."> : a link drawn as a social card, the way Slack or
 // Twitter unfurl one, from the server's Open Graph read of the page.
@@ -150,8 +151,10 @@ export class PdLinkPreview extends LitElement {
       const p = await fetchLinkPreview(url);
       if (this._loadedFor !== url) return; // the url changed while we waited
       if (!isRichPreview(p)) { if (this._state !== 'ready') this._state = 'error'; return; }
+      const fromSkeleton = this._state === 'loading';
       this._preview = p;
       this._state = 'ready';
+      if (fromSkeleton) this.updateComplete.then(() => fadeIn(this.renderRoot.querySelector('.card'), { rise: 2 }));
       this.dispatchEvent(new CustomEvent('pd-link-preview-load', { detail: { preview: p }, bubbles: true, composed: true }));
     } catch {
       // Whatever was drawn from stored data stays; with nothing to draw, a link.

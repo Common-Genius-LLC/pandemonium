@@ -586,6 +586,30 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
     finds there at run time, Amazon, http GitHub, ja.wikipedia and Unsplash,
     and loads every image the way the card will (no Referer).
 
+
+20. Pages, minimap, motion, tabs. **A4/Letter pages**: the script editor lays
+    the script out on real sheets at the standard 12pt Courier grid
+    (`fountain/paginate.js`, pure and tested: 57x58 on A4, 60x54 on Letter,
+    standard indents, keep-with-next for scene headings and cues, title page
+    and `===` breaks, printed page numbers). `cm-pages.js` turns breaks into
+    block widgets (a StateField, as CodeMirror requires) and draws sheets in a
+    background layer. Settings > Script: paper and text size (per user,
+    `state/script-prefs.js`); size scales the page, never the grid, and the
+    page shrinks to fit a narrow pane. Checked in a real browser: no line
+    falls outside its sheet. **Minimap**: `cm-script-minimap.js` replaces
+    `@replit/codemirror-minimap` (removed, with `gutterRecord`): the same
+    pages drawn small, real wrapping, linked text painted across its words
+    from the editor's own decorations, click and drag to scroll.
+    **Motion**: tokens `--dur-1/2/3`, `--ease-*` (zeroed under reduced
+    motion), `utils/motion.js` (fade, crossfade, FLIP, a sampled spring);
+    sources grow from their card and shrink back, `pd-segmented` slides for
+    Final/Reference and Settings, panels fade on type change, frames and
+    slides crossfade, menus/dialogs/toasts/popovers enter. **Tabs**: pills in
+    a pill track with a sliding thumb; the + sits outside the track. Timeline
+    tracks rounded 7.64px (the golden-ratio radius step). **Not done**: print
+    still uses its own Letter CSS rather than the paper setting; a single
+    line longer than a page runs over.
+
 ---
 
 ## Working context

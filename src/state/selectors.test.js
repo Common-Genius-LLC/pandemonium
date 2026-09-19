@@ -7,7 +7,7 @@
 'use strict';
 
 import { describe, it, expect } from 'vitest';
-import { linkedBoards, coverage, boardLinkKinds, gutterRecord, describeSlideshowGap } from './selectors.js';
+import { linkedBoards, coverage, boardLinkKinds, describeSlideshowGap } from './selectors.js';
 
 function resolved(id, { parts, seq = 0, img = null, refImg = null, ok = true, firstBi = 0, sceneIdx = 0 }) {
   return { bd: { id, anchor: { parts }, seq, img, refImg }, ok, firstBi, sceneIdx, res: [] };
@@ -97,26 +97,6 @@ describe('boardLinkKinds', () => {
   it('ignores unresolved parts of an otherwise resolved storyboard', () => {
     const kinds = boardLinkKinds([mk('f', 'F', null, [null, 7])]);
     expect([...kinds.keys()]).toEqual([7]);
-  });
-});
-
-describe('gutterRecord', () => {
-  const colors = { final: 'GREEN', ref: 'YELLOW' };
-  const blocks = [{ line: 0, text: 'INT. A' }, { line: 2, text: 'one\ntwo' }, { line: 5, text: 'x' }];
-
-  it('colors 1-based lines, spanning a multi-line block', () => {
-    const rec = gutterRecord(blocks, new Map([[0, { final: true, ref: false }], [1, { final: false, ref: true }]]), colors);
-    expect(rec).toEqual({ 1: 'GREEN', 3: 'YELLOW', 4: 'YELLOW' });
-  });
-
-  it('lets final win where a block is linked both ways', () => {
-    const rec = gutterRecord(blocks, new Map([[2, { final: true, ref: true }]]), colors);
-    expect(rec).toEqual({ 6: 'GREEN' });
-  });
-
-  it('skips blocks that do not exist or have no line', () => {
-    const rec = gutterRecord([{ line: null, text: 'x' }], new Map([[0, { final: true, ref: false }], [9, { final: true, ref: false }]]), colors);
-    expect(rec).toEqual({});
   });
 });
 

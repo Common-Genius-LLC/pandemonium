@@ -19,6 +19,8 @@ export class PandemoniumSelectionToolbar extends LitElement {
 
   static styles = css`
     :host{position:fixed;inset:0;z-index:70;pointer-events:none}
+    @keyframes bar-in{from{opacity:0;transform:translateY(-3px)}}
+    .bar,.pills{animation:bar-in var(--dur-1) var(--ease-out)}
     .bar{
       position:fixed;background:var(--overlay);color:var(--overlay-ink);border-radius:var(--r);display:flex;padding:3px;gap:2px;
       pointer-events:auto;font-family:var(--sans);

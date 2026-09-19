@@ -10,6 +10,10 @@ import { panelStyles } from '../../styles/shared.js';
 import '../ui/button.js';
 import '../ui/panel-picker.js';
 import './board-card.js';
+import '../ui/segmented.js';
+import { crossfade } from '../../utils/motion.js';
+
+const MODE_OPTIONS = [{ value: 'final', label: 'Final' }, { value: 'reference', label: 'Reference' }];
 
 // "Add Image" opens the file picker immediately -- no
 // prerequisite step. It used to require selecting a script passage first
@@ -40,11 +44,7 @@ export class PandemoniumBoardsPanel extends LitElement {
        bottom-center over the frames, like the same switch in the slideshow
        (.sbswitch there), rather than crowding the toolbar. */
     .modes{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:5;
-      display:flex;gap:4px;background:var(--panel);border-radius:20px;padding:3px;
-      box-shadow:0 1px 4px rgba(0,0,0,.18)}
-    .modes button{height:24px;padding:0 12px;font-size:11px;font-weight:500;color:var(--mut);
-      background:transparent;border:0;border-radius:20px;cursor:pointer;font-family:var(--sans)}
-    .modes button.on{background:var(--overlay);color:var(--overlay-ink)}
+      border-radius:20px;box-shadow:0 1px 4px rgba(0,0,0,.18)}
     #boardsList{display:flex;flex-direction:column;gap:6px;padding:10px 10px 24px}
     /* Rendered-script view (Figma 82-34): the final draft's elements shown as
        formatted lines with the frames embedded at their linked positions. The
@@ -168,7 +168,10 @@ export class PandemoniumBoardsPanel extends LitElement {
   // Every storyboard is in both views, so the card is always there; what the
   // highlight can add is which view to show it in (`highlightMode`): the frame
   // that just got its image, so "look, here's what just happened" is visible.
-  updated() {
+  updated(changed) {
+    if (changed.has('_mode') && changed.get('_mode') !== undefined) {
+      crossfade(this.renderRoot.querySelector('#boardsList, .doc, .noboards'));
+    }
     const ui = this._store.ui;
     if (!ui || !ui.highlightBoard) return;
     const id = ui.highlightBoard;
@@ -274,10 +277,9 @@ export class PandemoniumBoardsPanel extends LitElement {
                 <p>drop ${reference ? 'reference images' : 'images'} here to use as storyboard panels</p>
               </div>`}
         </div>
-        <div class="modes">
-          <button class=${this._mode === 'final' ? 'on' : ''} @click=${() => { this._mode = 'final'; }}>Final</button>
-          <button class=${this._mode === 'reference' ? 'on' : ''} @click=${() => { this._mode = 'reference'; }}>Reference</button>
-        </div>
+        <pd-segmented class="modes" label="Which frame of each storyboard to show"
+          .options=${MODE_OPTIONS} .value=${this._mode}
+          @change=${(e) => { this._mode = e.detail.value; }}></pd-segmented>
       </div>
       <input type="file" id="fileImg" accept=${BOARD_MEDIA_ACCEPT} multiple style="display:none" @change=${(e) => this.#onFilePicked(e)}>
     `;

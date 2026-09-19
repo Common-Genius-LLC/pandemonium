@@ -101,8 +101,7 @@ export function coverage(scenes, R) {
 }
 
 // Which blocks a storyboard link lands on, and which color each gets, for
-// anything that paints a per-line marker (the minimap gutter, the boards
-// panel's script view). Mirrors what the editor highlights: every storyboard
+// anything that paints a per-line marker (the boards panel's script view). Mirrors what the editor highlights: every storyboard
 // that resolves, blank or not (a blank one is still a real link). A storyboard
 // reads as `ref` only when its sole image is the reference one; anything else
 // (a final image, or blank) reads as `final`, and final wins where a block is
@@ -122,23 +121,6 @@ export function boardLinkKinds(resolvedBoards) {
   return kinds;
 }
 
-// The minimap's gutter marks: {lineNumber: color}, 1-based, from the parsed
-// blocks and boardLinkKinds. A multi-line block (a wrapped action paragraph)
-// marks every line it spans; final wins where a block is linked both ways.
-// Colors come in from the caller as concrete strings (the gutter is a canvas,
-// where a CSS var() does not resolve).
-export function gutterRecord(blocks, kinds, colors) {
-  const rec = {};
-  for (const [bi, k] of kinds) {
-    const b = blocks[bi];
-    if (!b || b.line == null) continue;
-    const color = k.final ? colors.final : colors.ref;
-    if (!color) continue;
-    const extra = (b.text.match(/\n/g) || []).length;
-    for (let i = 0; i <= extra; i++) rec[b.line + 1 + i] = color;
-  }
-  return rec;
-}
 
 // Guardrail messaging for actions that assume a playable storyboard already
 // exists (the slideshow, pacing recording): rather than opening on nothing

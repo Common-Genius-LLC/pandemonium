@@ -19,7 +19,11 @@ export class PdDialog extends LitElement {
   static styles = [formStyles, chipStyles, css`
     :host{position:fixed;inset:0;z-index:88}
     :host(:not([data-open])){pointer-events:none}
-    .ov{position:fixed;inset:0;background:rgba(0,0,0,.22);display:flex;align-items:center;justify-content:center;pointer-events:auto}
+    @keyframes dim-in{from{opacity:0}}
+    @keyframes dlg-in{from{opacity:0;transform:translateY(6px) scale(.97)}}
+    .ov{position:fixed;inset:0;background:rgba(0,0,0,.22);display:flex;align-items:center;justify-content:center;pointer-events:auto;
+      animation:dim-in var(--dur-2) var(--ease-out)}
+    .ov .dlg{animation:dlg-in var(--dur-2) var(--ease-out)}
     .dlg{
       width:min(var(--dlg-w,380px),92vw);background:var(--bg);border-radius:var(--r);padding:18px;
       display:flex;flex-direction:column;gap:12px;max-height:86vh;overflow:auto;

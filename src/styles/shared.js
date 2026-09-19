@@ -48,9 +48,7 @@ export const panelStyles = css`
     flex:1;min-height:0;display:flex;flex-direction:column;
     background:var(--pane-bg,var(--bg));border-radius:20px;overflow:hidden;
   }
-  /* The strip takes the pane's own colour, so a panel is one solid object.
-     Only the script panel overrides it back to the chrome grey, because its
-     tabs need a surface to be cut out of. */
+  /* The strip takes the pane's own colour, so a panel is one solid object. */
   .chrome{
     flex:none;height:30px;display:flex;align-items:stretch;
     background:var(--pane-bg,var(--bg));
@@ -89,37 +87,29 @@ export const panelStyles = css`
   }
 `;
 
-// The draft tabs in the script panel's chrome strip (Figma 44:148 / 44:157).
-// An inactive tab sits on the chrome with a lip of shadow; the active one is
-// cut out of it, taking the working area's own colour so the tab and the page
-// under it read as one surface. The final draft keeps its blue whether it is
-// selected or not, which is what marks it as the draft that owns the links.
+// The draft tabs in the script panel's chrome strip: pills in a pill track,
+// the same object as the Final / Reference switch in the boards panel. The old
+// tabs were file-folder tabs cut out of a grey strip, which stopped making
+// sense once every pane became one white surface (and read as low contrast
+// grey on grey). The active pill's dark fill is NOT drawn here: the panel
+// draws one filled pill behind the row and slides it to whichever draft is
+// active (script-panel.js .thumb), so switching drafts is one visible motion
+// rather than one pill blinking off and another on.
+//
+// The final draft carries weight (Medium against the others' Regular), which
+// is what marks it as the draft that owns the links.
 export const tabStyles = css`
-  .tabs{display:flex;align-items:stretch;margin-left:8px;overflow-x:auto;scrollbar-width:none}
-  .tabs::-webkit-scrollbar{display:none}
   .tab{
-    box-sizing:border-box;
-    flex:none;min-width:88px;max-width:140px;height:30px;padding:0 10px;
-    /* Left-aligned with a trailing ellipsis: a long draft name shows its start
-       and "..." rather than centering and clipping both ends (which hid the
-       part that tells drafts apart). display:block + line-height centers the
-       text vertically while letting text-overflow work on the text run. */
-    display:block;text-align:left;line-height:30px;
-    font-family:var(--sans);font-size:12px;letter-spacing:-0.12px;
-    color:var(--mut);background:var(--chrome-panel);
-    border:0;border-radius:0;cursor:pointer;white-space:nowrap;
-    overflow:hidden;text-overflow:ellipsis;
-    /* The frame's 0.5px cast lands under the next tab, which paints over it,
-       so the cell edge is drawn as an inset hairline instead. The outer cast
-       stays for the lip along the top. */
-    box-shadow:inset 1px 0 0 rgba(0,0,0,.07),0.5px -1px 1px rgba(0,0,0,.15);
+    position:relative;z-index:1;box-sizing:border-box;flex:none;
+    height:24px;max-width:150px;padding:0 12px;border:0;border-radius:20px;
+    font-family:var(--sans);font-size:12px;line-height:24px;letter-spacing:-0.12px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    color:var(--ui);background:transparent;cursor:pointer;
+    transition:color var(--dur-2) var(--ease-out),background var(--dur-1) var(--ease-out);
   }
-  .tab:hover{color:var(--ink)}
-  /* The final draft is the one that owns the links, so it carries weight
-     (Untitled Sans Medium against the others' Regular). No colour tint now:
-     panels are one neutral surface (Figma 101-1095). */
+  .tab:hover{color:var(--ink);background:var(--row-hover)}
   .tab.final{font-weight:500}
-  .tab.on{background:var(--pane-bg,var(--bg));box-shadow:none}
+  .tab.on,.tab.on:hover{color:var(--overlay-ink);background:transparent}
 `;
 
 export const chipStyles = css`

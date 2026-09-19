@@ -8,6 +8,7 @@ import { NOTE_COLORS, colorToken, docTitle, docSnippet, hostOf, mediaKind } from
 import { previewOf, optimizeImage } from '../../data/link-preview.js';
 import { mediaIcon } from './icons.js';
 import { withGlobalItems } from '../../utils/context-menu.js';
+import { leaveRect, takeRect, shrinkFrom } from '../../utils/motion.js';
 
 // One research source in the grid. A source is one record that may carry a
 // piece of media, a URL and notes in any combination, so the card shows
@@ -112,7 +113,21 @@ export class PandemoniumResearchCard extends LitElement {
       dispatch(this, 'pandemonium-toast', { message: 'Linked to the whole source. Open it and select a passage to narrow the link.' });
       return;
     }
+    // Where this card sits, for the opened source to grow out of.
+    leaveRect('research-open', this.renderRoot.querySelector('.rcard').getBoundingClientRect());
     store.setUI({ openDoc: this.doc.id });
+  }
+
+  // Closing a source hands back where the open source was; this card, freshly
+  // drawn in the grid, shrinks into place from there, so the source visibly
+  // goes back to where it lives. Brought into view first, because the grid
+  // is rebuilt at the top and the card may be further down.
+  firstUpdated() {
+    const from = takeRect('research-close:' + this.doc.id);
+    if (!from) return;
+    const card = this.renderRoot.querySelector('.rcard');
+    this.scrollIntoView({ block: 'nearest' });
+    shrinkFrom(card, from, { content: [...card.children] });
   }
 
   // Jump to the first script passage this source backs, which is also what

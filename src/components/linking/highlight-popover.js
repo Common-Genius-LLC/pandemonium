@@ -13,7 +13,8 @@ export class PandemoniumHighlightPopover extends LitElement {
 
   static styles = css`
     :host{position:fixed;inset:0;z-index:70;pointer-events:none}
-    .pop{position:fixed;width:250px;background:var(--panel);border-radius:var(--r);overflow:hidden;pointer-events:auto;font-family:var(--sans)}
+    @keyframes pop-in{from{opacity:0;transform:translateY(-4px)}}
+    .pop{animation:pop-in var(--dur-1) var(--ease-out);position:fixed;width:250px;background:var(--panel);border-radius:var(--r);overflow:hidden;pointer-events:auto;font-family:var(--sans)}
     .img{aspect-ratio:16/9;background:var(--ph);overflow:hidden;cursor:pointer}
     .img img{width:100%;height:100%;object-fit:cover;display:block}
     .pnote{height:100%;box-sizing:border-box;padding:10px 12px;font-size:12px;line-height:1.35;color:var(--ink);overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere}

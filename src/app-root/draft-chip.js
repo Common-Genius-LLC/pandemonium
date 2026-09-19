@@ -16,12 +16,12 @@ const DND_TYPE = 'application/x-pandemonium-draft';
 export class PandemoniumDraftChip extends LitElement {
   static properties = { script: { type: Object }, leafId: {}, active: { type: Boolean, reflect: true }, _dragOver: { state: true } };
 
-  // Figma "Final Draft" / "Other Drafts" (44:148, 44:157). tabStyles carries
-  // the shape; --pane-bg is inherited from the panel shell so the active tab
-  // takes the working area's own colour.
+  // A pill in the panel's pill track (tabStyles). The active draft's fill is
+  // the panel's sliding thumb, so this only has to say which draft it is.
   static styles = [tabStyles, css`
     :host{display:inline-flex}
-    button.dragover{box-shadow:inset 2px 0 0 var(--ui)}
+    /* Where a dragged draft will land: a bar at the pill's leading edge. */
+    button.dragover{box-shadow:inset 3px 0 0 var(--res)}
   `];
 
   constructor() {
@@ -103,6 +103,7 @@ export class PandemoniumDraftChip extends LitElement {
     // Active reflects this pane's own draft (its override, else the global one).
     this.active = this._store.store.scriptForLeaf(this.leafId).id === s.id;
     const title = this.active ? 'Draft options: rename, duplicate, make final, delete' : 'Switch to this draft';
+    this.setAttribute('data-script-id', s.id);
     return html`<button class="tab ${s.final ? 'final' : ''} ${this.active ? 'on' : ''} ${this._dragOver ? 'dragover' : ''}"
       title=${title} @click=${(e) => this.#click(e)}
       draggable=${!s.final} @dragstart=${(e) => this.#dragStart(e)}
