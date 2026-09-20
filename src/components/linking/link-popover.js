@@ -1,6 +1,6 @@
 'use strict';
 
-import { LitElement, html, css, svg } from 'lit';
+import { LitElement, html, css, svg, nothing } from 'lit';
 
 // The up-arrow on the comment note's round button, the same glyph as the comment card.
 const DONE_ICON = svg`<svg viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M6 10V2.4M6 2.4 2.7 5.7M6 2.4 9.3 5.7" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -51,6 +51,12 @@ export class PandemoniumLinkPopover extends LitElement {
       opacity:0;pointer-events:none;transition:opacity var(--dur-1) var(--ease-out);
     }
     .sec:hover .pill,.sec .pill:focus-visible{opacity:1;pointer-events:auto}
+    /* Comment: the same yellow pill as the one on the script's rail, inside the
+       storyboard card at its top centre (the card's own controls hold the
+       corners), shown on hover like they are. Only offered while the element
+       has no comment yet. */
+    .sec .pill.cmt{right:auto;bottom:auto;top:6px;left:50%;transform:translateX(-50%);background:var(--act);color:var(--act-ink)}
+    .sec .pill.cmt:hover{background:var(--act-hi)}
     .sec .pill:hover{background:#f0f0f0}
     pandemonium-research-card{cursor:pointer}
 
@@ -151,10 +157,30 @@ export class PandemoniumLinkPopover extends LitElement {
 
   // The card shows whichever frame has the picture (final first), like the
   // Storyboards panel does for a storyboard that has only a reference frame.
-  #board(o, runs) {
+  #board(o, runs, canComment) {
     const bd = o.bd;
     const mode = !bd.img && bd.refImg ? 'reference' : 'final';
-    return html`<div class="sec"><pandemonium-board-card .resolved=${o} .mode=${mode} .run=${runs.get(bd.id)}></pandemonium-board-card></div>`;
+    return html`
+      <div class="sec">
+        <pandemonium-board-card .resolved=${o} .mode=${mode} .run=${runs.get(bd.id)}></pandemonium-board-card>
+        ${canComment ? html`<button class="pill cmt" title="Add a comment to this passage" @click=${() => this.#addComment(o)}>Comment</button>` : nothing}
+      </div>
+    `;
+  }
+
+  // A comment on the same words the storyboard is on, added and shown right
+  // here, with the cursor already in it.
+  #addComment(o) {
+    const c = this._store.store.addComment({ parts: (o.bd.anchor && o.bd.anchor.parts) || [] });
+    this._ids = { ...this._ids, commentIds: [...this._ids.commentIds, c.id] };
+    this._focusComment = c.id;
+  }
+
+  updated() {
+    if (!this._focusComment) return;
+    const ta = this.renderRoot.querySelector(`textarea[data-cid="${this._focusComment}"]`);
+    if (ta) { this._focusComment = null; ta.focus(); }
+    this.#position();
   }
 
   #ref(lk, research, links) {
@@ -175,7 +201,7 @@ export class PandemoniumLinkPopover extends LitElement {
     return html`
       <div class="note">
         <div class="paper">
-          <textarea placeholder="Add a comment" .value=${cm.body || ''}
+          <textarea data-cid=${cm.id} placeholder="Add a comment" .value=${cm.body || ''}
             @input=${(e) => this._store.store.updateCommentBody(cm.id, e.target.value)}></textarea>
           <div class="foot">
             <button class="del" @click=${() => this.#deleteComment(cm)}>Delete</button>
@@ -197,7 +223,7 @@ export class PandemoniumLinkPopover extends LitElement {
     return html`
       <div class="pop" style="left:${this._x || 0}px;top:${this._y || 0}px"
         @pandemonium-open-slideshow=${() => this.close()}>
-        ${boards.map((b) => this.#board(b, runs))}
+        ${boards.map((b) => this.#board(b, runs, !comments.length))}
         ${links.map((l) => this.#ref(l, research, this._store.project.links))}
         ${comments.map((c) => this.#comment(c))}
       </div>

@@ -761,6 +761,19 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
     that but an unsupported gradient with transparent text would make the words
     invisible, so it is not used.
 
+
+27. **One tint on hover; add a comment from the storyboard card.** On hover,
+    linked words show ONE tint in the colour of the highest-priority kind they
+    carry: comment, then reference, then storyboard (`HOVER_PRIORITY` in
+    `cm-theme.js`), even where they carry several. The text colour at rest is
+    unchanged (a gradient where several kinds overlap, item 26), so the text
+    says what is attached, the hover says which one you are on, and a click
+    (the link popover) shows everything. In the popover, a storyboard's card
+    has a yellow Comment pill (top centre, on hover, only while the element has
+    no comment yet) that adds a comment on the same words as the storyboard and
+    puts the cursor in it. Storyboards and comments are both final-draft-only,
+    so it appears only there. Verified in a browser.
+
 ---
 
 ## Working context

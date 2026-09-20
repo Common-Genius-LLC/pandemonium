@@ -27,9 +27,12 @@ import { EditorView } from '@codemirror/view';
 //
 //   at rest   the text takes the kind's colour; words carrying two or three
 //             kinds take a smooth left-to-right GRADIENT of them (gradient
-//             text, so it reads as one continuous colour, not as bands)
-//   on hover  a soft tint of the same colours appears behind the words, a
-//             single tint or the same gradient
+//             text, so it reads as one continuous colour, not as bands), which
+//             says at a glance that more than one thing is attached
+//   on hover  ONE soft tint appears behind the words, whatever they carry, in
+//             the colour of the highest-priority kind: a comment first, then a
+//             reference, then a storyboard (HOVER_PRIORITY). The hover says
+//             "this is what you are on"; a click shows everything attached
 //
 // The text colours are the kind colours mixed toward the ink, so they stay
 // legible on the page in both themes; the hover tints are light washes. Every
@@ -41,6 +44,8 @@ const KIND_TEXT = {
   hr: 'color-mix(in srgb, var(--res) 82%, var(--ink))',
   hc: 'color-mix(in srgb, var(--act) 55%, var(--ink))',
 };
+// Which kind's tint wins on hover when the same words carry more than one.
+const HOVER_PRIORITY = ['hc', 'hr', 'hb', 'hbr'];
 const KIND_TINT = {
   hb: 'var(--board)',
   hbr: 'color-mix(in srgb, var(--board-ref) 50%, transparent)',
@@ -69,9 +74,11 @@ function linkRules() {
           continue;
         }
         const text = `linear-gradient(90deg,${kinds.map((k) => KIND_TEXT[k]).join(',')})`;
-        const tint = `linear-gradient(90deg,${kinds.map((k) => KIND_TINT[k]).join(',')})`;
+        const top = HOVER_PRIORITY.find((k) => kinds.includes(k));
+        // One flat tint (a gradient of one colour, so it can sit in a layer).
+        const tint = `linear-gradient(90deg,${KIND_TINT[top]},${KIND_TINT[top]})`;
         rules[sel] = { color: 'transparent', backgroundImage: text, backgroundClip: 'text', WebkitBackgroundClip: 'text' };
-        // The text gradient stays on top; the tint gradient sits under it. The
+        // The text gradient stays on top; the one tint sits under it. The
         // single-kind hover tints that also match this word are cleared.
         rules[sel + ':hover'] = {
           backgroundColor: 'transparent',
