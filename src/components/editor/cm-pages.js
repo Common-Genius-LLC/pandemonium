@@ -10,10 +10,9 @@
 //               as the rest of the page it ends, plus the bottom and top
 //               margins and the gap between sheets. The widget carries the
 //               next page's number.
-//   pageSheets  a background layer that draws each sheet behind the text.
-//               Every page is exactly one sheet tall (the widgets guarantee
-//               it), so sheet k sits at content top + k * (sheet + gap) and
-//               nothing needs measuring.
+//   pageSheets  a background layer that draws each sheet behind the text,
+//               each anchored to where CodeMirror places that page's first
+//               line (see markers), so text and sheet can never disagree.
 //
 // Geometry comes in by effect (setPageMetrics): paper, pixels per inch (the
 // text-size preference times any fit-to-pane shrink) and the gap. Changing
@@ -71,8 +70,12 @@ function compute(state) {
   const m = state.field(metricsField);
   const text = state.doc.toString();
   const lines = text.split('\n');
-  const { paper, cols, rows } = pageGrid(m.paper);
-  const layout = paginate({ lines, types: lineTypes(parseText(text), lines.length, lines), cols, rows });
+  const grid = pageGrid(m.paper);
+  const { paper, rows } = grid;
+  // The page may be narrower than the paper (a narrow pane, see pageFit): its
+  // own column count and margins arrive with the metrics.
+  const cols = m.cols || grid.cols;
+  const layout = paginate({ lines, types: lineTypes(parseText(text), lines.length, lines), cols, rows, refCols: m.refCols || grid.cols });
 
   const lh = m.ppi / LPI;
   const top = MARGINS.top * m.ppi;
@@ -80,7 +83,7 @@ function compute(state) {
   // The bottom margin takes up the part of a row the grid cannot use, so a
   // sheet is exactly the paper's height.
   const bottom = pageH - top - rows * lh;
-  const geom = { ppi: m.ppi, lh, top, bottom, pageH, pageW: paper.width * m.ppi, gap: m.gap, count: layout.pages.length };
+  const geom = { ppi: m.ppi, lh, top, bottom, pageH, pageW: m.pageW || paper.width * m.ppi, left: m.left != null ? m.left : MARGINS.left * m.ppi, gap: m.gap, count: layout.pages.length };
 
   const b = new RangeSetBuilder();
   for (let p = 1; p < layout.pages.length; p++) {
@@ -118,14 +121,27 @@ const pageSheets = layer({
       || update.transactions.some((tr) => tr.effects.some((e) => e.is(setPageMetrics)));
   },
   markers(view) {
-    const { geom } = view.state.field(pagesField);
-    const content = view.contentDOM.getBoundingClientRect();
+    const { geom, layout } = view.state.field(pagesField);
+    const doc = view.state.doc;
     const sc = view.scrollDOM.getBoundingClientRect();
+    const content = view.contentDOM.getBoundingClientRect();
     const left = content.left - (sc.left - view.scrollDOM.scrollLeft);
-    const top0 = content.top - (sc.top - view.scrollDOM.scrollTop);
+    // Where the document starts, in the scroller's own content coordinates.
+    const docTop = view.documentTop - (sc.top - view.scrollDOM.scrollTop);
     const out = [];
     for (let k = 0; k < geom.count; k++) {
-      out.push(new RectangleMarker('cm-page-sheet', left, top0 + k * (geom.pageH + geom.gap), content.width, geom.pageH));
+      // Each sheet hangs off where CodeMirror ITSELF says the page's first line
+      // is, not off an ideal grid. A line CodeMirror has not rendered yet has
+      // only an estimated height (it ignores word wrap and our narrower
+      // dialogue columns), so its text sits a few rows off where the grid says
+      // by the time you are several pages down; the sheets, drawn from the
+      // grid, then no longer lined up with the text they hold. Taken from the
+      // same height map as the text, they always are, and correct themselves
+      // as the estimates are replaced by measurements.
+      const from = doc.line(Math.min(layout.pages[k].start + 1, doc.lines)).from;
+      const block = view.lineBlockAt(from);
+      const text = Array.isArray(block.type) ? block.type[block.type.length - 1] : block;
+      out.push(new RectangleMarker('cm-page-sheet', left, docTop + text.top - geom.top, geom.pageW, geom.pageH));
     }
     return out;
   },

@@ -5,7 +5,7 @@
 'use strict';
 
 import { describe, it, expect } from 'vitest';
-import { pageGrid, wrapRows, wrapSegments, elementBox, lineTypes, paginate } from './paginate.js';
+import { pageGrid, wrapRows, wrapSegments, elementBox, lineTypes, paginate, pageFit, MIN_COLS } from './paginate.js';
 import { parseFountain } from './parse.js';
 
 const layout = (src, paper = 'a4') => {
@@ -143,5 +143,68 @@ describe('wrapSegments', () => {
         for (let i = 1; i < segs.length; i++) expect(segs[i][0]).toBe(segs[i - 1][1]);
       }
     }
+  });
+});
+
+describe('elementBox on a narrow page', () => {
+  it('scales indents and widths with the page, so dialogue stays inside it', () => {
+    const wide = elementBox('dialogue', 57, 57);
+    const narrow = elementBox('dialogue', 38, 57);
+    expect(wide).toEqual({ indent: 10, width: 34 });
+    expect(narrow.indent + narrow.width).toBeLessThanOrEqual(38);
+    expect(narrow.indent).toBeLessThan(wide.indent);
+    expect(elementBox('character', 30, 57).indent + 8).toBeLessThanOrEqual(30);
+  });
+  it('does not change a page as wide as the paper', () => {
+    expect(elementBox('paren', 57, 57)).toEqual({ indent: 16, width: 22 });
+    expect(elementBox('paren', 80, 57)).toEqual({ indent: 16, width: 22 });
+  });
+});
+
+describe('pageFit: a fixed text size, a page that gives way', () => {
+  const fit = (avail) => pageFit({ paperKey: 'a4', ppi: 96, avail });
+  it('is the whole paper, with the standard margins, when there is room', () => {
+    const f = fit(2000);
+    expect(f.pageW).toBeCloseTo(8.27 * 96, 3);
+    expect(f.left).toBeCloseTo(144, 3);
+    expect(f.cols).toBe(57);
+  });
+  it('narrows the page and keeps the margins first, so lines hold fewer characters', () => {
+    const f = fit(700);
+    expect(f.pageW).toBe(700);
+    expect(f.left).toBeCloseTo(144, 3);
+    expect(f.cols).toBeLessThan(57);
+    expect(f.cols).toBeGreaterThanOrEqual(46);
+  });
+  it('then shrinks the margins to hold the column near 80% of a full one', () => {
+    const f = fit(560);
+    expect(f.left).toBeLessThan(144);
+    expect(f.left).toBeGreaterThan(48);
+    expect(f.cols).toBe(46);
+  });
+  it('finally narrows the column itself, never below the floor', () => {
+    const f = fit(380);
+    expect(f.left).toBeCloseTo(48, 3);
+    expect(f.cols).toBeLessThan(46);
+    expect(fit(10).cols).toBe(MIN_COLS);
+  });
+  it('never lets the text column exceed the page, and the right margin is never negative', () => {
+    for (const avail of [3000, 900, 700, 600, 500, 400, 300, 200, 50]) {
+      const f = fit(avail);
+      expect(f.right).toBeGreaterThanOrEqual(0);
+      if (avail >= 300) expect(f.left + f.cols * 9.6 + f.right).toBeCloseTo(f.pageW, 3);
+    }
+  });
+  it('is monotone: a narrower pane never gives more columns or a wider page', () => {
+    let last = fit(2000);
+    for (let a = 1900; a >= 200; a -= 50) {
+      const f = fit(a);
+      expect(f.cols).toBeLessThanOrEqual(last.cols);
+      expect(f.pageW).toBeLessThanOrEqual(last.pageW);
+      last = f;
+    }
+  });
+  it('scales with the text size: the same pane holds fewer characters at a larger size', () => {
+    expect(pageFit({ ppi: 128, avail: 700 }).cols).toBeLessThan(pageFit({ ppi: 96, avail: 700 }).cols);
   });
 });

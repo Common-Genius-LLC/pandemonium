@@ -627,6 +627,26 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
     A full identifier rename would need a schema migration in `loadProject`
     and on the server.
 
+
+22. **Responsive script page.** The text size no longer shrinks with the pane:
+    it stays at the chosen size and the PAGE gives way (`pageFit` in
+    `fountain/paginate.js`, tested): the page narrows first with its margins
+    intact, then once the text column would fall under 80% of the paper's the
+    margins shrink (down to 0.5in left, 0.4in right), then the column itself
+    narrows (floor 24 columns). Dialogue, cue and parenthetical indents and
+    widths scale with the column (`elementBox(type, cols, refCols)`) so they
+    stay inside a narrow page; the sizes reach the theme as `--pg-i-*` and
+    `--pg-w-*`. Trade-off, stated in Settings: in a wide pane page breaks match
+    a printed page, in a narrow one lines wrap sooner so pages fill sooner.
+    **Bug found and fixed while verifying it**: sheets were drawn from an ideal
+    grid, but CodeMirror only estimates the height of lines it has not
+    rendered (ignoring word wrap and narrow dialogue columns), so in a pane
+    that does not scroll internally (narrow widths, where the page scrolls)
+    text drifted a few rows off its sheet by page 6. Each sheet now anchors to
+    `view.lineBlockAt` of its page's first line, from the same height map as the
+    text. Verified in a real browser at 2200, 1500, 1000 and 700px: font stays
+    16px, no line outside its sheet.
+
 ---
 
 ## Working context

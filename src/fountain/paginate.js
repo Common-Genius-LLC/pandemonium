@@ -57,9 +57,55 @@ export const ELEMENTS = {
   blank: [0, null],
 };
 
-export function elementBox(type, cols) {
+// `refCols` is the paper's full column count. When the page is narrower than
+// that (a narrow pane, see pageFit), every indent and width scales down with
+// it, so dialogue stays a narrower column inside the page instead of running
+// off its edge. At full width (cols >= refCols) nothing changes.
+export function elementBox(type, cols, refCols = cols) {
   const [indent, width] = ELEMENTS[type] || ELEMENTS.action;
-  return { indent, width: Math.max(1, Math.min(width == null ? cols - indent : width, cols - indent)) };
+  const f = Math.min(1, cols / refCols);
+  const ind = Math.round(indent * f);
+  const w = width == null ? cols - ind : Math.max(8, Math.round(width * f));
+  return { indent: ind, width: Math.max(1, Math.min(w, cols - ind)) };
+}
+
+// The page for a given amount of room, at a FIXED text size: the type never
+// gets smaller, the page does. Three phases as the room shrinks:
+//   1. the page is the paper's width (or wider than the room allows: it
+//      narrows, margins untouched, and lines simply hold fewer characters);
+//   2. once the text column would fall below 80% of the paper's, the MARGINS
+//      shrink instead, proportionally, so the column keeps about the words a
+//      printed line has;
+//   3. at the minimum margins (0.5in left, 0.4in right) the column narrows
+//      again, down to a floor of MIN_COLS characters.
+// `ppi` is pixels per inch at the chosen text size (96 at 12pt), `avail` the
+// pixels the page may use. Returns pixels, plus the column count.
+export const MIN_COLS = 24;
+export function pageFit({ paperKey = 'a4', ppi = 96, avail = Infinity }) {
+  const paper = PAPERS[paperKey] || PAPERS.a4;
+  const chW = ppi / CPI;
+  const fullW = paper.width * ppi;
+  const fullL = MARGINS.left * ppi;
+  const fullR = MARGINS.right * ppi;
+  const refCols = pageGrid(paperKey).cols;
+  const pageW = Math.min(fullW, Math.max(avail, 3 * ppi));
+  const keep = 0.8 * (fullW - fullL - fullR);
+  let left = fullL;
+  let text = pageW - fullL - fullR;
+  if (text < keep) {
+    const room = pageW - keep;
+    const minL = 0.5 * ppi;
+    const minR = 0.4 * ppi;
+    if (room >= minL + minR) {
+      left = fullL * (room / (fullL + fullR));
+      text = keep;
+    } else {
+      left = minL;
+      text = Math.max(pageW - minL - minR, MIN_COLS * chW);
+    }
+  }
+  const cols = Math.max(MIN_COLS, Math.floor(text / chW + 1e-9));
+  return { pageW, left, cols, refCols, right: Math.max(0, pageW - left - cols * chW) };
 }
 
 // How many rows a line of text wraps to in a column `width` characters wide,
@@ -141,12 +187,12 @@ const KEEP_ROWS = 2;
 // and its row count. Breaks can only fall between lines, since a line is one
 // unit in the editor; a single line longer than a whole page (rare) is put on
 // a page of its own and allowed to run over.
-export function paginate({ lines, types, cols, rows }) {
+export function paginate({ lines, types, cols, rows, refCols = cols }) {
   const n = lines.length;
   const rowsOf = new Array(n);
   for (let i = 0; i < n; i++) {
     const t = types[i] || 'action';
-    rowsOf[i] = t === 'blank' || t === 'page' ? 1 : wrapRows(lines[i], elementBox(t, cols).width);
+    rowsOf[i] = t === 'blank' || t === 'page' ? 1 : wrapRows(lines[i], elementBox(t, cols, refCols).width);
   }
   const pageOf = new Array(n);
   const rowOf = new Array(n);
@@ -190,5 +236,5 @@ export function paginate({ lines, types, cols, rows }) {
     pages[p].number = pages[p].title ? null : num;
     pages[p].shown = pages[p].number != null && pages[p].number >= 2;
   }
-  return { pages, pageOf, rowOf, rowsOf, types, cols, rows };
+  return { pages, pageOf, rowOf, rowsOf, types, cols, rows, refCols };
 }

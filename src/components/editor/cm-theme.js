@@ -144,19 +144,19 @@ export const fountainTheme = EditorView.theme({
   // and fountain/paginate.js ELEMENTS use. Widths get the same hair of slack
   // as the column, so exactly that many characters fit.
   '.cm-line.cmf-character': {
-    textAlign: 'left', maxWidth: 'calc((var(--pg-cols, 57) - 21) * 1ch + 0.3ch)', margin: '0', textTransform: 'uppercase',
+    textAlign: 'left', maxWidth: 'calc((var(--pg-cols, 57) - var(--pg-i-char, 21)) * 1ch + 0.3ch)', margin: '0', textTransform: 'uppercase',
     fontWeight: '700', fontStyle: 'normal', color: 'var(--ink)', letterSpacing: 'normal',
-    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0 0 0 21ch',
+    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0 0 0 calc(var(--pg-i-char, 21) * 1ch)',
   },
   '.cm-line.cmf-paren': {
-    textAlign: 'left', maxWidth: '22.3ch', margin: '0', textTransform: 'none',
+    textAlign: 'left', maxWidth: 'calc(var(--pg-w-paren, 22) * 1ch + 0.3ch)', margin: '0', textTransform: 'none',
     fontWeight: '400', fontStyle: 'normal', color: 'var(--ui)', letterSpacing: 'normal',
-    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0 0 0 16ch',
+    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0 0 0 calc(var(--pg-i-paren, 16) * 1ch)',
   },
   '.cm-line.cmf-dialogue': {
-    textAlign: 'left', maxWidth: '34.3ch', margin: '0', textTransform: 'none',
+    textAlign: 'left', maxWidth: 'calc(var(--pg-w-dlg, 34) * 1ch + 0.3ch)', margin: '0', textTransform: 'none',
     fontWeight: '400', fontStyle: 'normal', color: 'var(--ink)', letterSpacing: 'normal',
-    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0 0 0 10ch',
+    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0 0 0 calc(var(--pg-i-dlg, 10) * 1ch)',
   },
   '.cm-line.cmf-transition': {
     // Muted like paren: a technical directive (CUT TO:, FADE OUT:), not story
@@ -176,9 +176,9 @@ export const fountainTheme = EditorView.theme({
     // Muted for the same reason as transition: it's marked ~like this~
     // precisely because it's a secondary reading, sung rather than spoken,
     // and should read as a step removed from ordinary dialogue.
-    textAlign: 'left', maxWidth: '34.3ch', margin: '0', textTransform: 'none',
+    textAlign: 'left', maxWidth: 'calc(var(--pg-w-dlg, 34) * 1ch + 0.3ch)', margin: '0', textTransform: 'none',
     fontWeight: '400', fontStyle: 'italic', color: 'var(--ui)', letterSpacing: 'normal',
-    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0 0 0 10ch',
+    fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0 0 0 calc(var(--pg-i-dlg, 10) * 1ch)',
   },
   '.cm-line.cmf-section': {
     textAlign: 'left', maxWidth: 'none', margin: '0', textTransform: 'none',

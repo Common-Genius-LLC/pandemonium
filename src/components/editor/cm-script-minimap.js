@@ -18,7 +18,7 @@
 
 import { ViewPlugin, EditorView } from '@codemirror/view';
 import { pagesField } from './cm-pages.js';
-import { elementBox, wrapSegments, MARGINS, CPI } from '../../fountain/paginate.js';
+import { elementBox, wrapSegments, CPI } from '../../fountain/paginate.js';
 
 export const MINIMAP_WIDTH = 92; // px, the minimap column
 const PAD = 8;
@@ -174,7 +174,7 @@ export function scriptMinimap({ getHighlights }) {
           if (type === 'blank' || type === 'page') continue;
           const text = doc.line(i + 1).text;
           if (!text.trim()) continue;
-          const box = elementBox(type, layout.cols);
+          const box = elementBox(type, layout.cols, layout.refCols);
           const segs = wrapSegments(text, box.width);
           const st = STYLE[type] || { weight: '400', ink: '--ink' };
           const lineMarks = marks.get(i) || [];
@@ -183,7 +183,7 @@ export function scriptMinimap({ getHighlights }) {
             let col = box.indent;
             if (type === 'transition') col = layout.cols - len;
             else if (type === 'centered') col = Math.floor((layout.cols - len) / 2);
-            const x = left + (MARGINS.left * ppi + col * chW) * s;
+            const x = left + (geom.left + col * chW) * s;
             const y = top + (geom.top + (layout.rowOf[i] + r) * lh) * s;
             // A linked passage: its colour behind exactly the words it covers.
             for (const [ms, me, token] of lineMarks) {

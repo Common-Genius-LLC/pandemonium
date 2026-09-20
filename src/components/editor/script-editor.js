@@ -12,7 +12,7 @@ import { fountainTheme } from './cm-theme.js';
 import { scriptPages, setPageMetrics } from './cm-pages.js';
 import { scriptMinimap, scriptMinimapTheme, MINIMAP_WIDTH } from './cm-script-minimap.js';
 import { scriptPrefs } from '../../state/script-prefs.js';
-import { pageGrid, LPI } from '../../fountain/paginate.js';
+import { pageFit, elementBox, LPI } from '../../fountain/paginate.js';
 import { captureFromSelection } from './selection-capture.js';
 import { parseFountain } from '../../fountain/parse.js';
 import { resolvePart, snapToWords } from '../../fountain/resolve.js';
@@ -159,37 +159,37 @@ export class PandemoniumScriptEditor extends LitElement {
     }
   }
 
-  // Pixels per inch for the page: 96 (the 12pt standard), reduced only when
-  // the pane cannot hold a page that wide next to the minimap, then scaled by
-  // the text size the writer chose. The sizes reach the theme as custom
+  // The page's metrics for the writer's text size and the room in the pane. The sizes reach the theme as custom
   // properties, and the page layout gets the same numbers by effect.
   #lastMetrics = '';
   #applyPageMetrics() {
     const view = this.#view;
     if (!view) return;
-    const { paper, cols } = pageGrid(scriptPrefs.paper);
-    // The standard size is the page at 12pt, shrunk only as far as the pane
-    // needs to hold it. The chosen size then scales THAT, so every size has a
-    // visible effect in any pane. (It used to take the smaller of the chosen
-    // size and the fit, which in a normal-width pane capped every size at the
-    // fit and made the setting do nothing.) A page larger than the pane
-    // scrolls sideways.
-    const rel = scriptPrefs.textPt / 12;
-    const avail = view.scrollDOM.clientWidth - MINIMAP_WIDTH - 48;
-    const base = avail > 0 ? Math.min(1, avail / (paper.width * 96)) : 1;
-    const scale = Math.max(0.4, base * rel);
-    const ppi = 96 * scale;
-    const key = scriptPrefs.paper + ':' + ppi.toFixed(3);
+    // The text size is fixed by the writer's setting (12pt is 96 px per inch);
+    // the PAGE is what gives way as the pane narrows: it gets narrower first,
+    // then its margins shrink, then the column narrows (fountain/paginate.js
+    // pageFit). The type never gets smaller, and lines rewrap to the page.
+    const ppi = 96 * (scriptPrefs.textPt / 12);
+    const avail = view.scrollDOM.clientWidth - MINIMAP_WIDTH - 32;
+    const fit = pageFit({ paperKey: scriptPrefs.paper, ppi, avail: avail > 0 ? avail : Infinity });
+    const key = [scriptPrefs.paper, ppi.toFixed(2), Math.round(fit.pageW), Math.round(fit.left), fit.cols].join(':');
     if (key === this.#lastMetrics) return;
     this.#lastMetrics = key;
     const host = this.renderRoot.querySelector('.host');
-    host.style.setProperty('--pg-font', (ppi / 6) + 'px');
-    host.style.setProperty('--pg-lh', (ppi / LPI) + 'px');
-    host.style.setProperty('--pg-cols', String(cols));
-    host.style.setProperty('--pg-w', (paper.width * ppi) + 'px');
-    host.style.setProperty('--pg-left', (1.5 * ppi) + 'px');
-    host.style.setProperty('--pg-top', ppi + 'px');
-    view.dispatch({ effects: setPageMetrics.of({ paper: scriptPrefs.paper, ppi }) });
+    const set = (k, v) => host.style.setProperty(k, String(v));
+    set('--pg-font', (ppi / 6) + 'px');
+    set('--pg-lh', (ppi / LPI) + 'px');
+    set('--pg-cols', fit.cols);
+    set('--pg-w', fit.pageW + 'px');
+    set('--pg-left', fit.left + 'px');
+    set('--pg-top', ppi + 'px');
+    const box = (t) => elementBox(t, fit.cols, fit.refCols);
+    set('--pg-i-char', box('character').indent);
+    set('--pg-i-paren', box('paren').indent);
+    set('--pg-w-paren', box('paren').width);
+    set('--pg-i-dlg', box('dialogue').indent);
+    set('--pg-w-dlg', box('dialogue').width);
+    view.dispatch({ effects: setPageMetrics.of({ paper: scriptPrefs.paper, ppi, pageW: fit.pageW, left: fit.left, cols: fit.cols, refCols: fit.refCols }) });
   }
 
   disconnectedCallback() {

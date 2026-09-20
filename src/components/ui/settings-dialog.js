@@ -111,7 +111,7 @@ export class PdSettings extends LitElement {
             (v) => scriptPrefs.set({ textPt: v }),
             'Script text size',
           )}
-          <p class="why">12pt is the standard size, fitted to the pane. Larger sizes draw the page bigger (it scrolls sideways if the pane is narrow), smaller sizes draw it smaller. Page breaks and the page count never move.</p>
+          <p class="why">12pt is the standard. The text keeps this size as the pane narrows: the page gets narrower instead, and once lines would get too short its margins shrink too. In a wide pane the page breaks match a printed page; in a narrow one lines wrap sooner, so pages fill sooner.</p>
         </div>
       </section>
     `;
