@@ -27,7 +27,7 @@ export class PandemoniumScriptPanel extends LitElement {
   static styles = [panelStyles, css`
     /* The working area is the final draft's blue only while the final draft is
        the one open, matching the design's two variants: the draft that owns
-       the storyboard and research links is the one that looks different. */
+       the storyboard and reference links is the one that looks different. */
     .pbody{position:relative;display:flex;flex-direction:column}
     /* The drafts: pills in a pill track, the same object as the storyboard
        Final / Reference switch. One dark pill (.thumb) sits behind the row and

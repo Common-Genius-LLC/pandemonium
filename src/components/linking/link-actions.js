@@ -17,7 +17,7 @@ export function linkToItems({ onStoryboard, onBlankStoryboard, onResearch, onSou
   // Final or the Reference frame later. Only offered where a caller can make one.
   if (onBlankStoryboard) items.push({ label: 'Blank storyboard', accent: 'var(--board-strong)', fn: onBlankStoryboard });
   items.push(
-    { label: 'Research', accent: 'var(--res)', fn: onResearch },
+    { label: 'Reference', accent: 'var(--res)', fn: onResearch },
     { label: 'Sound', accent: 'var(--sound)', fn: onSound },
   );
   return items;

@@ -17,7 +17,7 @@ normally live in three separate tools into one surface:
 
 - the script (Fountain, rendered and editable)
 - the storyboard (script sections linked to images)
-- the research (script sections linked to URLs, documents, and notes)
+- the references (script sections linked to URLs, documents, and notes)
 
 One line: write the script, board it, and back every claim with a source, in one
 place, with a timeline that shows how done you actually are.
@@ -30,7 +30,7 @@ From the product spec. Confirm against the code before relying on it.
 
 - **Script**: a Fountain document. Multiple scripts are allowed per project, but
   only one is the **final draft**, and only the final draft links to storyboards
-  and research.
+  and references.
 - **Storyboard link**: a script section connected to a **storyboard**. A
   storyboard is one record with two image frames, a final one (`img`) and a
   reference one (`refImg`), either of which may be empty, plus its own `note`
@@ -47,15 +47,15 @@ From the product spec. Confirm against the code before relying on it.
   reference frame) is a real link but is **not** counted as boarded by the
   timeline (see hard rule 3): the section is claimed, not drawn. A reference
   frame is inspiration and never counts toward boarded coverage.
-- **Research link**: a script section connected to a URL, a research document, or
-  a note. A highlighted span inside a research doc links to a specific script
+- **Reference link**: a script section connected to a URL, a reference document, or
+  a note. A highlighted span inside a reference doc links to a specific script
   span. Clicking either end reveals the link between the two.
 - **Global timeline**: sits above everything and shows, at a glance, how much of
-  the script is storyboarded, how much is backed by research, and the estimated
+  the script is storyboarded, how much is backed by references, and the estimated
   video length.
-- **Global search**: across scripts, storyboards, research, and notes.
+- **Global search**: across scripts, storyboards, references, and notes.
 - **Panel layout**: a Blender-style binary split tree of panes, each showing any
-  panel type (script, storyboards, research, timeline). It is **per project**,
+  panel type (script, storyboards, references, timeline). It is **per project**,
   not per user: a layout is part of how a given project is being worked on, so
   it lives in the persisted project and syncs with it. Theme is the opposite
   case and stays per user in localStorage.
@@ -120,7 +120,7 @@ as of the migration:
   functions in `src/fountain/` (`parse.js`, `blocks.js`, `resolve.js`,
   `cache.js`), lifted from the original single file. `resolve.js` documents the
   anchor-resolution scheme (quote-search, not fixed offsets) that lets edits
-  elsewhere in the document not sever existing board/research links.
+  elsewhere in the document not sever existing board/reference links.
 - Storage backend: local by default. A project is a `.pandemonium.json` file the
   user explicitly saves (download) and opens (file picker); images and other
   embedded files are data URLs inside that JSON. All of this goes through
@@ -161,7 +161,7 @@ whole app matches the Figma file yet.
 3. **The timeline math must be honest.** Percent storyboarded, percent
    researched, and estimated length are the product's whole promise. If a number
    cannot be computed reliably, show it as unknown. Never fake it.
-4. **One final draft owns the links.** Storyboard and research links attach to the
+4. **One final draft owns the links.** Storyboard and reference links attach to the
    final draft only. Do not let other drafts silently accumulate links.
 
 ---
@@ -176,7 +176,7 @@ REFERENCES block at the foot of the file.
 
 Use it to exercise:
 - the parser (it uses every Fountain construct listed in Hard Rule 2)
-- research linking (its `[[Rn]]` markers map cleanly onto research links, and are
+- research linking (its `[[Rn]]` markers map cleanly onto reference links, and are
   the natural first integration test)
 - the timeline (it declares an estimated runtime)
 
@@ -612,6 +612,20 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
     browser: 10, 12, 16pt give 10.1, 12.1, 16.1px), and a page wider than the
     pane scrolls sideways. **Not done**: print still uses its own Letter CSS
     rather than the paper setting; a single line longer than a page runs over.
+
+
+21. **Research is now called References** in everything the writer sees: the
+    panel (and its label in the pane picker and right-click menu), the link
+    menu ("Reference"), the search group, prompts, toasts and this file's
+    concepts. Deliberately NOT renamed, because renaming them breaks saved
+    files, synced projects and saved layouts: the persisted keys
+    (`project.research`, the `'research'` panel type in `project.layout`,
+    `link.researchId`), the module and component names (`research-*.js`,
+    `pandemonium-research-*`), and the analytics event and page names
+    (`research_link_add`, `/project/research/...`), which would split GA
+    history. Earlier log entries above keep the name they were written under.
+    A full identifier rename would need a schema migration in `loadProject`
+    and on the server.
 
 ---
 

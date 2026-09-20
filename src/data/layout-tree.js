@@ -20,7 +20,7 @@ export const PANEL_TYPES = ['script', 'boards', 'research', 'timeline', 'status'
 // Shared with the panel header's switch-content dropdown (panel-picker.js) and
 // the leaf's right-click menu (panel-layout.js), so the label for a given
 // content type is spelled once.
-export const PANEL_LABELS = { script: 'Script Editor', boards: 'Storyboards', research: 'Research', timeline: 'Timeline', status: 'Project Status' };
+export const PANEL_LABELS = { script: 'Script Editor', boards: 'Storyboards', research: 'References', timeline: 'Timeline', status: 'Project Status' };
 
 export function leaf(content) { return { id: uid(), type: 'leaf', content }; }
 

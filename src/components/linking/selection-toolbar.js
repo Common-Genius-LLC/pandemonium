@@ -182,7 +182,7 @@ export class PandemoniumSelectionToolbar extends LitElement {
     if (!this._open) return html``;
     if (this._kind === 'non-final') {
       return html`<div class="bar" style="left:${this._x || 0}px;top:${this._y || 0}px">
-        <button @click=${() => this.#act('make-final')}>Make this the final draft to add boards &amp; research</button>
+        <button @click=${() => this.#act('make-final')}>Make this the final draft to add boards &amp; references</button>
       </div>`;
     }
     if (this._kind === 'research') {

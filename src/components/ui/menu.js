@@ -52,7 +52,7 @@ export class PdMenu extends LitElement {
     .swatches button.on{box-shadow:0 0 0 2px var(--overlay),0 0 0 3.5px rgba(255,255,255,.92)}
     .sep{height:1px;margin:3px 6px;background:rgba(255,255,255,.16);flex:none}
     /* Pills variant: the "link to" menu (Figma node 101-2170) is a bare,
-       right-aligned stack of solid colored pills (storyboard / research /
+       right-aligned stack of solid colored pills (storyboard / reference /
        sound) rather than a dark dropdown. The container drops its own chrome
        and each item is a full-fill pill in its accent color. */
     .pop.pills{background:transparent;padding:0;gap:5px;min-width:120px;align-items:stretch}

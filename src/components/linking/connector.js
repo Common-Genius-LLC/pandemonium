@@ -17,7 +17,7 @@ export class PandemoniumConnector extends LitElement {
     :host{position:fixed;inset:0;z-index:65;pointer-events:none;display:block}
     svg{width:100%;height:100%;display:block}
     /* Painted from CSS rather than from stroke/fill attributes: a
-       presentation attribute cannot take a var(), so the research pink would
+       presentation attribute cannot take a var(), so the reference pink would
        have been the one colour in the app frozen to its light-theme hex. */
     svg path{stroke:var(--res)}
     svg circle{fill:var(--res)}

@@ -115,7 +115,7 @@ export function sectionAffordances({ getParsed, onAct, onLink, onElement, onDrop
       this.acts.style.display = 'none';
       this.acts.innerHTML =
         '<button class="elt" data-act="element" title="Change this line\'s screenplay element"></button>' +
-        '<button class="linkto" data-act="link" title="Link this passage to a storyboard, research source, or sound">link to</button>' +
+        '<button class="linkto" data-act="link" title="Link this passage to a storyboard, reference, or sound">link to</button>' +
         '<button class="comment" data-act="comment" title="Add a comment on this passage">Comment</button>';
       this.eltBtn = this.acts.querySelector('.elt');
       this.linkBtn = this.acts.querySelector('.linkto');

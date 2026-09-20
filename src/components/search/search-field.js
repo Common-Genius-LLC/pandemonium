@@ -118,9 +118,9 @@ export class PandemoniumSearchField extends LitElement {
         // heading matches on any of the three: searching a file name or a host
         // has to find the source that carries it, not only its typed title.
         const head = [d.title, d.url, d.attachment && d.attachment.name, d.preview && d.preview.title].filter(Boolean).join(' ').toLowerCase();
-        if (head.includes(q)) { results.push({ group: 'Research', t: docTitle(d), sub: hostOf(d.url || '') || 'source', go: { k: 'doc', id: d.id } }); researchCount++; }
+        if (head.includes(q)) { results.push({ group: 'References', t: docTitle(d), sub: hostOf(d.url || '') || 'source', go: { k: 'doc', id: d.id } }); researchCount++; }
         docParas(d).forEach((p, pi) => {
-          if (researchCount < CAP && p.toLowerCase().includes(q)) { results.push({ group: 'Research', t: p, sub: docTitle(d), go: { k: 'doc', id: d.id, pi } }); researchCount++; }
+          if (researchCount < CAP && p.toLowerCase().includes(q)) { results.push({ group: 'References', t: p, sub: docTitle(d), go: { k: 'doc', id: d.id, pi } }); researchCount++; }
         });
       }
       let boardCount = 0;
@@ -171,7 +171,7 @@ export class PandemoniumSearchField extends LitElement {
   }
 
   render() {
-    const groups = ['Scripts', 'Research', 'Boards'];
+    const groups = ['Scripts', 'References', 'Boards'];
     return html`
       <div class="field">
         ${this._query ? nothing : html`<span class="ph">Search <i>Everything</i></span>`}

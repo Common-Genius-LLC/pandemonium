@@ -277,7 +277,7 @@ export class PandemoniumScriptEditor extends LitElement {
     const store = this._store.store;
     const script = store.scriptForLeaf(this.leafId);
     if (!script.final) {
-      dispatch(this, 'pandemonium-toast', { message: 'Make this the final draft to add boards & research.' });
+      dispatch(this, 'pandemonium-toast', { message: 'Make this the final draft to add boards & references.' });
       return;
     }
     const sel = this.#view.state.selection.main;

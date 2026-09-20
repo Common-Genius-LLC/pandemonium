@@ -54,7 +54,7 @@ export class PandemoniumLinkbar extends LitElement {
     }
     if (ui.linking) {
       const message = ui.linking.from === 'script'
-        ? 'Pick the source in the Research panel: click a card to link the whole source, or open one and select a passage inside it.'
+        ? 'Pick the source in the References panel: click a card to link the whole source, or open one and select a passage inside it.'
         : 'Now select the matching passage in the script.';
       return html`<div class="bar"><span>${message}</span><button @click=${() => this.#cancel()}>Cancel</button></div>`;
     }

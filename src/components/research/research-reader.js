@@ -150,7 +150,7 @@ export class PandemoniumResearchReader extends LitElement {
     @keyframes pulse{50%{filter:brightness(.82)}}
 
     /* The passages this source backs: the link's other end, made visible.
-       Before this, the research side could only be reached from the script,
+       Before this, the reference side could only be reached from the script,
        and a link could only be removed from the bar that appears after
        clicking a highlight. */
     .backs{margin-top:28px;border-radius:12.36px;background:var(--bg);padding:10px 12px}
