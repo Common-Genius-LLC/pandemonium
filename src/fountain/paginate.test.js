@@ -16,11 +16,11 @@ const layout = (src, paper = 'a4') => {
 
 describe('pageGrid', () => {
   it('gives the standard 12pt Courier grid for each paper', () => {
-    expect(pageGrid('letter')).toMatchObject({ cols: 60, rows: 54 });
-    expect(pageGrid('a4')).toMatchObject({ cols: 57, rows: 58 });
+    expect(pageGrid('letter')).toMatchObject({ cols: 60, rows: 43 });
+    expect(pageGrid('a4')).toMatchObject({ cols: 57, rows: 46 });
   });
   it('falls back to A4 for an unknown paper', () => {
-    expect(pageGrid('scroll')).toMatchObject({ cols: 57, rows: 58 });
+    expect(pageGrid('scroll')).toMatchObject({ cols: 57, rows: 46 });
   });
 });
 
@@ -73,11 +73,11 @@ describe('paginate', () => {
   it('fills a page to its row count and carries on to the next', () => {
     const src = Array.from({ length: 60 }, (_, i) => 'Line ' + i + '.').join('\n');
     const p = layout(src, 'a4');
-    expect(p.pages.map((pg) => [pg.start, pg.used])).toEqual([[0, 58], [58, 2]]);
-    expect([p.pageOf[57], p.pageOf[58], p.rowOf[58]]).toEqual([0, 1, 0]);
+    expect(p.pages.map((pg) => [pg.start, pg.used])).toEqual([[0, 46], [46, 14]]);
+    expect([p.pageOf[45], p.pageOf[46], p.rowOf[46]]).toEqual([0, 1, 0]);
   });
   it('numbers pages as a screenplay prints them: none on page one, "2." onward', () => {
-    const src = Array.from({ length: 130 }, (_, i) => 'Line ' + i + '.').join('\n');
+    const src = Array.from({ length: 100 }, (_, i) => 'Line ' + i + '.').join('\n');
     const p = layout(src, 'a4');
     expect(p.pages.map((pg) => [pg.number, pg.shown])).toEqual([[1, false], [2, true], [3, true]]);
   });
@@ -94,17 +94,19 @@ describe('paginate', () => {
     // 55 filler lines and the blank line Fountain requires before a heading,
     // then the heading, a blank and action: the heading alone would fit in row
     // 57, but not with its action, so it moves over.
-    const filler = Array.from({ length: 55 }, (_, i) => 'F' + i + '.').join('\n');
+    const rows = pageGrid('a4').rows;
+    const filler = Array.from({ length: rows - 3 }, (_, i) => 'F' + i + '.').join('\n');
     const p = layout(filler + '\n\nINT. HALL - NIGHT\n\nShe runs.');
-    expect(p.pageOf[56]).toBe(1);
-    expect(p.pages[0].used).toBe(56);
+    expect(p.pageOf[rows - 1]).toBe(1);
+    expect(p.pages[0].used).toBe(rows - 2);
   });
   it('keeps a character cue with the first line of the speech', () => {
-    const filler = Array.from({ length: 56 }, (_, i) => 'F' + i + '.').join('\n');
+    const rows = pageGrid('a4').rows;
+    const filler = Array.from({ length: rows - 2 }, (_, i) => 'F' + i + '.').join('\n');
     const p = layout(filler + '\n\nJOHN\n(quietly)\nWe should go.');
-    // blank at 56, cue would be row 57 of 58: cue + paren + speech do not fit.
-    expect(p.pageOf[57]).toBe(1);
-    expect(p.rowOf[57]).toBe(0);
+    // blank, then the cue on the last row: cue + paren + speech do not fit.
+    expect(p.pageOf[rows - 1]).toBe(1);
+    expect(p.rowOf[rows - 1]).toBe(0);
   });
   it('lets a line longer than a whole page run over rather than loop', () => {
     const huge = Array.from({ length: 700 }, () => 'word').join(' ');

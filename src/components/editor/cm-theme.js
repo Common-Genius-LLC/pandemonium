@@ -64,7 +64,7 @@ export const fountainTheme = EditorView.theme({
     flexShrink: '0',
     width: 'calc(var(--pg-cols, 57) * 1ch + 0.3ch)',
     maxWidth: 'none',
-    margin: '28px auto 38vh auto',
+    margin: '12px auto 38vh auto',
     padding: 'var(--pg-top, 96px) calc(var(--pg-w, 794px) - var(--pg-left, 144px) - var(--pg-cols, 57) * 1ch - 0.3ch) 0 var(--pg-left, 144px)',
     backgroundColor: 'transparent',
     caretColor: 'var(--ink)',

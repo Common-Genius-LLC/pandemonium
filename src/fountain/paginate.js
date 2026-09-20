@@ -16,7 +16,11 @@
 'use strict';
 
 export const CPI = 10; // characters per inch at 12pt Courier
-export const LPI = 6; // lines per inch
+// Lines per inch. The screenplay standard is 6 (12pt on 12pt leading, which
+// is single spacing and reads tight on a screen); 4.8 is 1.25 line spacing, so
+// a page holds fewer rows than a printed one (46 on A4). The layout is in rows,
+// so this is the one number that sets how airy the page is.
+export const LPI = 4.8;
 
 export const PAPERS = {
   a4: { label: 'A4', width: 8.27, height: 11.69 },

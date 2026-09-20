@@ -37,7 +37,9 @@ export class PdButton extends LitElement {
       white-space:nowrap;
       color:var(--ui);
       background:var(--btn-bg);
-      border:1px solid var(--btn-line);
+      /* A fainter hairline: the fill and the shadow already say it is a
+         button, and a full-strength grey outline read as heavy. */
+      border:1px solid color-mix(in srgb, var(--btn-line) 45%, transparent);
       /* Pill-rounded, the same radius as every other interactive control in
          the app now (board-card.js .pill, the Final/Reference switch): one
          consistent shape for anything clickable, decoupled from --r (which
@@ -47,18 +49,18 @@ export class PdButton extends LitElement {
       cursor:pointer;
     }
     button:hover{background:var(--btn-hi)}
-    button:active{border-color:var(--btn-line-on);box-shadow:inset 0 1px 4.2px 0 #000}
+    button:active{border-color:color-mix(in srgb, var(--btn-line-on) 60%, transparent);box-shadow:inset 0 1px 4.2px 0 #000}
     button:disabled{opacity:.5;cursor:default}
     /* A disabled button must not look pressed when it is clicked. */
-    button:disabled:active{border-color:var(--btn-line);box-shadow:0 1px 1.25px rgba(0,0,0,.25)}
+    button:disabled:active{border-color:color-mix(in srgb, var(--btn-line) 45%, transparent);box-shadow:0 1px 1.25px rgba(0,0,0,.25)}
 
     /* Filled variants. The border tracks the fill instead of staying #b8b8b8,
        which only reads as an edge against white. */
-    :host([variant=dark]) button{background:var(--overlay);color:var(--overlay-ink);border-color:rgba(0,0,0,.22)}
+    :host([variant=dark]) button{background:var(--overlay);color:var(--overlay-ink);border-color:rgba(0,0,0,.1)}
     :host([variant=dark]) button:hover{background:var(--ui)}
-    :host([variant=act]) button{background:var(--act);color:var(--act-ink);border-color:rgba(0,0,0,.22)}
+    :host([variant=act]) button{background:var(--act);color:var(--act-ink);border-color:rgba(0,0,0,.1)}
     :host([variant=act]) button:hover{background:var(--act-hi)}
-    :host([variant=pink]) button{background:var(--res);color:#fff;border-color:rgba(0,0,0,.22)}
+    :host([variant=pink]) button{background:var(--res);color:#fff;border-color:rgba(0,0,0,.1)}
     :host([variant=pink]) button:hover{background:var(--res-hi)}
 
     :host([variant=ghost]) button{
@@ -68,8 +70,10 @@ export class PdButton extends LitElement {
     :host([variant=ghost]) button:hover{color:var(--ui);background:var(--panel)}
     :host([variant=ghost]) button:active{background:var(--ph);border-color:transparent;box-shadow:none}
 
-    :host([icon]) button{width:24px;padding:5px;gap:0}
-    :host([icon]) ::slotted(svg){width:14px;height:14px;fill:currentColor}
+    /* Icon buttons: a 28px square holding an 18px glyph (was 24 and 14, which
+       left the glyph small enough to need squinting at). */
+    :host([icon]) button{width:28px;height:28px;padding:5px;gap:0}
+    :host([icon]) ::slotted(svg){width:18px;height:18px;fill:currentColor}
   `;
 
   constructor() {

@@ -28,7 +28,7 @@ import { pageGrid, lineTypes, paginate, MARGINS, LPI } from '../../fountain/pagi
 
 export const setPageMetrics = StateEffect.define();
 
-const DEFAULT_METRICS = { paper: 'a4', ppi: 96, gap: 24 };
+const DEFAULT_METRICS = { paper: 'a4', ppi: 96, gap: 12 };
 
 const metricsField = StateField.define({
   create: () => DEFAULT_METRICS,

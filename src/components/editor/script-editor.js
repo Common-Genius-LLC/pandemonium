@@ -12,7 +12,7 @@ import { fountainTheme } from './cm-theme.js';
 import { scriptPages, setPageMetrics } from './cm-pages.js';
 import { scriptMinimap, scriptMinimapTheme, MINIMAP_WIDTH } from './cm-script-minimap.js';
 import { scriptPrefs } from '../../state/script-prefs.js';
-import { pageGrid } from '../../fountain/paginate.js';
+import { pageGrid, LPI } from '../../fountain/paginate.js';
 import { captureFromSelection } from './selection-capture.js';
 import { parseFountain } from '../../fountain/parse.js';
 import { resolvePart, snapToWords } from '../../fountain/resolve.js';
@@ -184,7 +184,7 @@ export class PandemoniumScriptEditor extends LitElement {
     this.#lastMetrics = key;
     const host = this.renderRoot.querySelector('.host');
     host.style.setProperty('--pg-font', (ppi / 6) + 'px');
-    host.style.setProperty('--pg-lh', (ppi / 6) + 'px');
+    host.style.setProperty('--pg-lh', (ppi / LPI) + 'px');
     host.style.setProperty('--pg-cols', String(cols));
     host.style.setProperty('--pg-w', (paper.width * ppi) + 'px');
     host.style.setProperty('--pg-left', (1.5 * ppi) + 'px');
