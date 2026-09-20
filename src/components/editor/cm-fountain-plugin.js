@@ -92,16 +92,12 @@ function isPendingCharacterCue(doc, b, activeLines) {
 // Pure builder (takes an EditorState, not a view) so it's unit-testable without
 // spinning up an editor. `parsed` is parseFountain(doc); `highlights` is the
 // biMap of board/research/comment anchors.
-// Which margin-marker classes a highlight segment earns, from the kinds of link
-// it carries: a storyboard (final, or reference-only), a reference, a comment.
-// A link being made (`p`) is transient and has no marker.
-export function linkKindClasses(m) {
-  const kinds = [];
-  const toks = String(m.idAttr || '').split(' ').map((t) => t[0]);
-  if (toks.includes('b')) kinds.push(/\bhb\b/.test(m.cls) ? 'cmf-lk-b' : 'cmf-lk-br');
-  if (toks.includes('r')) kinds.push('cmf-lk-r');
-  if (toks.includes('c')) kinds.push('cmf-lk-c');
-  return kinds;
+// A word covered by a final storyboard AND a reference-only one is a final
+// storyboard word: drop the reference-only class, so at most one board class
+// (hb or hbr) is ever on a word.
+export function disjointBoardClass(cls) {
+  const c = String(cls || '');
+  return /\bhb\b/.test(c) ? c.replace(/\bhbr\b/g, '').replace(/\s+/g, ' ').trim() : c;
 }
 
 export function buildDecorations(state, parsed, highlights) {
@@ -129,8 +125,6 @@ export function buildDecorations(state, parsed, highlights) {
   // per blank line: a real pin (an explicit, current user action) always
   // wins over the inferred cue preview.
   const blankLineClass = new Map();
-  // line start -> the link kinds on that line, for the margin markers
-  const linkLines = new Map();
   if (active && pinLine >= 0 && activeLines.has(pinLine) && LINE_CLASS[active.el]) {
     const l = doc.line(pinLine + 1);
     if (l.length === 0) blankLineClass.set(l.from, LINE_CLASS[active.el]);
@@ -172,28 +166,19 @@ export function buildDecorations(state, parsed, highlights) {
     }
     for (const [ds, de] of inlineDelimRanges(b)) conceal(base + ds, base + de, isActive);
 
-    // Board / research / comment highlights. The marks themselves are plain at
-    // rest and take their colour on hover (cm-theme.js); what shows at rest is
-    // a small marker in the page margin on every line that carries a link, one
-    // per kind (see linkKindClasses).
+    // Board / reference / comment highlights: the words themselves are coloured
+    // (cm-theme.js), per word, so two portions of one sentence linked to two
+    // different things are told apart by their own colours. Where a final and a
+    // reference-only storyboard cover the same words the final one wins, so a
+    // word never carries both board classes (the theme's colour rules rely on
+    // that).
     const marks = coalesceHighlights(b.plain.length, highlights[b.i]);
     for (const m of marks) {
       const { from, to } = plainRangeToRaw(b, line.from, m.s, m.e);
       if (to <= from) continue;
-      decos.push(Decoration.mark({ class: m.cls, attributes: { 'data-hl': m.idAttr } }).range(from, to));
-      const kinds = linkKindClasses(m);
-      if (kinds.length) {
-        for (let n = doc.lineAt(from).number; n <= doc.lineAt(to).number; n++) {
-          const at = doc.line(n).from;
-          const set = linkLines.get(at) || new Set();
-          kinds.forEach((k) => set.add(k));
-          linkLines.set(at, set);
-        }
-      }
+      decos.push(Decoration.mark({ class: disjointBoardClass(m.cls), attributes: { 'data-hl': m.idAttr } }).range(from, to));
     }
   }
-
-  for (const [at, set] of linkLines) decos.push(Decoration.line({ class: 'cmf-lk ' + [...set].join(' ') }).range(at));
 
   for (const [from, cls] of blankLineClass) decos.push(Decoration.line({ class: cls }).range(from));
 

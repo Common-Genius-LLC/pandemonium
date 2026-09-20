@@ -20,14 +20,70 @@
 
 import { EditorView } from '@codemirror/view';
 
-// What linked words turn on hover, one colour per kind. Written once here so the
-// single, two-band and three-band rules below cannot drift apart.
-const HL_BOARD = 'var(--board)';
-const HL_BOARD_REF = 'color-mix(in srgb, var(--board-ref) 50%, transparent)';
-const HL_REF = 'color-mix(in srgb, var(--res) 24%, transparent)';
-const HL_COMMENT = 'color-mix(in srgb, var(--act) 55%, transparent)';
-// Equal horizontal bands, top to bottom.
-const bands = (...cs) => 'linear-gradient(180deg,' + cs.map((c, i) => `${c} ${(100 * i / cs.length).toFixed(1)}% ${(100 * (i + 1) / cs.length).toFixed(1)}%`).join(',') + ')';
+// Linked words are coloured, per word, by what they link to: a storyboard
+// green, a reference-only storyboard orange, a reference pink, a comment amber.
+// Colouring the words themselves (and not a marker beside the line) is what
+// keeps two portions of one sentence apart when they link to different things.
+//
+//   at rest   the text takes the kind's colour; words carrying two or three
+//             kinds take a smooth left-to-right GRADIENT of them (gradient
+//             text, so it reads as one continuous colour, not as bands)
+//   on hover  a soft tint of the same colours appears behind the words, a
+//             single tint or the same gradient
+//
+// The text colours are the kind colours mixed toward the ink, so they stay
+// legible on the page in both themes; the hover tints are light washes. Every
+// rule is generated from this one table, so the single, two-kind and three-kind
+// cases cannot drift apart.
+const KIND_TEXT = {
+  hb: 'color-mix(in srgb, var(--board-strong) 78%, var(--ink))',
+  hbr: 'color-mix(in srgb, var(--board-ref) 82%, var(--ink))',
+  hr: 'color-mix(in srgb, var(--res) 82%, var(--ink))',
+  hc: 'color-mix(in srgb, var(--act) 55%, var(--ink))',
+};
+const KIND_TINT = {
+  hb: 'var(--board)',
+  hbr: 'color-mix(in srgb, var(--board-ref) 50%, transparent)',
+  hr: 'color-mix(in srgb, var(--res) 24%, transparent)',
+  hc: 'color-mix(in srgb, var(--act) 55%, transparent)',
+};
+
+function linkRules() {
+  const rules = {
+    '.hb, .hbr, .hr, .hc': {
+      cursor: 'pointer', borderRadius: '2px',
+      transition: 'background-color var(--dur-1) var(--ease-out)',
+    },
+  };
+  // A word has at most one board class (cm-fountain-plugin.js disjointBoardClass),
+  // so these are all the combinations there can be.
+  for (const board of [null, 'hb', 'hbr']) {
+    for (const ref of [false, true]) {
+      for (const comment of [false, true]) {
+        const kinds = [board, ref && 'hr', comment && 'hc'].filter(Boolean);
+        if (!kinds.length) continue;
+        const sel = '.' + kinds.join('.');
+        if (kinds.length === 1) {
+          rules[sel] = { color: KIND_TEXT[kinds[0]] };
+          rules[sel + ':hover'] = { backgroundColor: KIND_TINT[kinds[0]] };
+          continue;
+        }
+        const text = `linear-gradient(90deg,${kinds.map((k) => KIND_TEXT[k]).join(',')})`;
+        const tint = `linear-gradient(90deg,${kinds.map((k) => KIND_TINT[k]).join(',')})`;
+        rules[sel] = { color: 'transparent', backgroundImage: text, backgroundClip: 'text', WebkitBackgroundClip: 'text' };
+        // The text gradient stays on top; the tint gradient sits under it. The
+        // single-kind hover tints that also match this word are cleared.
+        rules[sel + ':hover'] = {
+          backgroundColor: 'transparent',
+          backgroundImage: `${text}, ${tint}`,
+          backgroundClip: 'text, border-box',
+          WebkitBackgroundClip: 'text, border-box',
+        };
+      }
+    }
+  }
+  return rules;
+}
 
 export const fountainTheme = EditorView.theme({
   '&': {
@@ -213,50 +269,9 @@ export const fountainTheme = EditorView.theme({
   // The yellow is the action token softened with color-mix, not a new color,
   // so it sits next to the soft --board green at a similar weight in both
   // themes.
-  // Linked words are PLAIN at rest and take their colour when the pointer is
-  // on them (a storyboard green, a reference pink, a comment yellow; layered
-  // bands where an element carries more than one). What shows at rest is a
-  // small marker per kind in the page margin (.cmf-lk below), so a link is
-  // findable without the text being painted. A link being made (.hp) is the
-  // one exception: it stays lit, because it is what you are working on.
-  '.hb, .hbr, .hr, .hc': {
-    cursor: 'pointer', borderRadius: '2px',
-    transition: 'background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out)',
-  },
-  '.hb:hover': { background: HL_BOARD },
-  '.hbr:hover': { background: HL_BOARD_REF },
-  '.hc:hover': { background: HL_COMMENT },
-  // A reference is a soft wash, not the solid magenta it once was: the text
-  // stays its own colour and stays readable, and the pink is just a tint.
-  '.hr:hover': { background: HL_REF },
-  // Two kinds on the same words: two bands. Three: three bands.
-  '.hb.hbr:hover': { background: bands(HL_BOARD, HL_BOARD_REF) },
-  '.hb.hr:hover': { background: bands(HL_BOARD, HL_REF) },
-  '.hbr.hr:hover': { background: bands(HL_BOARD_REF, HL_REF) },
-  '.hb.hc:hover': { background: bands(HL_BOARD, HL_COMMENT) },
-  '.hbr.hc:hover': { background: bands(HL_BOARD_REF, HL_COMMENT) },
-  '.hr.hc:hover': { background: bands(HL_REF, HL_COMMENT) },
-  '.hb.hr.hc:hover': { background: bands(HL_BOARD, HL_REF, HL_COMMENT) },
-  '.hbr.hr.hc:hover': { background: bands(HL_BOARD_REF, HL_REF, HL_COMMENT) },
+  ...linkRules(),
   '.hp': { background: 'var(--pend)', borderRadius: '1px' },
 
-  // The margin markers: up to three dots at the left edge of the page on the
-  // first row of a linked line, always in the same columns (storyboard,
-  // reference, comment) so a glance down the margin reads as a column of each.
-  // The dot colours are custom properties set by the kind classes, and a kind a
-  // line does not carry stays transparent.
-  '.cm-line.cmf-lk': { position: 'relative' },
-  '.cm-line.cmf-lk::before': {
-    content: '""', position: 'absolute', top: '0', left: 'calc(-1 * var(--pg-left, 144px) + 12px)',
-    width: '30px', height: 'var(--pg-lh, 16px)', pointerEvents: 'none',
-    background: 'radial-gradient(circle at 4px 50%, var(--lk-b, transparent) 3px, transparent 3.5px),'
-      + 'radial-gradient(circle at 14px 50%, var(--lk-r, transparent) 3px, transparent 3.5px),'
-      + 'radial-gradient(circle at 24px 50%, var(--lk-c, transparent) 3px, transparent 3.5px)',
-  },
-  '.cm-line.cmf-lk-b': { '--lk-b': 'var(--board-strong)' },
-  '.cm-line.cmf-lk-br': { '--lk-b': 'var(--board-ref)' },
-  '.cm-line.cmf-lk-r': { '--lk-r': 'var(--res)' },
-  '.cm-line.cmf-lk-c': { '--lk-c': 'var(--act)' },
   '.hl-flash': { background: 'var(--act) !important', color: 'var(--ink) !important' },
 
   // Section hover model (cm-sections.js): a flat band behind the whole hovered

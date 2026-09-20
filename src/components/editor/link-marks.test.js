@@ -1,31 +1,24 @@
-// Locks how linked words are classified for the two things that mark them
-// without painting them: the margin markers in the editor (linkKindClasses)
-// and the gutter bars in the minimap (kindsOfDecoration). Both read the same
-// highlight decorations, so they must agree on what "a storyboard", "a
-// reference" and "a comment" are.
+// Locks how linked words are classified: the editor's colour rules need at most
+// one board class per word (disjointBoardClass), and the minimap reads the same
+// decorations for the kinds each word carries (kindsOfDecoration).
 'use strict';
 
 import { describe, it, expect } from 'vitest';
-import { linkKindClasses } from './cm-fountain-plugin.js';
+import { disjointBoardClass } from './cm-fountain-plugin.js';
 import { kindsOfDecoration } from './cm-script-minimap.js';
 
-describe('linkKindClasses', () => {
-  it('marks a storyboard, a reference and a comment separately', () => {
-    expect(linkKindClasses({ cls: 'hb', idAttr: 'b:1' })).toEqual(['cmf-lk-b']);
-    expect(linkKindClasses({ cls: 'hr', idAttr: 'r:1' })).toEqual(['cmf-lk-r']);
-    expect(linkKindClasses({ cls: 'hc', idAttr: 'c:1' })).toEqual(['cmf-lk-c']);
+describe('disjointBoardClass', () => {
+  it('leaves a word with one board class alone', () => {
+    expect(disjointBoardClass('hb')).toBe('hb');
+    expect(disjointBoardClass('hbr hr')).toBe('hbr hr');
   });
-  it('gives a reference-only storyboard its own marker', () => {
-    expect(linkKindClasses({ cls: 'hbr', idAttr: 'b:1' })).toEqual(['cmf-lk-br']);
+  it('lets a final storyboard win over a reference-only one on the same words', () => {
+    expect(disjointBoardClass('hb hbr')).toBe('hb');
+    expect(disjointBoardClass('hb hbr hr hc')).toBe('hb hr hc');
   });
-  it('carries every kind the same words have', () => {
-    expect(linkKindClasses({ cls: 'hb hr hc', idAttr: 'b:1 r:2 c:3' })).toEqual(['cmf-lk-b', 'cmf-lk-r', 'cmf-lk-c']);
-  });
-  it('lets a final frame win over a reference-only one on the same words', () => {
-    expect(linkKindClasses({ cls: 'hb hbr', idAttr: 'b:1 b:2' })).toEqual(['cmf-lk-b']);
-  });
-  it('gives a link still being made no marker, since it is transient', () => {
-    expect(linkKindClasses({ cls: 'hp', idAttr: 'p:pending' })).toEqual([]);
+  it('does not touch words with no board', () => {
+    expect(disjointBoardClass('hr hc')).toBe('hr hc');
+    expect(disjointBoardClass(undefined)).toBe('');
   });
 });
 

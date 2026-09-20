@@ -7,12 +7,11 @@
 // itself (fountain/paginate.js, via cm-pages.js): real sheets, real wrapping at
 // the real indents, scene headings in bold.
 //
-// Links are shown the way the editor shows them: not painted over the words but
-// marked beside them. Each linked line gets a short bar in a gutter to the left
-// of its page, one column per kind (storyboard, reference, comment), the same
-// columns and colours as the markers in the editor's page margin. The kinds are
-// read straight off the editor's own decorations, so the two can never
-// disagree about what is linked.
+// Links are shown the way the editor shows them: the linked WORDS are tinted,
+// each in the colour of what it links to (a smooth gradient across the words
+// where two or three kinds overlap), so two portions of one sentence linked to
+// different things stay distinct. The kinds and their character ranges are read
+// straight off the editor's own decorations, so the two can never disagree.
 //
 // Canvas, so var() does not resolve; the colours are read off the editor's
 // computed style on every draw, which is also how a theme change reaches it.
@@ -37,8 +36,8 @@ export function kindsOfDecoration(deco) {
   return k.board || k.ref || k.comment ? k : null;
 }
 
-// The gutter's bar colours, by kind and column.
-const GUTTER = { board: '--board-strong', boardRef: '--board-ref', ref: '--res', comment: '--act' };
+// The tint each kind paints behind its words, as [colour token, alpha].
+const TINT = { board: ['--board', 0.85], boardRef: ['--board-ref', 0.6], ref: ['--res', 0.4], comment: ['--act', 0.6] };
 
 const STYLE = {
   scene: { weight: '700', ink: '--ink' },
@@ -142,12 +141,13 @@ export function scriptMinimap({ getHighlights }) {
       const period = (geom.pageH + geom.gap) * s;
       const left = PAD;
 
-      // Which lines carry which kinds of link, only for what is drawn.
+      // The linked words on each line, with the kinds each carries, only for
+      // what is drawn: line index -> [[from col, to col, kinds]].
       const firstPage = Math.max(0, Math.floor(offset / period));
       const lastPage = Math.min(layout.pages.length - 1, Math.floor((offset + h) / period));
       const firstLine = layout.pages[firstPage] ? layout.pages[firstPage].start : 0;
       const lastLine = lastPage + 1 < layout.pages.length ? layout.pages[lastPage + 1].start - 1 : doc.lines - 1;
-      const lineKinds = new Map();
+      const marks = new Map();
       const hl = getHighlights(view);
       if (hl && doc.lines) {
         const from = doc.line(Math.min(firstLine + 1, doc.lines)).from;
@@ -155,13 +155,10 @@ export function scriptMinimap({ getHighlights }) {
         hl.between(from, to, (f, t, deco) => {
           const k = kindsOfDecoration(deco);
           if (!k) return;
-          for (let n = doc.lineAt(f).number; n <= doc.lineAt(t).number; n++) {
-            const cur = lineKinds.get(n - 1) || { board: null, ref: false, comment: false };
-            if (k.board === 'final') cur.board = 'final'; else if (k.board && !cur.board) cur.board = 'ref';
-            if (k.ref) cur.ref = true;
-            if (k.comment) cur.comment = true;
-            lineKinds.set(n - 1, cur);
-          }
+          const line = doc.lineAt(f);
+          const list = marks.get(line.number - 1) || [];
+          list.push([f - line.from, Math.min(t, line.to) - line.from, k]);
+          marks.set(line.number - 1, list);
         });
       }
 
@@ -179,22 +176,13 @@ export function scriptMinimap({ getHighlights }) {
         const end = p + 1 < layout.pages.length ? layout.pages[p + 1].start : doc.lines;
         for (let i = pg.start; i < end; i++) {
           const type = layout.types[i];
-          const kinds = lineKinds.get(i);
-          if (kinds) {
-            // A short bar per kind, in its own column, in the gutter left of the page.
-            const y0 = top + (geom.top + layout.rowOf[i] * lh) * s;
-            const hh = Math.max(2, layout.rowsOf[i] * lh * s);
-            const bar = (col, token) => { ctx.fillStyle = color(token); ctx.fillRect(left - 8 + col * 3, y0, 2, hh); };
-            if (kinds.board) bar(0, kinds.board === 'final' ? GUTTER.board : GUTTER.boardRef);
-            if (kinds.ref) bar(1, GUTTER.ref);
-            if (kinds.comment) bar(2, GUTTER.comment);
-          }
           if (type === 'blank' || type === 'page') continue;
           const text = doc.line(i + 1).text;
           if (!text.trim()) continue;
           const box = elementBox(type, layout.cols, layout.refCols);
           const segs = wrapSegments(text, box.width);
           const st = STYLE[type] || { weight: '400', ink: '--ink' };
+          const lineMarks = marks.get(i) || [];
           segs.forEach(([a, b], r) => {
             const len = b - a;
             let col = box.indent;
@@ -202,6 +190,27 @@ export function scriptMinimap({ getHighlights }) {
             else if (type === 'centered') col = Math.floor((layout.cols - len) / 2);
             const x = left + (geom.left + col * chW) * s;
             const y = top + (geom.top + (layout.rowOf[i] + r) * lh) * s;
+            // Linked words: a tint behind exactly those words, in the kind's
+            // colour, or a left-to-right gradient of them where kinds overlap.
+            for (const [ms, me, k] of lineMarks) {
+              const hs = Math.max(ms, a);
+              const he = Math.min(me, b);
+              if (he <= hs) continue;
+              const x0 = x + (hs - a) * chW * s;
+              const w0 = (he - hs) * chW * s;
+              const kinds = [k.board === 'final' ? TINT.board : k.board === 'ref' ? TINT.boardRef : null, k.ref ? TINT.ref : null, k.comment ? TINT.comment : null].filter(Boolean);
+              if (!kinds.length) continue;
+              let fill;
+              if (kinds.length === 1) fill = color(kinds[0][0]);
+              else {
+                fill = ctx.createLinearGradient(x0, 0, x0 + w0, 0);
+                kinds.forEach(([tok], n) => fill.addColorStop(n / (kinds.length - 1), color(tok)));
+              }
+              ctx.globalAlpha = kinds.length === 1 ? kinds[0][1] : 0.6;
+              ctx.fillStyle = fill;
+              ctx.fillRect(x0, y, w0, lh * s);
+              ctx.globalAlpha = 1;
+            }
             ctx.fillStyle = color(st.ink);
             ctx.font = `${st.weight} ${Math.max(1.5, lh * s * 0.95)}px ${font}`;
             ctx.textBaseline = 'top';

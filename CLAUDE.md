@@ -741,6 +741,26 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
     entries that say "yellow" for reference frames describe the colour it had
     then.
 
+
+26. **Linked words are coloured directly (supersedes the margin markers in
+    item 24).** Per-line margin markers were ambiguous: when two portions of
+    one sentence link to different things, a marker on the line cannot say
+    which is which. So the margin dots and the minimap gutter bars are gone and
+    the WORDS carry the colour: at rest the text takes its kind's colour
+    (storyboard green, reference-only storyboard orange, reference pink,
+    comment amber, each mixed toward the ink so it stays legible in both
+    themes); words carrying two or three kinds take a smooth left-to-right
+    gradient of them (gradient text via `background-clip: text`, not bands);
+    on hover a soft tint of the same colour or gradient appears behind them.
+    All the rules are generated from one table (`linkRules` in `cm-theme.js`),
+    and `disjointBoardClass` guarantees a word never carries both board classes
+    so the combinations are exhaustive. The minimap tints the same words in the
+    same colours, a gradient where kinds overlap. The click popover of items 24
+    and 25 is unchanged. Note the gradient interpolates in sRGB, so green to
+    pink passes through a muddy middle on a short word; `in oklab` would fix
+    that but an unsupported gradient with transparent text would make the words
+    invisible, so it is not used.
+
 ---
 
 ## Working context
