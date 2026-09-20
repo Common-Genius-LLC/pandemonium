@@ -1,16 +1,18 @@
 // The script's minimap: the same pages the editor shows, drawn small down its
 // right edge, so a long screenplay stays scannable while you write.
 //
-// It replaces a generic code minimap (@replit/codemirror-minimap), which could
-// not do the two things a screenplay needs. It drew every line of text as one
-// unwrapped strip, so a paragraph of action was a single long bar and the page
-// had no shape. And it could not paint a highlight behind text, only a mark in
-// its gutter per line. This one draws from the page layout itself
-// (fountain/paginate.js, via cm-pages.js): real sheets, real wrapping at the
-// real indents, scene headings in bold, and every linked passage painted in
-// its own colour across exactly the words it covers, the way the editor
-// highlights it. The highlight ranges are read straight off the editor's own
-// decorations, so the two can never disagree about what is linked.
+// It replaces a generic code minimap (@replit/codemirror-minimap), which drew
+// every line as one unwrapped strip, so a paragraph of action was a single
+// long bar and the page had no shape. This one draws from the page layout
+// itself (fountain/paginate.js, via cm-pages.js): real sheets, real wrapping at
+// the real indents, scene headings in bold.
+//
+// Links are shown the way the editor shows them: not painted over the words but
+// marked beside them. Each linked line gets a short bar in a gutter to the left
+// of its page, one column per kind (storyboard, reference, comment), the same
+// columns and colours as the markers in the editor's page margin. The kinds are
+// read straight off the editor's own decorations, so the two can never
+// disagree about what is linked.
 //
 // Canvas, so var() does not resolve; the colours are read off the editor's
 // computed style on every draw, which is also how a theme change reaches it.
@@ -23,17 +25,20 @@ import { elementBox, wrapSegments, CPI } from '../../fountain/paginate.js';
 export const MINIMAP_WIDTH = 92; // px, the minimap column
 const PAD = 8;
 
-// Which highlight colour a decoration class paints, strongest link first:
-// research (pink), then a final storyboard (green), a reference-only one
-// (yellow), a comment, and a link being made.
-function highlightToken(cls) {
-  if (/\bhr\b/.test(cls)) return '--res';
-  if (/\bhbr\b/.test(cls)) return '--act';
-  if (/\bhb\b/.test(cls)) return '--board';
-  if (/\bhc\b/.test(cls)) return '--act';
-  if (/\bhp\b/.test(cls)) return '--pend';
-  return null;
+// What kinds of link a highlight decoration carries. Only the link marks
+// (those with a data-hl attribute) count; the line and emphasis decorations
+// share the same set and mean nothing here.
+export function kindsOfDecoration(deco) {
+  const spec = deco && deco.spec;
+  if (!spec || !spec.attributes || !spec.attributes['data-hl']) return null;
+  const cls = spec.class || '';
+  const board = /\bhb\b/.test(cls) ? 'final' : /\bhbr\b/.test(cls) ? 'ref' : null;
+  const k = { board, ref: /\bhr\b/.test(cls), comment: /\bhc\b/.test(cls) };
+  return k.board || k.ref || k.comment ? k : null;
 }
+
+// The gutter's bar colours, by kind and column.
+const GUTTER = { board: '--board-strong', boardRef: '--act', ref: '--res', comment: '--act' };
 
 const STYLE = {
   scene: { weight: '700', ink: '--ink' },
@@ -137,23 +142,26 @@ export function scriptMinimap({ getHighlights }) {
       const period = (geom.pageH + geom.gap) * s;
       const left = PAD;
 
-      // Highlights, as character ranges per line, only for what is drawn.
+      // Which lines carry which kinds of link, only for what is drawn.
       const firstPage = Math.max(0, Math.floor(offset / period));
       const lastPage = Math.min(layout.pages.length - 1, Math.floor((offset + h) / period));
       const firstLine = layout.pages[firstPage] ? layout.pages[firstPage].start : 0;
       const lastLine = lastPage + 1 < layout.pages.length ? layout.pages[lastPage + 1].start - 1 : doc.lines - 1;
-      const marks = new Map();
+      const lineKinds = new Map();
       const hl = getHighlights(view);
       if (hl && doc.lines) {
         const from = doc.line(Math.min(firstLine + 1, doc.lines)).from;
         const to = doc.line(Math.min(lastLine + 1, doc.lines)).to;
         hl.between(from, to, (f, t, deco) => {
-          const token = highlightToken((deco.spec && deco.spec.class) || '');
-          if (!token) return;
-          const line = doc.lineAt(f);
-          const list = marks.get(line.number - 1) || [];
-          list.push([f - line.from, Math.min(t, line.to) - line.from, token]);
-          marks.set(line.number - 1, list);
+          const k = kindsOfDecoration(deco);
+          if (!k) return;
+          for (let n = doc.lineAt(f).number; n <= doc.lineAt(t).number; n++) {
+            const cur = lineKinds.get(n - 1) || { board: null, ref: false, comment: false };
+            if (k.board === 'final') cur.board = 'final'; else if (k.board && !cur.board) cur.board = 'ref';
+            if (k.ref) cur.ref = true;
+            if (k.comment) cur.comment = true;
+            lineKinds.set(n - 1, cur);
+          }
         });
       }
 
@@ -171,13 +179,22 @@ export function scriptMinimap({ getHighlights }) {
         const end = p + 1 < layout.pages.length ? layout.pages[p + 1].start : doc.lines;
         for (let i = pg.start; i < end; i++) {
           const type = layout.types[i];
+          const kinds = lineKinds.get(i);
+          if (kinds) {
+            // A short bar per kind, in its own column, in the gutter left of the page.
+            const y0 = top + (geom.top + layout.rowOf[i] * lh) * s;
+            const hh = Math.max(2, layout.rowsOf[i] * lh * s);
+            const bar = (col, token) => { ctx.fillStyle = color(token); ctx.fillRect(left - 8 + col * 3, y0, 2, hh); };
+            if (kinds.board) bar(0, kinds.board === 'final' ? GUTTER.board : GUTTER.boardRef);
+            if (kinds.ref) bar(1, GUTTER.ref);
+            if (kinds.comment) bar(2, GUTTER.comment);
+          }
           if (type === 'blank' || type === 'page') continue;
           const text = doc.line(i + 1).text;
           if (!text.trim()) continue;
           const box = elementBox(type, layout.cols, layout.refCols);
           const segs = wrapSegments(text, box.width);
           const st = STYLE[type] || { weight: '400', ink: '--ink' };
-          const lineMarks = marks.get(i) || [];
           segs.forEach(([a, b], r) => {
             const len = b - a;
             let col = box.indent;
@@ -185,14 +202,6 @@ export function scriptMinimap({ getHighlights }) {
             else if (type === 'centered') col = Math.floor((layout.cols - len) / 2);
             const x = left + (geom.left + col * chW) * s;
             const y = top + (geom.top + (layout.rowOf[i] + r) * lh) * s;
-            // A linked passage: its colour behind exactly the words it covers.
-            for (const [ms, me, token] of lineMarks) {
-              const hs = Math.max(ms, a);
-              const he = Math.min(me, b);
-              if (he <= hs) continue;
-              ctx.fillStyle = color(token);
-              ctx.fillRect(x + (hs - a) * chW * s, y, (he - hs) * chW * s, lh * s);
-            }
             ctx.fillStyle = color(st.ink);
             ctx.font = `${st.weight} ${Math.max(1.5, lh * s * 0.95)}px ${font}`;
             ctx.textBaseline = 'top';

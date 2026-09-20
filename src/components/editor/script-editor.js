@@ -13,6 +13,7 @@ import { scriptPages, setPageMetrics } from './cm-pages.js';
 import { scriptMinimap, scriptMinimapTheme, MINIMAP_WIDTH } from './cm-script-minimap.js';
 import { scriptPrefs } from '../../state/script-prefs.js';
 import { pageFit, elementBox, LPI } from '../../fountain/paginate.js';
+import { attachedTo } from '../../state/selectors.js';
 import { captureFromSelection } from './selection-capture.js';
 import { parseFountain } from '../../fountain/parse.js';
 import { resolvePart, snapToWords } from '../../fountain/resolve.js';
@@ -598,17 +599,56 @@ export class PandemoniumScriptEditor extends LitElement {
     };
   }
 
+  // A click on linked words shows EVERYTHING attached to that script element:
+  // its storyboard, its reference and its comment, whichever of them the clicked
+  // words belong to. (It used to open just the first one it found, so a beat
+  // with all three showed one and hid two.) A lone reference still opens
+  // straight away and a lone comment straight into its editor, since a popover
+  // with one row in it is a step for nothing.
   #onClick(e) {
     const mk = e.target.closest('[data-hl]');
     if (!mk) return;
     if (!this.#view.state.selection.main.empty) return;
-    const toks = (mk.dataset.hl || '').split(/\s+/);
-    const rTok = toks.find((t) => t.indexOf('r:') === 0);
-    const bTok = toks.find((t) => t.indexOf('b:') === 0);
-    const cTok = toks.find((t) => t.indexOf('c:') === 0);
-    if (rTok) { openPair(this._store.store, rTok.slice(2)); e.preventDefault(); return; }
-    if (bTok) { dispatch(this, 'pandemonium-show-board-popover', { boardId: bTok.slice(2), anchor: mk }); e.preventDefault(); return; }
-    if (cTok) { dispatch(this, 'pandemonium-show-comment', { commentId: cTok.slice(2), anchorRect: mk.getBoundingClientRect() }); e.preventDefault(); }
+    e.preventDefault();
+    const store = this._store.store;
+    const script = store.scriptForLeaf(this.leafId);
+    const state = script.final ? store.getFinalState() : store.getDraftState(script.id);
+    const ids = { boardIds: new Set(), linkIds: new Set(), commentIds: new Set() };
+
+    // What the clicked words themselves carry...
+    for (const t of (mk.dataset.hl || '').split(/\s+/)) {
+      if (t.startsWith('b:')) ids.boardIds.add(t.slice(2));
+      else if (t.startsWith('r:')) ids.linkIds.add(t.slice(2));
+      else if (t.startsWith('c:')) ids.commentIds.add(t.slice(2));
+    }
+    // ...and everything else attached to the same script element.
+    const parsed = this.#view.plugin(this.#plugin)?.parsed;
+    if (parsed) {
+      const lineIdx = this.#view.state.doc.lineAt(this.#view.posAtDOM(mk)).number - 1;
+      let blk = null;
+      for (const b of parsed.blocks) {
+        if (b.type === 'page' || b.line == null) continue;
+        if (b.line <= lineIdx) blk = b; else break;
+      }
+      if (blk) {
+        const a = attachedTo(state.R, blk.i);
+        a.boards.forEach((o) => ids.boardIds.add(o.bd.id));
+        a.links.forEach((o) => ids.linkIds.add(o.lk.id));
+        a.comments.forEach((o) => ids.commentIds.add(o.cm.id));
+      }
+    }
+
+    const boardIds = [...ids.boardIds];
+    const linkIds = [...ids.linkIds];
+    const commentIds = [...ids.commentIds];
+    const total = boardIds.length + linkIds.length + commentIds.length;
+    if (!total) return;
+    if (total === 1 && linkIds.length) { openPair(store, linkIds[0]); return; }
+    if (total === 1 && commentIds.length) {
+      dispatch(this, 'pandemonium-show-comment', { commentId: commentIds[0], anchorRect: mk.getBoundingClientRect() });
+      return;
+    }
+    dispatch(this, 'pandemonium-show-link-popover', { boardIds, linkIds, commentIds, anchor: mk });
   }
 
   #scrollToBlock(bi) {

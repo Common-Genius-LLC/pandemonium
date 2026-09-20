@@ -61,7 +61,9 @@ export class PandemoniumResearchPanel extends LitElement {
     .find input:focus-visible{border-color:var(--link)}
     .find input::placeholder{color:var(--mut)}
     /* Where you are, as a path; each step is also somewhere to drop something. */
-    .crumbs{flex:none;display:flex;align-items:center;flex-wrap:wrap;gap:2px;padding:0 10px 4px;font-family:var(--sans);font-size:11px}
+    /* At the foot of the pane: a solid strip in the pane's own colour, so it
+       reads as part of the panel and stays put while the grid scrolls above it. */
+    .crumbs{flex:none;display:flex;align-items:center;flex-wrap:wrap;gap:2px;padding:6px 12px 8px;font-family:var(--sans);font-size:11px;background:var(--pane-bg,var(--bg))}
     .crumb{
       height:22px;padding:0 9px;border:0;border-radius:20px;cursor:pointer;font:inherit;color:var(--mut);background:transparent;
       max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
@@ -426,6 +428,17 @@ export class PandemoniumResearchPanel extends LitElement {
     </nav>`;
   }
 
+  // The path bar sits at the foot of the pane, where a location readout
+  // belongs, and only while you are inside a folder and looking at that
+  // folder's own contents (a search or filter shows matches from every folder,
+  // so there is no single place to be).
+  #pathBar(project) {
+    const folders = project.folders || [];
+    const here = this._folder && folders.find((f) => f.id === this._folder);
+    const searching = !!(this._query.trim() || this._labels.size || this._unlinkedOnly || this.#draftFilter());
+    return here && !searching ? this.#crumbs(project, here) : nothing;
+  }
+
   // The header of the folder you are in: its name, its labels, its menu.
   #folderHeader(project, folder) {
     const store = this._store.store;
@@ -566,7 +579,7 @@ export class PandemoniumResearchPanel extends LitElement {
     const here = view.here ? folders.find((f) => f.id === view.here) : null;
     const empty = !view.docs.length && !view.folders.length;
     return html`
-      ${here && !view.flat ? html`${this.#crumbs(project, here)}${this.#folderHeader(project, here)}` : nothing}
+      ${here && !view.flat ? this.#folderHeader(project, here) : nothing}
       ${view.flat ? html`
         <div class="filterbar">
           <span>${view.docs.length} of ${project.research.length} sources${view.folders.length ? ', ' + view.folders.length + ' folder' + (view.folders.length === 1 ? '' : 's') : ''}${this._unlinkedOnly ? ', not yet linked' : ''}${draft ? ', linked in ' + draft.name : ''}${this._labels.size ? ', in ' + [...this._labels].join(' or ') : ''}, across every folder</span>
@@ -606,6 +619,7 @@ export class PandemoniumResearchPanel extends LitElement {
             ? html`<pandemonium-research-reader .doc=${openDoc}></pandemonium-research-reader>`
             : (hasAny ? this.#grid(project) : this.#empty())}
         </div>
+        ${openDoc ? nothing : this.#pathBar(project)}
         ${this._dragging ? html`<div class="dropzone">Drop to add as a source</div>` : nothing}
       </div>
       <input type="file" id="fileRes" multiple style="display:none" @change=${(e) => this.#onFilePicked(e)}>

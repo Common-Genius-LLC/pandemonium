@@ -7,7 +7,7 @@
 'use strict';
 
 import { describe, it, expect } from 'vitest';
-import { linkedBoards, coverage, boardLinkKinds, describeSlideshowGap } from './selectors.js';
+import { linkedBoards, coverage, boardLinkKinds, describeSlideshowGap, attachedTo, linkKindsByBlock } from './selectors.js';
 
 function resolved(id, { parts, seq = 0, img = null, refImg = null, ok = true, firstBi = 0, sceneIdx = 0 }) {
   return { bd: { id, anchor: { parts }, seq, img, refImg }, ok, firstBi, sceneIdx, res: [] };
@@ -119,5 +119,38 @@ describe('describeSlideshowGap', () => {
 
   it('does not count a blank storyboard as a frame', () => {
     expect(describeSlideshowGap(blocks('hi'), [board(null, null, true)], 'final', 'preview the show')).toMatch(/Add storyboard frames/);
+  });
+});
+
+describe('attachedTo / linkKindsByBlock', () => {
+  const hit = (id, bi, extra = {}) => ({ ok: true, res: [{ bi, s: 0, e: 3 }], ...extra, id });
+  const R = {
+    boards: [hit('b1', 4, { bd: { img: 'F' } }), hit('b2', 7, { bd: { img: null, refImg: 'R' } }), { ok: false, res: [null], bd: {}, id: 'lost' }],
+    links: [hit('l1', 4), hit('l2', 9)],
+    comments: [hit('c1', 4), hit('c2', 7)],
+  };
+  it('gathers a storyboard, a reference and a comment on the same element', () => {
+    const a = attachedTo(R, 4);
+    expect([a.boards.map((o) => o.id), a.links.map((o) => o.id), a.comments.map((o) => o.id)]).toEqual([['b1'], ['l1'], ['c1']]);
+  });
+  it('gathers only what is on that element, and nothing that has lost its passage', () => {
+    const a = attachedTo(R, 9);
+    expect([a.boards.length, a.links.length, a.comments.length]).toEqual([0, 1, 0]);
+    expect(attachedTo(R, 4).boards.some((o) => o.id === 'lost')).toBe(false);
+  });
+  it('is empty for an element with nothing on it and for missing input', () => {
+    expect(attachedTo(R, 1)).toEqual({ boards: [], links: [], comments: [] });
+    expect(attachedTo({}, 1)).toEqual({ boards: [], links: [], comments: [] });
+  });
+  it('marks each element with the kinds it carries', () => {
+    const k = linkKindsByBlock(R);
+    expect(k.get(4)).toEqual({ board: 'final', ref: true, comment: true });
+    expect(k.get(7)).toEqual({ board: 'ref', ref: false, comment: true });
+    expect(k.get(9)).toEqual({ board: null, ref: true, comment: false });
+    expect(k.has(1)).toBe(false);
+  });
+  it('lets a final frame win over a reference-only one on the same element', () => {
+    const both = { boards: [hit('a', 2, { bd: { img: null, refImg: 'R' } }), hit('b', 2, { bd: { img: 'F' } })] };
+    expect(linkKindsByBlock(both).get(2).board).toBe('final');
   });
 });

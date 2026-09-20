@@ -200,3 +200,31 @@ export function timelineStats(scenes, parsedBlocksLength) {
   const estimate = hasContent ? fmtT(total) : null;
   return { pctBoarded, pctSourced, estimate, hasContent, totalSeconds: total };
 }
+
+// Everything attached to one script element (a block): its storyboards, its
+// references and its comments, as the resolved entries from computeResolved.
+// This is what a click on any linked words shows, so a beat that has a
+// storyboard AND a reference AND a comment shows all three together, whichever
+// of its words was clicked.
+export function attachedTo(R, bi) {
+  const hits = (list) => (list || []).filter((o) => o.ok && (o.res || []).some((r) => r && r.bi === bi));
+  return { boards: hits(R.boards), links: hits(R.links), comments: hits(R.comments) };
+}
+
+// Per script element, which kinds of link it carries, for anything that marks
+// linked lines (the minimap). A storyboard reads as `board: 'final'` when it
+// holds a final frame or is blank (a real claim on the beat), `'ref'` when its
+// only image is the reference one, and final wins where an element has both.
+// Returns Map<blockIndex, {board: 'final'|'ref'|null, ref: boolean, comment: boolean}>.
+export function linkKindsByBlock(R) {
+  const out = new Map();
+  const at = (bi) => { let k = out.get(bi); if (!k) { k = { board: null, ref: false, comment: false }; out.set(bi, k); } return k; };
+  for (const it of R.boards || []) {
+    if (!it.ok) continue;
+    const refOnly = !it.bd.img && !!it.bd.refImg;
+    for (const r of it.res || []) if (r) { const k = at(r.bi); k.board = refOnly ? (k.board || 'ref') : 'final'; }
+  }
+  for (const it of R.links || []) if (it.ok) for (const r of it.res || []) if (r) at(r.bi).ref = true;
+  for (const it of R.comments || []) if (it.ok) for (const r of it.res || []) if (r) at(r.bi).comment = true;
+  return out;
+}

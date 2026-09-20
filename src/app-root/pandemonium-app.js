@@ -26,7 +26,7 @@ import '../components/ui/menu.js';
 import '../components/ui/project-card.js';
 import '../components/linking/selection-toolbar.js';
 import '../components/linking/linkbar.js';
-import '../components/linking/highlight-popover.js';
+import '../components/linking/link-popover.js';
 import '../components/linking/comment-popover.js';
 import '../components/slideshow/slideshow.js';
 import '../components/auth/account-dialog.js';
@@ -112,7 +112,7 @@ export class PandemoniumApp extends LitElement {
     this.addEventListener('pandemonium-open-dialog', (e) => this.renderRoot.getElementById('dialog').open(e.detail));
     this.addEventListener('pandemonium-open-menu', (e) => this.renderRoot.getElementById('menu').open(e.detail));
     this.addEventListener('pandemonium-show-selection-toolbar', (e) => this.renderRoot.getElementById('selToolbar').open(e.detail));
-    this.addEventListener('pandemonium-show-board-popover', (e) => this.renderRoot.getElementById('boardPopover').open(e.detail));
+    this.addEventListener('pandemonium-show-link-popover', (e) => this.renderRoot.getElementById('linkPopover').open(e.detail));
     this.addEventListener('pandemonium-show-comment', (e) => this.renderRoot.getElementById('commentPopover').open(e.detail));
     this.addEventListener('pandemonium-open-slideshow', (e) => this.renderRoot.getElementById('slideshow').open((e.detail) || {}));
     this.addEventListener('pandemonium-open-project-settings', () => this.#openProjectSettings());
@@ -362,7 +362,7 @@ export class PandemoniumApp extends LitElement {
       <pd-menu id="menu"></pd-menu>
       <pandemonium-selection-toolbar id="selToolbar"></pandemonium-selection-toolbar>
       <pandemonium-linkbar data-clarity-mask="true"></pandemonium-linkbar>
-      <pandemonium-highlight-popover id="boardPopover" data-clarity-mask="true"></pandemonium-highlight-popover>
+      <pandemonium-link-popover id="linkPopover" data-clarity-mask="true"></pandemonium-link-popover>
       <pandemonium-comment-popover id="commentPopover" data-clarity-mask="true"></pandemonium-comment-popover>
       <pandemonium-slideshow id="slideshow" data-clarity-mask="true"></pandemonium-slideshow>
       <pd-account-dialog id="accountDialog" data-clarity-mask="true"></pd-account-dialog>

@@ -42,6 +42,7 @@ export class PandemoniumSelectionToolbar extends LitElement {
     .pills button{
       font-size:12px;font-weight:500;line-height:1;padding:6px 12px;min-height:24px;border:0;border-radius:20px;
       cursor:pointer;white-space:nowrap;text-align:center;
+      box-shadow:0 1px 1.25px rgba(0,0,0,.25);
     }
     .pills button.linkto{background:var(--overlay);color:var(--overlay-ink)}
     .pills button.linkto:hover{background:var(--ui)}

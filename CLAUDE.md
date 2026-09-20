@@ -695,6 +695,35 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
     **Not done**: manual ordering inside a folder (folders sort by name,
     references newest first), and a folder-level colour.
 
+
+24. **Links mark instead of paint; one popover for everything on an element.**
+    Linked words are PLAIN at rest and take their colour on hover (storyboard
+    green, reference pink, comment yellow; two or three bands where one element
+    carries several, `cm-theme.js`); a link being made (`.hp`) stays lit. What
+    shows at rest is a small marker per kind in the page margin on each linked
+    line (`cmf-lk-*` line classes from `linkKindClasses`, always in the same
+    columns: storyboard, reference, comment). The minimap follows: it no longer
+    paints words, it draws a bar per kind in a gutter left of each page, same
+    columns and colours, read from the same decorations (`kindsOfDecoration`).
+    Clicking linked words opens `pandemonium-link-popover`
+    (`link-popover.js`, replacing `highlight-popover.js`), which shows
+    EVERYTHING on that script element (`attachedTo` in `selectors.js`,
+    gathered by element, so the comment shows even when the clicked words are
+    only the storyboard's): the storyboard as the real
+    `pandemonium-board-card` (same look and every control: Final/Reference
+    marker, Preview from here, Edit, Unlink), then the reference (Open,
+    Unlink) and the comment (Edit, Delete). A lone reference still opens
+    straight away and a lone comment straight into its editor. Verified in a
+    browser with all three on one element. **Also**: the References button I
+    had added to the script panel is removed (the References panel keeps its
+    "This draft" filter); the rail pills, selection-toolbar pills and account
+    control carry the same 1px lift as File; the signed-in account is a round
+    badge of the person's initials (`utils/initials.js`, tested) instead of a
+    button with their name; the title bar is a step darker in the light theme
+    and a step lighter in the dark one (`--chrome-a/b`); a gap keeps the + draft
+    button from touching Focus when the script pane narrows; and the
+    References path bar moved to the bottom of the pane.
+
 ---
 
 ## Working context

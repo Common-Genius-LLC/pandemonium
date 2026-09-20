@@ -77,8 +77,8 @@
   --btn-bg:#ffffff;      /* button fill, at rest */
   --btn-hi:#f6f6f6;      /* button fill, hover */
   --menu-bg:#eaeaea;     /* panel dropdown fill, open */
-  --chrome-a:#b7b7b7;    /* title bar gradient, top */
-  --chrome-b:#d3d3d3;    /* title bar gradient, bottom */
+  --chrome-a:#a2a2a2;    /* title bar gradient, top (a step darker than the panes) */
+  --chrome-b:#bdbdbd;    /* title bar gradient, bottom */
   --scrim-a:#ffffff;     /* start screen backdrop, top */
   --scrim-b:#d8d8d8;     /* start screen backdrop, bottom */
   /* Panels are all one neutral surface now (Figma 101-1095): no per-panel
@@ -170,8 +170,8 @@
   --btn-bg:#232529;
   --btn-hi:#2c2f34;
   --menu-bg:#24262a;
-  --chrome-a:#2a2c30;
-  --chrome-b:#1d1f22;
+  --chrome-a:#3a3d43;    /* a step lighter than the page, so the bar reads as a bar */
+  --chrome-b:#2c2f34;
   --scrim-a:#1c1e21;
   --scrim-b:#101113;
   --chrome-panel:#1b1c1f;

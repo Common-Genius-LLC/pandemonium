@@ -204,16 +204,48 @@ export const fountainTheme = EditorView.theme({
   // The yellow is the action token softened with color-mix, not a new color,
   // so it sits next to the soft --board green at a similar weight in both
   // themes.
-  '.hb': { background: 'var(--board)', cursor: 'pointer', borderRadius: '1px' },
-  '.hbr': { background: 'color-mix(in srgb, var(--act) 55%, transparent)', cursor: 'pointer', borderRadius: '1px' },
-  '.hr': { background: 'var(--res)', color: '#fff', cursor: 'pointer', borderRadius: '1px' },
-  '.hb.hbr': { background: 'linear-gradient(180deg,var(--board) 50%,color-mix(in srgb, var(--act) 55%, transparent) 50%)', cursor: 'pointer', borderRadius: '1px' },
-  '.hb.hr': { background: 'linear-gradient(180deg,var(--board) 50%,var(--res) 50%)', color: 'var(--ink)', cursor: 'pointer', borderRadius: '1px' },
-  '.hbr.hr': { background: 'linear-gradient(180deg,color-mix(in srgb, var(--act) 55%, transparent) 50%,var(--res) 50%)', color: 'var(--ink)', cursor: 'pointer', borderRadius: '1px' },
+  // Linked words are PLAIN at rest and take their colour when the pointer is
+  // on them (a storyboard green, a reference pink, a comment yellow; layered
+  // bands where an element carries more than one). What shows at rest is a
+  // small marker per kind in the page margin (.cmf-lk below), so a link is
+  // findable without the text being painted. A link being made (.hp) is the
+  // one exception: it stays lit, because it is what you are working on.
+  '.hb, .hbr, .hr, .hc': {
+    cursor: 'pointer', borderRadius: '2px',
+    transition: 'background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out)',
+  },
+  '.hb:hover': { background: 'var(--board)' },
+  '.hbr:hover': { background: 'color-mix(in srgb, var(--act) 55%, transparent)' },
+  '.hc:hover': { background: 'color-mix(in srgb, var(--act) 55%, transparent)' },
+  '.hr:hover': { background: 'var(--res)', color: '#fff' },
+  // Two kinds on the same words: two bands. Three: three bands.
+  '.hb.hbr:hover': { background: 'linear-gradient(180deg,var(--board) 50%,color-mix(in srgb, var(--act) 55%, transparent) 50%)' },
+  '.hb.hr:hover': { background: 'linear-gradient(180deg,var(--board) 50%,var(--res) 50%)', color: 'var(--ink)' },
+  '.hbr.hr:hover': { background: 'linear-gradient(180deg,color-mix(in srgb, var(--act) 55%, transparent) 50%,var(--res) 50%)', color: 'var(--ink)' },
+  '.hb.hc:hover': { background: 'linear-gradient(180deg,var(--board) 50%,color-mix(in srgb, var(--act) 55%, transparent) 50%)' },
+  '.hbr.hc:hover': { background: 'linear-gradient(180deg,color-mix(in srgb, var(--act) 55%, transparent) 50%,color-mix(in srgb, var(--act) 30%, transparent) 50%)' },
+  '.hr.hc:hover': { background: 'linear-gradient(180deg,var(--res) 50%,color-mix(in srgb, var(--act) 55%, transparent) 50%)', color: 'var(--ink)' },
+  '.hb.hr.hc:hover': { background: 'linear-gradient(180deg,var(--board) 33.3%,var(--res) 33.3% 66.6%,color-mix(in srgb, var(--act) 55%, transparent) 66.6%)', color: 'var(--ink)' },
+  '.hbr.hr.hc:hover': { background: 'linear-gradient(180deg,color-mix(in srgb, var(--act) 55%, transparent) 33.3%,var(--res) 33.3% 66.6%,color-mix(in srgb, var(--act) 30%, transparent) 66.6%)', color: 'var(--ink)' },
   '.hp': { background: 'var(--pend)', borderRadius: '1px' },
-  // Comments read as an annotation underline, not a filled highlight, so they
-  // stay legible even where they overlap a board/research span.
-  '.hc': { borderBottom: '2px solid var(--act)', cursor: 'pointer' },
+
+  // The margin markers: up to three dots at the left edge of the page on the
+  // first row of a linked line, always in the same columns (storyboard,
+  // reference, comment) so a glance down the margin reads as a column of each.
+  // The dot colours are custom properties set by the kind classes, and a kind a
+  // line does not carry stays transparent.
+  '.cm-line.cmf-lk': { position: 'relative' },
+  '.cm-line.cmf-lk::before': {
+    content: '""', position: 'absolute', top: '0', left: 'calc(-1 * var(--pg-left, 144px) + 12px)',
+    width: '30px', height: 'var(--pg-lh, 16px)', pointerEvents: 'none',
+    background: 'radial-gradient(circle at 4px 50%, var(--lk-b, transparent) 3px, transparent 3.5px),'
+      + 'radial-gradient(circle at 14px 50%, var(--lk-r, transparent) 3px, transparent 3.5px),'
+      + 'radial-gradient(circle at 24px 50%, var(--lk-c, transparent) 3px, transparent 3.5px)',
+  },
+  '.cm-line.cmf-lk-b': { '--lk-b': 'var(--board-strong)' },
+  '.cm-line.cmf-lk-br': { '--lk-b': 'var(--act)' },
+  '.cm-line.cmf-lk-r': { '--lk-r': 'var(--res)' },
+  '.cm-line.cmf-lk-c': { '--lk-c': 'var(--act)' },
   '.hl-flash': { background: 'var(--act) !important', color: 'var(--ink) !important' },
 
   // Section hover model (cm-sections.js): a flat band behind the whole hovered
@@ -245,6 +277,8 @@ export const fountainTheme = EditorView.theme({
   '.cm-sec-acts button': {
     fontSize: '12px', fontWeight: '500', lineHeight: '1', padding: '6px 12px', minHeight: '24px', border: '0',
     borderRadius: '20px', cursor: 'pointer', fontFamily: 'var(--sans)', whiteSpace: 'nowrap',
+    // The same lift as the File and account controls in the title bar.
+    boxShadow: '0 1px 1.25px rgba(0,0,0,.25)',
   },
   // The element-type pill (item 6, neutral), the dark pill (link to) and the
   // yellow pill (Comment). All use theme tokens rather than the Figma literals

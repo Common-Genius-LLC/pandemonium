@@ -4,6 +4,7 @@ import { LitElement, html, css } from 'lit';
 import { StoreController } from '../state/store-controller.js';
 import { dispatch } from '../utils/events.js';
 import { saveProject, openProjectFile } from '../data/db.js';
+import { initialsOf } from '../utils/initials.js';
 import { session } from '../data/session.js';
 import { syncStatus } from '../state/sync-status.js';
 import { readFileAsText, downloadBlob } from '../utils/files.js';
@@ -60,6 +61,18 @@ export class PandemoniumTopbar extends LitElement {
        still on its way to storage, green once it has landed, red when the last
        write was refused. Always visible, because a dot that only appears when
        something is wrong cannot tell you that things are right. */
+    /* Signed in, the account is a round badge of the person's initials rather
+       than a button with their name on it: it says who is here at a glance and
+       takes no room. The same lift as the File button beside it. */
+    #avatar{
+      width:28px;height:28px;flex:none;padding:0;border:0;border-radius:50%;cursor:pointer;
+      display:flex;align-items:center;justify-content:center;
+      font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.02em;
+      color:var(--overlay-ink);background:var(--overlay);box-shadow:0 1px 1.25px rgba(0,0,0,.25);
+      transition:background var(--dur-1) var(--ease-out);
+    }
+    #avatar:hover{background:var(--ui)}
+    #avatar:active{box-shadow:inset 0 1px 4.2px 0 #000}
     #saveDot{width:7px;height:7px;border-radius:50%;flex:none;margin-right:2px;transition:background .18s}
     #saveDot.pending{background:var(--act)}
     #saveDot.synced{background:var(--ok)}
@@ -270,10 +283,10 @@ export class PandemoniumTopbar extends LitElement {
       <div id="actions">
         <span id="saveDot" class=${syncStatus.state} title=${this.#syncTitle()}></span>
         <pd-button @click=${(e) => this.#openFileMenu(e)} title="New, open, save, share and export">File</pd-button>
-        <pd-button data-clarity-mask="true" variant=${session.isAuthed() ? 'default' : 'pink'} @click=${() => this.#openAccount()}
-          title=${session.isAuthed() ? 'Your account and cloud projects' : 'Sign in to sync your projects'}>
-          ${session.isAuthed() ? this.#accountLabel() : 'Sign in'}
-        </pd-button>
+        ${session.isAuthed()
+          ? html`<button id="avatar" data-clarity-mask="true" @click=${() => this.#openAccount()}
+              title=${this.#accountLabel() + ' - your account and cloud projects'} aria-label="Your account">${initialsOf(session.getUser())}</button>`
+          : html`<pd-button variant="pink" @click=${() => this.#openAccount()} title="Sign in to sync your projects">Sign in</pd-button>`}
       </div>
       <input type="file" id="fileOpen" accept=".json,application/json" style="display:none" @change=${(e) => this.#openFile(e)}>
       <input type="file" id="fileFountain" accept=".fountain,.txt,text/plain" style="display:none" @change=${(e) => this.#importFountain(e)}>
