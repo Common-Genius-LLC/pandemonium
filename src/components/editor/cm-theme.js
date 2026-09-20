@@ -43,7 +43,10 @@ export const fountainTheme = EditorView.theme({
     // --pane-bg on the shell and custom properties cross shadow roots, so the
     // desk can never drift from the chrome strip above it. It used to be grey,
     // which made this the one pane that did not match the others.
-    overflowX: 'hidden',
+    // Auto, not hidden: a page larger than the pane (a bigger text size in a
+    // narrow pane) scrolls sideways. The hover band stays bounded by
+    // .cm-content's own overflow:hidden.
+    overflowX: 'auto',
     overflowY: 'auto',
     backgroundColor: 'var(--pane-bg)',
   },

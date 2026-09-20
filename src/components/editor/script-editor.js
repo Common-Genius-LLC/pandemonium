@@ -159,19 +159,25 @@ export class PandemoniumScriptEditor extends LitElement {
     }
   }
 
-  // Pixels per inch for the page: the text size the writer chose (12pt is
-  // 96 px per inch, the standard), reduced only when the pane cannot hold a
-  // page that wide next to the minimap. The sizes reach the theme as custom
+  // Pixels per inch for the page: 96 (the 12pt standard), reduced only when
+  // the pane cannot hold a page that wide next to the minimap, then scaled by
+  // the text size the writer chose. The sizes reach the theme as custom
   // properties, and the page layout gets the same numbers by effect.
   #lastMetrics = '';
   #applyPageMetrics() {
     const view = this.#view;
     if (!view) return;
     const { paper, cols } = pageGrid(scriptPrefs.paper);
-    const wanted = scriptPrefs.textPt / 12;
+    // The standard size is the page at 12pt, shrunk only as far as the pane
+    // needs to hold it. The chosen size then scales THAT, so every size has a
+    // visible effect in any pane. (It used to take the smaller of the chosen
+    // size and the fit, which in a normal-width pane capped every size at the
+    // fit and made the setting do nothing.) A page larger than the pane
+    // scrolls sideways.
+    const rel = scriptPrefs.textPt / 12;
     const avail = view.scrollDOM.clientWidth - MINIMAP_WIDTH - 48;
-    const fit = avail > 0 ? avail / (paper.width * 96) : wanted;
-    const scale = Math.max(0.4, Math.min(wanted, fit));
+    const base = avail > 0 ? Math.min(1, avail / (paper.width * 96)) : 1;
+    const scale = Math.max(0.4, base * rel);
     const ppi = 96 * scale;
     const key = scriptPrefs.paper + ':' + ppi.toFixed(3);
     if (key === this.#lastMetrics) return;

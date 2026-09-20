@@ -606,9 +606,12 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
     Final/Reference and Settings, panels fade on type change, frames and
     slides crossfade, menus/dialogs/toasts/popovers enter. **Tabs**: pills in
     a pill track with a sliding thumb; the + sits outside the track. Timeline
-    tracks rounded 7.64px (the golden-ratio radius step). **Not done**: print
-    still uses its own Letter CSS rather than the paper setting; a single
-    line longer than a page runs over.
+    tracks rounded 7.64px (the golden-ratio radius step). **Text size bug, fixed**: the page took the smaller of the chosen size
+    and the pane fit, so in a normal pane every size was capped and the
+    setting did nothing; size now scales the fitted page (verified in a
+    browser: 10, 12, 16pt give 10.1, 12.1, 16.1px), and a page wider than the
+    pane scrolls sideways. **Not done**: print still uses its own Letter CSS
+    rather than the paper setting; a single line longer than a page runs over.
 
 ---
 

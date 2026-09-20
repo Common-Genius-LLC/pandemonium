@@ -111,7 +111,7 @@ export class PdSettings extends LitElement {
             (v) => scriptPrefs.set({ textPt: v }),
             'Script text size',
           )}
-          <p class="why">12pt is the standard. Other sizes draw the page larger or smaller; page breaks and the page count stay where 12pt puts them.</p>
+          <p class="why">12pt is the standard size, fitted to the pane. Larger sizes draw the page bigger (it scrolls sideways if the pane is narrow), smaller sizes draw it smaller. Page breaks and the page count never move.</p>
         </div>
       </section>
     `;
