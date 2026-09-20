@@ -68,13 +68,13 @@ export class PandemoniumTimeline extends LitElement {
        lets the first and last segment take the track's corners. */
     .track{position:relative;height:22px;display:flex;gap:1px;background:var(--ph);overflow:hidden;border-radius:7.64px}
     .seg{position:relative;min-width:2px;cursor:pointer;background:transparent}
-    /* Final storyboard is solid green, reference-only is solid yellow (the
-       same green/yellow split the editor highlight, minimap and script view
+    /* Final storyboard is solid green, reference-only is solid orange (the
+       same green/orange split the editor highlight, minimap and script view
        use). This replaced a green hatch for reference: a plain color reads
        faster than a diagonal at this bar height, and needs no shared
        pattern origin to stay seamless across adjacent bars. */
     .track.b .seg.on{background:var(--board-strong)}
-    .track.b .seg.ref{background:var(--act)}
+    .track.b .seg.ref{background:var(--board-ref)}
     .track.r .seg.on{background:var(--res)}
     .seg:hover{outline:1px solid var(--ui);outline-offset:-1px;z-index:2}
     /* Click-to-jump flash: --ui rather than --act, which would vanish on a

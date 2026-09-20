@@ -36,6 +36,7 @@
   --board:#c5ef9c;       /* storyboard highlight */
   --board-ink:#7fae53;   /* storyboard figures, readable on the page */
   --board-strong:#78a849;/* saturated storyboard green, white text (link pills) */
+  --board-ref:#ee8a3a;   /* a storyboard whose only image is the reference frame: orange, because the yellow it used to be read exactly like a comment */
   --res:#cf159e;         /* research link highlight */
   --res-hi:#b01286;      /* research fill, hover */
   --sound:#f27831;       /* sound link accent (link pills) */
@@ -145,6 +146,7 @@
   /* --board-strong and --sound keep their hue across themes (link pills, white
      text); only the row-hover wash flips so it stays visible on the dark page. */
   --row-hover:rgba(255,255,255,.07);
+  --board-ref:#d98442;   /* orange, lifted for the dark page */
   --link:#5aa9ef;
   --danger:#e0566f;
   --ok:#3fae86;

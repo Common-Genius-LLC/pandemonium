@@ -1,22 +1,28 @@
 'use strict';
 
-import { LitElement, html, css, nothing } from 'lit';
+import { LitElement, html, css, svg } from 'lit';
+
+// The up-arrow on the comment note's round button, the same glyph as the comment card.
+const DONE_ICON = svg`<svg viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M6 10V2.4M6 2.4 2.7 5.7M6 2.4 9.3 5.7" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 import { StoreController } from '../../state/store-controller.js';
 import { dispatch } from '../../utils/events.js';
 import { clamp } from '../../utils/format.js';
 import { boardRuns } from '../../data/project-model.js';
-import { docTitle, hostOf } from '../../data/research-doc.js';
 import { openPair } from '../../state/actions.js';
 import '../boards/board-card.js';
+import '../research/research-card.js';
 
 // Everything attached to a script element, in one place. Click any linked
 // words and this opens with ALL of it: the storyboard(s), the reference(s) and
 // the comment(s) on that element, whichever of them the clicked words belong
 // to, so a beat with all three shows all three.
 //
-// The storyboard is not a copy of the Storyboards panel's card, it IS that
-// card (pandemonium-board-card), so it looks the same and has every control
-// the same way: the Final/Reference marker, Preview from here, Edit, Unlink.
+// Each item is drawn as ITS card, not a lookalike: the storyboard is the
+// Storyboards panel's card (pandemonium-board-card, every control: the
+// Final/Reference marker, Preview from here, Edit, Unlink); the reference is the
+// References panel's card laid out sideways to suit a strip (Unlink on hover);
+// the comment is the yellow sticky note, edited in place by clicking into it.
+// No labels over them: a card says what it is.
 //
 // Opened via `pandemonium-show-link-popover` with
 // {boardIds, linkIds, commentIds, anchor}. It reads the records live by id, so
@@ -31,30 +37,42 @@ export class PandemoniumLinkPopover extends LitElement {
     .pop{
       animation:pop-in var(--dur-1) var(--ease-out);
       position:fixed;width:340px;max-width:calc(100vw - 16px);max-height:min(78vh,620px);overflow:auto;box-sizing:border-box;
-      background:var(--panel);border-radius:16px;padding:10px;display:flex;flex-direction:column;gap:12px;
+      background:var(--panel);border-radius:16px;padding:8px;display:flex;flex-direction:column;gap:8px;
       pointer-events:auto;font-family:var(--sans);box-shadow:0 4px 18px rgba(0,0,0,.18);
       scrollbar-width:thin;scrollbar-color:var(--ph) transparent;
     }
-    .sec{display:flex;flex-direction:column;gap:6px}
-    .kh{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--mut)}
-    .dot{width:7px;height:7px;border-radius:50%;flex:none}
-    .dot.b{background:var(--board-strong)}
-    .dot.br{background:var(--act)}
-    .dot.r{background:var(--res)}
-    .dot.c{background:var(--act)}
-    .row{display:flex;flex-direction:column;gap:2px;min-width:0}
-    .t{font-size:12px;font-weight:500;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .s{font-size:11px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .body{font-size:12px;line-height:1.45;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere;
-      display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
-    .acts{display:flex;gap:6px;margin-top:2px}
-    button.pill{
-      height:24px;padding:0 11px;border:0;border-radius:20px;cursor:pointer;
-      font-family:var(--sans);font-size:11px;font-weight:500;color:var(--ui);background:var(--bg);
-      box-shadow:0 1px 1.25px rgba(0,0,0,.25);
+    .sec{position:relative;display:flex;flex-direction:column}
+
+    /* The reference card, with an Unlink pill that appears on hover like the
+       storyboard card's controls do (same white pill and lift). */
+    .sec .pill{
+      position:absolute;right:8px;bottom:8px;z-index:4;height:24px;padding:0 11px;border:0;border-radius:20px;cursor:pointer;
+      font-family:var(--sans);font-size:11px;font-weight:500;color:#161719;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.25);
+      opacity:0;pointer-events:none;transition:opacity var(--dur-1) var(--ease-out);
     }
-    button.pill:hover{background:var(--btn-hi)}
-    button.pill.danger{color:var(--danger)}
+    .sec:hover .pill,.sec .pill:focus-visible{opacity:1;pointer-events:auto}
+    .sec .pill:hover{background:#f0f0f0}
+    pandemonium-research-card{cursor:pointer}
+
+    /* The comment: the same yellow-framed sticky note as the comment card
+       (comment-popover.js), with its own white paper. Clicking the text is
+       what edits it; nothing else has to be found. */
+    .note{background:var(--act);border-radius:12px;padding:3px}
+    .paper{background:rgba(255,255,255,.92);border-radius:9px;padding:10px;display:flex;flex-direction:column;gap:8px}
+    .paper textarea{
+      width:100%;min-height:44px;background:transparent;color:#161719;border:0;box-sizing:border-box;
+      font-family:var(--sans);font-size:12px;line-height:1.5;resize:none;outline:none;padding:0;cursor:text;
+    }
+    .paper textarea::placeholder{color:rgba(0,0,0,.42)}
+    .foot{display:flex;justify-content:space-between;align-items:center}
+    .del{background:transparent;border:0;color:rgba(0,0,0,.5);font-size:11px;cursor:pointer;font-family:var(--sans);padding:2px 4px}
+    .del:hover{color:var(--danger)}
+    .done{
+      width:22px;height:22px;border-radius:50%;background:#161719;border:0;cursor:pointer;margin-left:auto;
+      display:inline-flex;align-items:center;justify-content:center;flex:none;
+    }
+    .done:hover{background:#000}
+    .done svg{width:11px;height:11px;display:block}
   `;
 
   constructor() {
@@ -127,12 +145,6 @@ export class PandemoniumLinkPopover extends LitElement {
     dispatch(this, 'pandemonium-toast', { message: 'Reference unlinked.' });
   }
 
-  #editComment(cm) {
-    const rect = this._anchor ? this._anchor.getBoundingClientRect() : null;
-    this.close();
-    dispatch(this, 'pandemonium-show-comment', { commentId: cm.id, anchorRect: rect });
-  }
-
   #deleteComment(cm) {
     this._store.store.deleteComment(cm.id);
   }
@@ -142,39 +154,33 @@ export class PandemoniumLinkPopover extends LitElement {
   #board(o, runs) {
     const bd = o.bd;
     const mode = !bd.img && bd.refImg ? 'reference' : 'final';
-    return html`
-      <div class="sec">
-        <div class="kh"><i class="dot ${mode === 'reference' ? 'br' : 'b'}"></i>Storyboard</div>
-        <pandemonium-board-card .resolved=${o} .mode=${mode} .run=${runs.get(bd.id)}></pandemonium-board-card>
-      </div>
-    `;
+    return html`<div class="sec"><pandemonium-board-card .resolved=${o} .mode=${mode} .run=${runs.get(bd.id)}></pandemonium-board-card></div>`;
   }
 
-  #ref(lk, research) {
+  #ref(lk, research, links) {
     const d = research.find((x) => x.id === lk.researchId);
+    if (!d) {
+      return html`<div class="sec"><button class="pill" style="opacity:1;pointer-events:auto;position:static" @click=${() => this.#unlinkRef(lk)}>Unlink (the reference no longer exists)</button></div>`;
+    }
+    const n = links.filter((l) => l.researchId === d.id).length;
     return html`
-      <div class="sec">
-        <div class="kh"><i class="dot r"></i>Reference</div>
-        <div class="row">
-          <span class="t">${d ? docTitle(d) : 'A reference that no longer exists'}</span>
-          ${d && d.url ? html`<span class="s">${hostOf(d.url)}</span>` : nothing}
-        </div>
-        <div class="acts">
-          ${d ? html`<button class="pill" @click=${() => this.#openRef(lk)}>Open</button>` : nothing}
-          <button class="pill" @click=${() => this.#unlinkRef(lk)}>Unlink</button>
-        </div>
+      <div class="sec" @click=${() => this.#openRef(lk)}>
+        <pandemonium-research-card wide .doc=${d} .linkCount=${n}></pandemonium-research-card>
+        <button class="pill" title="Unlink this reference from the passage" @click=${(e) => { e.stopPropagation(); this.#unlinkRef(lk); }}>Unlink</button>
       </div>
     `;
   }
 
   #comment(cm) {
     return html`
-      <div class="sec">
-        <div class="kh"><i class="dot c"></i>Comment</div>
-        <div class="body">${cm.body || 'An empty comment'}</div>
-        <div class="acts">
-          <button class="pill" @click=${() => this.#editComment(cm)}>Edit</button>
-          <button class="pill danger" @click=${() => this.#deleteComment(cm)}>Delete</button>
+      <div class="note">
+        <div class="paper">
+          <textarea placeholder="Add a comment" .value=${cm.body || ''}
+            @input=${(e) => this._store.store.updateCommentBody(cm.id, e.target.value)}></textarea>
+          <div class="foot">
+            <button class="del" @click=${() => this.#deleteComment(cm)}>Delete</button>
+            <button class="done" title="Done" @click=${(e) => e.currentTarget.closest('.paper').querySelector('textarea').blur()}>${DONE_ICON}</button>
+          </div>
         </div>
       </div>
     `;
@@ -192,7 +198,7 @@ export class PandemoniumLinkPopover extends LitElement {
       <div class="pop" style="left:${this._x || 0}px;top:${this._y || 0}px"
         @pandemonium-open-slideshow=${() => this.close()}>
         ${boards.map((b) => this.#board(b, runs))}
-        ${links.map((l) => this.#ref(l, research))}
+        ${links.map((l) => this.#ref(l, research, this._store.project.links))}
         ${comments.map((c) => this.#comment(c))}
       </div>
     `;

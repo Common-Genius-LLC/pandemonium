@@ -28,6 +28,12 @@ export class PandemoniumResearchCard extends LitElement {
 
   static styles = css`
     :host{display:block}
+    /* Wide: the same card laid out sideways, for where it is shown full width
+       (the link popover), so its proportions suit a strip and not a tile. */
+    :host([wide]) .rcard{flex-direction:row;min-height:0}
+    :host([wide]) .thumb{width:36%;aspect-ratio:auto;min-height:84px}
+    :host([wide]) .text{flex:1;min-width:0;justify-content:center}
+    :host([wide]) .more{display:none}
     .rcard{
       position:relative;background:var(--card,var(--note-plain));border-radius:12.36px;overflow:hidden;
       min-height:112px;display:flex;flex-direction:column;cursor:pointer;

@@ -145,7 +145,7 @@ export class PandemoniumResearchReader extends LitElement {
     .embeds{display:flex;flex-direction:column;gap:8px;margin:-.2em 0 .9em;cursor:default}
     .para.ph::before{content:attr(data-ph);color:var(--mut);pointer-events:none;font-size:17px}
     .para.ph:focus::before{opacity:.55}
-    #readerBody mark.hr{background:var(--res);color:#fff;cursor:pointer;border-radius:1px}
+    #readerBody mark.hr{background:color-mix(in srgb, var(--res) 24%, transparent);color:inherit;cursor:pointer;border-radius:2px}
     #readerBody mark.hp{background:var(--pend);border-radius:1px}
     #readerBody mark.pulse{animation:pulse 1s ease-in-out 2}
     @keyframes pulse{50%{filter:brightness(.82)}}

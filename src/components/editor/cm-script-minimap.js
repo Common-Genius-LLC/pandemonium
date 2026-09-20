@@ -38,7 +38,7 @@ export function kindsOfDecoration(deco) {
 }
 
 // The gutter's bar colours, by kind and column.
-const GUTTER = { board: '--board-strong', boardRef: '--act', ref: '--res', comment: '--act' };
+const GUTTER = { board: '--board-strong', boardRef: '--board-ref', ref: '--res', comment: '--act' };
 
 const STYLE = {
   scene: { weight: '700', ink: '--ink' },

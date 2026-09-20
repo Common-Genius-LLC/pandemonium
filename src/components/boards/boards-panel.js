@@ -53,11 +53,11 @@ export class PandemoniumBoardsPanel extends LitElement {
     .doc{display:flex;flex-direction:column;gap:5px;padding:10px 10px 24px}
     /* Script font matches the editor (Courier Prime Sans, --script). */
     .el{position:relative;font-family:var(--script);font-size:16px;line-height:1.5;color:var(--ink);white-space:pre-wrap;overflow-wrap:break-word;word-break:break-word}
-    /* Link bars: green beside a line a final board lands on, yellow for a
+    /* Link bars: green beside a line a final board lands on, orange for a
        reference-only one. */
     .el.lf::before,.el.lr::before{content:"";position:absolute;left:-8px;top:2px;bottom:2px;width:3px;border-radius:2px}
     .el.lf::before{background:var(--board-strong)}
-    .el.lr::before{background:var(--act)}
+    .el.lr::before{background:var(--board-ref)}
     .el.scene{font-weight:700;text-transform:uppercase;margin-top:12px}
     .el.section{font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin-top:12px}
     .el.character{font-weight:700;text-transform:uppercase;text-align:center;margin-top:6px}
@@ -211,7 +211,7 @@ export class PandemoniumBoardsPanel extends LitElement {
     for (const b of state.fparsed.blocks) {
       if (b.line != null && b.plain && b.plain.trim() && DOC_TYPES.has(b.type)) {
         // A bar beside a linked line: green if a final board lands here,
-        // yellow if only a reference one does (the same split as the editor
+        // orange if only a reference one does (the same split as the editor
         // highlight, timeline and minimap).
         const k = kinds.get(b.i);
         const bar = k ? (k.final ? 'lf' : 'lr') : '';

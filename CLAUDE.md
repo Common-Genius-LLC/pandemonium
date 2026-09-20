@@ -724,6 +724,23 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
     button from touching Focus when the script pane narrows; and the
     References path bar moved to the bottom of the pane.
 
+
+25. **The link popover shows real cards; softer pink; orange reference frames.**
+    The popover has no labels over its items. Each is its own card: the
+    storyboard is `pandemonium-board-card`, the reference is
+    `pandemonium-research-card` in a new `wide` layout (thumbnail beside the
+    text; Unlink appears on hover like the storyboard card's controls), and the
+    comment is the yellow-framed sticky note from `comment-popover.js`, edited in
+    place by clicking into it (live-saved; Delete and a round Done button, which
+    only blurs). A reference highlight is a soft wash (`color-mix` of `--res` at
+    24%) in the editor and in the reference reader, not solid magenta with white
+    text. A storyboard whose only image is the reference frame is now ORANGE
+    (`--board-ref`, both themes), not yellow, because the yellow read exactly
+    like a comment: the editor hover, its margin marker, the minimap gutter, the
+    timeline bar and the Storyboards script-view bar all use it. Earlier log
+    entries that say "yellow" for reference frames describe the colour it had
+    then.
+
 ---
 
 ## Working context

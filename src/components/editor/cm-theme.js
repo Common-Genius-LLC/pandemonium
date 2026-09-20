@@ -20,6 +20,15 @@
 
 import { EditorView } from '@codemirror/view';
 
+// What linked words turn on hover, one colour per kind. Written once here so the
+// single, two-band and three-band rules below cannot drift apart.
+const HL_BOARD = 'var(--board)';
+const HL_BOARD_REF = 'color-mix(in srgb, var(--board-ref) 50%, transparent)';
+const HL_REF = 'color-mix(in srgb, var(--res) 24%, transparent)';
+const HL_COMMENT = 'color-mix(in srgb, var(--act) 55%, transparent)';
+// Equal horizontal bands, top to bottom.
+const bands = (...cs) => 'linear-gradient(180deg,' + cs.map((c, i) => `${c} ${(100 * i / cs.length).toFixed(1)}% ${(100 * (i + 1) / cs.length).toFixed(1)}%`).join(',') + ')';
+
 export const fountainTheme = EditorView.theme({
   '&': {
     color: 'var(--ink)',
@@ -214,19 +223,21 @@ export const fountainTheme = EditorView.theme({
     cursor: 'pointer', borderRadius: '2px',
     transition: 'background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out)',
   },
-  '.hb:hover': { background: 'var(--board)' },
-  '.hbr:hover': { background: 'color-mix(in srgb, var(--act) 55%, transparent)' },
-  '.hc:hover': { background: 'color-mix(in srgb, var(--act) 55%, transparent)' },
-  '.hr:hover': { background: 'var(--res)', color: '#fff' },
+  '.hb:hover': { background: HL_BOARD },
+  '.hbr:hover': { background: HL_BOARD_REF },
+  '.hc:hover': { background: HL_COMMENT },
+  // A reference is a soft wash, not the solid magenta it once was: the text
+  // stays its own colour and stays readable, and the pink is just a tint.
+  '.hr:hover': { background: HL_REF },
   // Two kinds on the same words: two bands. Three: three bands.
-  '.hb.hbr:hover': { background: 'linear-gradient(180deg,var(--board) 50%,color-mix(in srgb, var(--act) 55%, transparent) 50%)' },
-  '.hb.hr:hover': { background: 'linear-gradient(180deg,var(--board) 50%,var(--res) 50%)', color: 'var(--ink)' },
-  '.hbr.hr:hover': { background: 'linear-gradient(180deg,color-mix(in srgb, var(--act) 55%, transparent) 50%,var(--res) 50%)', color: 'var(--ink)' },
-  '.hb.hc:hover': { background: 'linear-gradient(180deg,var(--board) 50%,color-mix(in srgb, var(--act) 55%, transparent) 50%)' },
-  '.hbr.hc:hover': { background: 'linear-gradient(180deg,color-mix(in srgb, var(--act) 55%, transparent) 50%,color-mix(in srgb, var(--act) 30%, transparent) 50%)' },
-  '.hr.hc:hover': { background: 'linear-gradient(180deg,var(--res) 50%,color-mix(in srgb, var(--act) 55%, transparent) 50%)', color: 'var(--ink)' },
-  '.hb.hr.hc:hover': { background: 'linear-gradient(180deg,var(--board) 33.3%,var(--res) 33.3% 66.6%,color-mix(in srgb, var(--act) 55%, transparent) 66.6%)', color: 'var(--ink)' },
-  '.hbr.hr.hc:hover': { background: 'linear-gradient(180deg,color-mix(in srgb, var(--act) 55%, transparent) 33.3%,var(--res) 33.3% 66.6%,color-mix(in srgb, var(--act) 30%, transparent) 66.6%)', color: 'var(--ink)' },
+  '.hb.hbr:hover': { background: bands(HL_BOARD, HL_BOARD_REF) },
+  '.hb.hr:hover': { background: bands(HL_BOARD, HL_REF) },
+  '.hbr.hr:hover': { background: bands(HL_BOARD_REF, HL_REF) },
+  '.hb.hc:hover': { background: bands(HL_BOARD, HL_COMMENT) },
+  '.hbr.hc:hover': { background: bands(HL_BOARD_REF, HL_COMMENT) },
+  '.hr.hc:hover': { background: bands(HL_REF, HL_COMMENT) },
+  '.hb.hr.hc:hover': { background: bands(HL_BOARD, HL_REF, HL_COMMENT) },
+  '.hbr.hr.hc:hover': { background: bands(HL_BOARD_REF, HL_REF, HL_COMMENT) },
   '.hp': { background: 'var(--pend)', borderRadius: '1px' },
 
   // The margin markers: up to three dots at the left edge of the page on the
@@ -243,7 +254,7 @@ export const fountainTheme = EditorView.theme({
       + 'radial-gradient(circle at 24px 50%, var(--lk-c, transparent) 3px, transparent 3.5px)',
   },
   '.cm-line.cmf-lk-b': { '--lk-b': 'var(--board-strong)' },
-  '.cm-line.cmf-lk-br': { '--lk-b': 'var(--act)' },
+  '.cm-line.cmf-lk-br': { '--lk-b': 'var(--board-ref)' },
   '.cm-line.cmf-lk-r': { '--lk-r': 'var(--res)' },
   '.cm-line.cmf-lk-c': { '--lk-c': 'var(--act)' },
   '.hl-flash': { background: 'var(--act) !important', color: 'var(--ink) !important' },
