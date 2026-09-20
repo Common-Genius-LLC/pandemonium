@@ -245,14 +245,29 @@ export function sectionAffordances({ getParsed, onAct, onLink, onElement, onDrop
           const coords = v.coordsAtPos(doc.line(sec.firstLine + 1).from);
           if (!coords) return { show: false };
           const scRect = v.scrollDOM.getBoundingClientRect();
+          const contentRect = v.contentDOM.getBoundingClientRect();
+          // Anchored to the page's right edge, not the scroller's: the page
+          // is narrower than the scroller (centered on a desk) and the
+          // minimap sits inside the scroller's right edge, so a fixed
+          // right:10px put the rail under the minimap.
+          let right = scRect.right - contentRect.right + 10;
+          // A transition is right-aligned, so its text sits exactly where the
+          // rail does and the rail covers it: it could not be clicked. The rail
+          // moves to just left of that text instead; if there is no room there
+          // (a narrow page, a long transition) it is centred on the page, which
+          // still clears a right-aligned line.
+          const first = this.getParsed(v).blocks.find((b) => b.line === sec.firstLine);
+          if (first && first.type === 'transition') {
+            const railW = this.acts.offsetWidth || 260;
+            const start = v.coordsAtPos(doc.line(sec.firstLine + 1).from + (first.textOffset || 0));
+            const roomLeft = start ? start.left - 14 - railW : -1;
+            if (start && roomLeft >= contentRect.left + 8) right = scRect.right - (start.left - 14);
+            else right = scRect.right - (contentRect.left + (contentRect.width + railW) / 2);
+          }
           return {
             show: true,
             top: Math.max(0, coords.top - scRect.top + v.scrollDOM.scrollTop),
-            // Anchored to the page's right edge, not the scroller's: the page
-            // is narrower than the scroller (centered on a desk) and the
-            // minimap sits inside the scroller's right edge, so a fixed
-            // right:10px put the rail under the minimap.
-            right: scRect.right - v.contentDOM.getBoundingClientRect().right + 10,
+            right,
             label: this.elementLabelForSection ? this.elementLabelForSection(sec) : '',
           };
         },

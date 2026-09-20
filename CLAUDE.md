@@ -774,6 +774,15 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
     puts the cursor in it. Storyboards and comments are both final-draft-only,
     so it appears only there. Verified in a browser.
 
+
+28. **The row rail clears a transition.** The rail (element pill, link to,
+    Comment) is pinned to the page's right edge, which is where a right-aligned
+    transition's text is, so the rail covered it and the text could not be
+    clicked. For a transition row `cm-sections.js` now places the rail just left
+    of the text (14px clear), falling back to centred on the page when there is
+    no room to its left (a narrow page or a long transition). Every other row is
+    unchanged. Verified in a browser at 1500, 1000 and 700px.
+
 ---
 
 ## Working context
