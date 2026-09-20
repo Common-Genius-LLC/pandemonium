@@ -6,6 +6,7 @@ import { dispatch } from '../../utils/events.js';
 import { getParsed } from '../../fountain/cache.js';
 import { CONTENT_TYPES, scenesOf } from '../../fountain/blocks.js';
 import { fmtT } from '../../utils/format.js';
+import { researchIdsInDraft } from '../../data/project-model.js';
 import { panelStyles } from '../../styles/shared.js';
 import '../ui/button.js';
 import '../ui/panel-picker.js';
@@ -107,6 +108,30 @@ export class PandemoniumScriptPanel extends LitElement {
     this.#placeThumb();
   }
 
+  // How many references this draft has links to (the final draft's unmarked
+  // links count as its own).
+  #refCount() {
+    const store = this._store.store;
+    const project = store.project;
+    const script = store.scriptForLeaf(this.leafId);
+    return project && script ? researchIdsInDraft(project, script.id, store.finalScript().id).size : 0;
+  }
+
+  #refFilterOn() {
+    const ui = this._store.ui;
+    return !!(ui && ui.refDraft && ui.refDraft === this._store.store.scriptForLeaf(this.leafId).id);
+  }
+
+  // Opens the References panel limited to this draft's references, or, if it
+  // already is, lifts the limit. Reveals the panel first, so the button always
+  // shows something.
+  #showReferences() {
+    const store = this._store.store;
+    if (this.#refFilterOn()) { store.setUI({ refDraft: null }); return; }
+    store.revealContent('research');
+    store.setUI({ refDraft: store.scriptForLeaf(this.leafId).id, openDoc: null });
+  }
+
   firstUpdated() {
     // A draft renamed to something longer changes its pill's width without
     // this panel re-rendering; follow the track's size instead.
@@ -162,6 +187,9 @@ export class PandemoniumScriptPanel extends LitElement {
           </div>
           <button class="addtab" title="Add a new draft" aria-label="Add a new draft" @click=${() => this.#addScript()}>+</button>
           <div class="tools">
+            <pd-button variant=${this.#refFilterOn() ? 'dark' : 'default'}
+              title=${this.#refFilterOn() ? 'Showing only this draft\'s references. Click to show all.' : 'Show the references linked in this draft'}
+              @click=${() => this.#showReferences()}>References${this.#refCount() ? ' \u00b7 ' + this.#refCount() : ''}</pd-button>
             <pd-button title=${focused ? 'Exit focused writing' : 'Focused writing: hide every other pane'} @click=${() => this.#toggleFocus()}>${focused ? 'Exit focus' : 'Focus'}</pd-button>
           </div>
         </div>

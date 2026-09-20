@@ -210,8 +210,10 @@ export class PandemoniumScriptEditor extends LitElement {
   #getHighlights() {
     const store = this._store.store;
     const script = store.scriptForLeaf(this.leafId);
-    if (!script || !script.final) return {};
-    return store.getFinalState().R.biMap;
+    if (!script) return {};
+    // The final draft shows storyboard, reference and comment marks; any other
+    // draft shows just its own reference links.
+    return script.final ? store.getFinalState().R.biMap : store.getDraftState(script.id).R.biMap;
   }
 
   // CodeMirror finalizes a pointer/keyboard selection in its OWN mouseup /
@@ -238,19 +240,19 @@ export class PandemoniumScriptEditor extends LitElement {
     const rect = this.#view.coordsAtPos(sel.head) || this.#view.coordsAtPos(sel.from);
     const anchorRect = rect ? { left: rect.left, right: rect.right, top: rect.bottom, bottom: rect.bottom, width: 0, height: 0 } : null;
 
-    if (!script.final) {
-      dispatch(this, 'pandemonium-show-selection-toolbar', { kind: 'non-final', parts, anchorRect, scriptId: script.id });
-      return;
-    }
+    // A reference being linked from the References panel lands in whichever
+    // draft this is, final or not.
     if (ui.linking && ui.linking.from === 'research') {
-      store.addLink({ researchId: ui.linking.docId, sParts: parts, rParts: ui.linking.rParts });
+      store.addLink({ researchId: ui.linking.docId, sParts: parts, rParts: ui.linking.rParts, scriptId: script.id });
       store.setUI({ linking: null });
       this.#view.dispatch({ selection: { anchor: sel.from } });
       dispatch(this, 'pandemonium-toast', { message: 'Linked.' });
       return;
     }
-    if (ui.pendingRelink) { this.#completePendingRelink(parts); return; }
-    dispatch(this, 'pandemonium-show-selection-toolbar', { kind: 'script', parts, anchorRect });
+    if (ui.pendingRelink) { this.#completePendingRelink(parts, script); return; }
+    // The final draft offers storyboards, references and comments; any other
+    // draft offers references (its own links, kept with that draft).
+    dispatch(this, 'pandemonium-show-selection-toolbar', { kind: script.final ? 'script' : 'draft', parts, anchorRect, scriptId: script.id });
   }
 
   // Paste handler. MUST stay synchronous and return a boolean: CodeMirror
@@ -277,7 +279,7 @@ export class PandemoniumScriptEditor extends LitElement {
     const store = this._store.store;
     const script = store.scriptForLeaf(this.leafId);
     if (!script.final) {
-      dispatch(this, 'pandemonium-toast', { message: 'Make this the final draft to add boards & references.' });
+      dispatch(this, 'pandemonium-toast', { message: 'Make this the final draft to add storyboards.' });
       return;
     }
     const sel = this.#view.state.selection.main;
@@ -320,7 +322,9 @@ export class PandemoniumScriptEditor extends LitElement {
       // The panel then handles both cases, an existing source or a new one,
       // with the same pick: no branch here on whether any source exists yet.
       store.revealContent('research');
-      store.setUI({ linking: { from: 'script', parts: sec.parts }, openDoc: null });
+      // scriptId: the draft this passage is in, so a reference picked for it is
+      // kept with that draft (the store leaves it off for the final one).
+      store.setUI({ linking: { from: 'script', parts: sec.parts, scriptId: store.scriptForLeaf(this.leafId).id }, openDoc: null });
       return;
     }
     if (act === 'comment') {
@@ -350,11 +354,16 @@ export class PandemoniumScriptEditor extends LitElement {
   // the script highlights already use.
   #openLinkMenu(sec, rect) {
     this.#pinHoverForMenu();
+    const store = this._store.store;
+    const script = store.scriptForLeaf(this.leafId);
+    const final = !!(script && script.final);
     const items = linkToItems({
-      onStoryboard: () => this.#onSectionAct('board', sec),
-      onBlankStoryboard: () => this.#onSectionAct('blank', sec),
+      onStoryboard: final ? () => this.#onSectionAct('board', sec) : null,
+      onBlankStoryboard: final ? () => this.#onSectionAct('blank', sec) : null,
       onResearch: () => this.#onSectionAct('source', sec),
-      onSound: () => dispatch(this, 'pandemonium-toast', { message: 'Sound linking is coming soon.' }),
+      onSound: final ? () => dispatch(this, 'pandemonium-toast', { message: 'Sound linking is coming soon.' }) : null,
+      // A draft that is not final says why it has no storyboard, and how to get one.
+      extra: final ? [] : [{ label: 'Make final for storyboards', accent: 'var(--mut)', fn: () => store.makeFinal(script.id) }],
     });
     dispatch(this, 'pandemonium-open-menu', { x: rect.left, y: rect.bottom + 4, items, variant: 'pills' });
   }
@@ -488,9 +497,16 @@ export class PandemoniumScriptEditor extends LitElement {
     });
   }
 
-  #completePendingRelink(parts) {
+  #completePendingRelink(parts, script) {
     const store = this._store.store;
     const pr = store.ui.pendingRelink;
+    // A link is reattached in the draft it belongs to (the one the reader
+    // switched to); anything else selected here is not what was asked for.
+    if (pr.type === 'link') {
+      const lk = store.project.links.find((l) => l.id === pr.id);
+      const owner = lk && lk.scriptId ? lk.scriptId : store.finalScript().id;
+      if (!script || owner !== script.id) return;
+    } else if (!script || !script.final) return;
     store.setUI({ pendingRelink: null });
     if (pr.type === 'board') { store.reattachBoard(pr.id, parts); dispatch(this, 'pandemonium-toast', { message: 'Reattached.' }); return; }
     if (pr.type === 'link') { store.reattachLink(pr.id, parts); dispatch(this, 'pandemonium-toast', { message: 'Reattached.' }); }
@@ -511,8 +527,13 @@ export class PandemoniumScriptEditor extends LitElement {
     const store = this._store.store;
     const project = store.project;
     const fsc = store.finalScript();
-    if (!fsc || fsc.id !== this.#loadedScriptId) return null;
-    if (!project.boards.length && !project.links.length && !(project.comments && project.comments.length)) return null;
+    const draftId = this.#loadedScriptId;
+    const isFinal = !!fsc && fsc.id === draftId;
+    // The links this draft owns: the final draft's unmarked ones and its own,
+    // or, in another draft, only those made in it. Boards and comments belong
+    // to the final draft alone.
+    const mine = (lk) => (isFinal ? (!lk.scriptId || lk.scriptId === fsc.id) : lk.scriptId === draftId);
+    if (!(isFinal && (project.boards.length || (project.comments && project.comments.length))) && !project.links.some(mine)) return null;
 
     const prevDoc = update.startState.doc;
     const nextDoc = update.state.doc;
@@ -563,11 +584,11 @@ export class PandemoniumScriptEditor extends LitElement {
     };
 
     let boardsChanged = false;
-    const boards = project.boards.map((bd) => { const na = remapAnchor(bd.anchor); if (na) { boardsChanged = true; return { ...bd, anchor: na }; } return bd; });
+    const boards = !isFinal ? project.boards : project.boards.map((bd) => { const na = remapAnchor(bd.anchor); if (na) { boardsChanged = true; return { ...bd, anchor: na }; } return bd; });
     let linksChanged = false;
-    const links = project.links.map((lk) => { const na = remapAnchor(lk.anchor); if (na) { linksChanged = true; return { ...lk, anchor: na }; } return lk; });
+    const links = project.links.map((lk) => { if (!mine(lk)) return lk; const na = remapAnchor(lk.anchor); if (na) { linksChanged = true; return { ...lk, anchor: na }; } return lk; });
     let commentsChanged = false;
-    const comments = (project.comments || []).map((cm) => { const na = remapAnchor(cm.anchor); if (na) { commentsChanged = true; return { ...cm, anchor: na }; } return cm; });
+    const comments = !isFinal ? (project.comments || []) : (project.comments || []).map((cm) => { const na = remapAnchor(cm.anchor); if (na) { commentsChanged = true; return { ...cm, anchor: na }; } return cm; });
 
     if (!boardsChanged && !linksChanged && !commentsChanged) return null;
     return {

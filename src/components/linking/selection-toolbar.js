@@ -118,11 +118,16 @@ export class PandemoniumSelectionToolbar extends LitElement {
   #openLinkMenu(e) {
     const rect = e.currentTarget.getBoundingClientRect();
     const parts = this._parts;
+    const scriptId = this._scriptId;
+    // Any draft can link a reference; storyboards and sound are the final
+    // draft's, so another draft offers what it can do and how to get the rest.
+    const final = this._kind !== 'draft';
     const items = linkToItems({
-      onStoryboard: () => this.#boardFromParts(parts),
-      onBlankStoryboard: () => this.#blankFromParts(parts),
-      onResearch: () => this.#sourceFromParts(parts),
-      onSound: () => dispatch(this, 'pandemonium-toast', { message: 'Sound linking is coming soon.' }),
+      onStoryboard: final ? () => this.#boardFromParts(parts) : null,
+      onBlankStoryboard: final ? () => this.#blankFromParts(parts) : null,
+      onResearch: () => this.#sourceFromParts(parts, scriptId),
+      onSound: final ? () => dispatch(this, 'pandemonium-toast', { message: 'Sound linking is coming soon.' }) : null,
+      extra: final ? [] : [{ label: 'Make final for storyboards', accent: 'var(--mut)', fn: () => this._store.store.makeFinal(scriptId) }],
     });
     dispatch(this, 'pandemonium-open-menu', { x: rect.left, y: rect.bottom + 4, items, variant: 'pills' });
   }
@@ -164,10 +169,11 @@ export class PandemoniumSelectionToolbar extends LitElement {
   // pick. Anything created in the panel while it is armed links itself to this
   // passage (see #consumePendingLink in research-panel.js), so there is no
   // "you have nothing yet" branch and no modal form.
-  #sourceFromParts(parts) {
+  #sourceFromParts(parts, scriptId) {
     const store = this._store.store;
     store.revealContent('research'); // the source has to be pickable to be picked
-    store.setUI({ linking: { from: 'script', parts }, openDoc: null });
+    // scriptId: the draft the passage is in, so the reference stays with it.
+    store.setUI({ linking: { from: 'script', parts, scriptId }, openDoc: null });
   }
 
   #commentFromParts(parts) {
@@ -180,10 +186,15 @@ export class PandemoniumSelectionToolbar extends LitElement {
 
   render() {
     if (!this._open) return html``;
-    if (this._kind === 'non-final') {
-      return html`<div class="bar" style="left:${this._x || 0}px;top:${this._y || 0}px">
-        <button @click=${() => this.#act('make-final')}>Make this the final draft to add boards &amp; references</button>
-      </div>`;
+    // A draft that is not the final one: the same "link to" pill, offering
+    // references (and how to get storyboards). No Comment: comments, like
+    // storyboards, belong to the final draft.
+    if (this._kind === 'draft') {
+      return html`
+        <div class="pills" style="left:${this._x || 0}px;top:${this._y || 0}px">
+          <button class="linkto" @click=${(e) => this.#openLinkMenu(e)}>link to</button>
+        </div>
+      `;
     }
     if (this._kind === 'research') {
       return html`<div class="bar" style="left:${this._x || 0}px;top:${this._y || 0}px">

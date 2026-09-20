@@ -16,6 +16,8 @@ export function emptyProject(overrides) {
     scripts: [],
     boards: [],
     research: [],
+    // Folders the references are filed in (see data/research-doc.js).
+    folders: [],
     links: [],
     // The panel arrangement (see data/layout-tree.js). Persisted because a
     // layout is part of how this project is being worked on. Null means "use

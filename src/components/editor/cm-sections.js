@@ -103,6 +103,8 @@ export function computeSections(parsed) {
 // speech), which is the honest anchor unit -- the pills just re-dress how it
 // is reached.
 export function sectionAffordances({ getParsed, onAct, onLink, onElement, onDropImage, elementLabelForSection, canLink }) {
+  // canLink: the draft can take storyboards and comments (the final draft).
+  // Every draft can link a reference, so the link pill always shows.
   return ViewPlugin.fromClass(class {
     constructor(view) {
       this.view = view;
@@ -260,11 +262,10 @@ export function sectionAffordances({ getParsed, onAct, onLink, onElement, onDrop
           this.acts.style.top = data.top + 'px';
           this.acts.style.right = data.right + 'px';
           if (this.eltBtn) this.eltBtn.textContent = data.label || 'Element';
-          // Link and comment are final-draft-only (only the final draft owns
-          // links); every other draft gets just the element pill.
-          const linkable = this.canLink();
-          if (this.linkBtn) this.linkBtn.style.display = linkable ? '' : 'none';
-          if (this.commentBtn) this.commentBtn.style.display = linkable ? '' : 'none';
+          // Every draft can link a reference, so the link pill always shows;
+          // a comment (like a storyboard) belongs to the final draft only.
+          if (this.linkBtn) this.linkBtn.style.display = '';
+          if (this.commentBtn) this.commentBtn.style.display = this.canLink() ? '' : 'none';
         },
       });
     }

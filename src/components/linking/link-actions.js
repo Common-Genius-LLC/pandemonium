@@ -10,15 +10,17 @@
 // is actually attached; only the menu's shape is shared.
 'use strict';
 
-export function linkToItems({ onStoryboard, onBlankStoryboard, onResearch, onSound }) {
-  const items = [{ label: 'Storyboard', accent: 'var(--board-strong)', fn: onStoryboard }];
+// Any target whose handler is missing is left out: a draft that is not the
+// final one can link references but not storyboards, and offers only what it
+// can do. `extra` items (e.g. "Make final for storyboards") go after them.
+export function linkToItems({ onStoryboard, onBlankStoryboard, onResearch, onSound, extra = [] }) {
+  const items = [];
+  if (onStoryboard) items.push({ label: 'Storyboard', accent: 'var(--board-strong)', fn: onStoryboard });
   // A storyboard with no image yet, for a beat that needs boarding before
   // there is a frame: it can carry a note, and takes an image in either the
   // Final or the Reference frame later. Only offered where a caller can make one.
   if (onBlankStoryboard) items.push({ label: 'Blank storyboard', accent: 'var(--board-strong)', fn: onBlankStoryboard });
-  items.push(
-    { label: 'Reference', accent: 'var(--res)', fn: onResearch },
-    { label: 'Sound', accent: 'var(--sound)', fn: onSound },
-  );
-  return items;
+  if (onResearch) items.push({ label: 'Reference', accent: 'var(--res)', fn: onResearch });
+  if (onSound) items.push({ label: 'Sound', accent: 'var(--sound)', fn: onSound });
+  return [...items, ...extra];
 }

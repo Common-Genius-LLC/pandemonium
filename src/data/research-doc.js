@@ -218,18 +218,105 @@ export function hasLabel(doc, text) {
   return (doc.labels || []).some((l) => sameLabel(l, label));
 }
 
+// ---- folders ----
+//
+// References can be filed in folders, nested as deep as the writer likes, and a
+// folder carries labels exactly as a reference does (so a topic can be a
+// folder, a label, or both). A reference or folder whose parent has gone (a
+// merge that deleted the folder on the other side) reads as top level rather
+// than vanishing: nothing here trusts a folderId to still point somewhere.
+
+const inFolder = (item, key, ids) => (item[key] && ids.has(item[key]) ? item[key] : null);
+
+// Root to `id`, as folder records. Stops at a cycle rather than looping.
+export function folderPath(folders, id) {
+  const byId = new Map((folders || []).map((f) => [f.id, f]));
+  const out = [];
+  const seen = new Set();
+  let cur = byId.get(id);
+  while (cur && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    out.unshift(cur);
+    cur = cur.parentId ? byId.get(cur.parentId) : null;
+  }
+  return out;
+}
+
+export function isInsideFolder(folders, id, ancestorId) {
+  return folderPath(folders, id).some((f) => f.id === ancestorId);
+}
+
+// A folder may move to the top level or into any folder that is not itself or
+// one of its own descendants (which would cut it off from the tree).
+export function canMoveFolder(folders, id, parentId) {
+  const list = folders || [];
+  if (!list.some((f) => f.id === id)) return false;
+  if (parentId == null) return true;
+  if (parentId === id || !list.some((f) => f.id === parentId)) return false;
+  return !isInsideFolder(list, parentId, id);
+}
+
+// Where something can be moved: the top level, then every folder as its full
+// path, alphabetical, leaving out `exclude` and everything inside it.
+export function moveTargets(folders, exclude = null) {
+  const list = folders || [];
+  const out = list
+    .filter((f) => !exclude || !isInsideFolder(list, f.id, exclude))
+    .map((f) => ({ id: f.id, label: folderPath(list, f.id).map((x) => x.name || 'Untitled').join(' / ') }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  return [{ id: null, label: 'References (top level)' }, ...out];
+}
+
+// How many things a folder holds directly.
+export function folderCount(research, folders, id) {
+  const ids = new Set((folders || []).map((f) => f.id));
+  return (research || []).filter((d) => inFolder(d, 'folderId', ids) === id).length
+    + (folders || []).filter((f) => inFolder(f, 'parentId', ids) === id).length;
+}
+
+// What the grid shows. Normally that is one folder's contents. As soon as the
+// writer searches, picks a topic or asks for the unlinked ones, it is every
+// match across all folders at once ("flat"): a search that only looked in the
+// folder you happen to be standing in would find nothing and say so wrongly.
+export function browse({ research, folders, folderId = null, query = '', labels = null, unlinkedOnly = false, linked = null, ids = null }) {
+  const folderIds = new Set((folders || []).map((f) => f.id));
+  const here = folderId && folderIds.has(folderId) ? folderId : null;
+  const q = String(query || '').trim().toLowerCase();
+  const want = labels && labels.size ? [...labels].map((l) => l.toLowerCase()) : null;
+  const flat = !!q || !!want || !!unlinkedOnly || !!ids;
+
+  let docs = filterResearch(research, { query, unlinkedOnly, linked, labels, ids });
+  if (!flat) docs = docs.filter((d) => inFolder(d, 'folderId', folderIds) === here);
+
+  let subs;
+  if (!flat) {
+    subs = (folders || []).filter((f) => inFolder(f, 'parentId', folderIds) === here);
+  } else if (unlinkedOnly || ids) {
+    subs = []; // a folder is not "unlinked" or linked in a draft; those filters are about references
+  } else {
+    subs = (folders || []).filter((f) => {
+      if (want && !(f.labels || []).some((l) => want.includes(normalizeLabel(l).toLowerCase()))) return false;
+      if (!q) return true;
+      return [f.name, ...(f.labels || [])].filter(Boolean).join('\n').toLowerCase().includes(q);
+    });
+  }
+  subs = subs.slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  return { flat, folders: subs, docs: docs.slice().reverse(), here };
+}
+
 // The grid's filter. Pure so the panel stays a renderer: `linked` is the set of
 // research ids that currently have at least one link to the script, which only
 // the store can know. Matching is over everything a source holds (title, notes,
 // URL, file name), since a writer searching "baddeley" does not know or care
 // which field they put it in.
-export function filterResearch(research, { query = '', unlinkedOnly = false, linked = null, labels = null } = {}) {
+export function filterResearch(research, { query = '', unlinkedOnly = false, linked = null, labels = null, ids = null } = {}) {
   const q = String(query || '').trim().toLowerCase();
   // Several chosen labels widen rather than narrow: picking Costume and Fire
   // asks for both topics, which is what clicking two chips in a row of topics
   // is taken to mean. Narrowing is what the search box is for.
   const want = labels && labels.size ? [...labels].map((l) => l.toLowerCase()) : null;
   return (research || []).filter((d) => {
+    if (ids && !ids.has(d.id)) return false; // only these (the ones a draft links to)
     if (unlinkedOnly && linked && linked.has(d.id)) return false;
     if (want && !(d.labels || []).some((l) => want.includes(normalizeLabel(l).toLowerCase()))) return false;
     if (!q) return true;

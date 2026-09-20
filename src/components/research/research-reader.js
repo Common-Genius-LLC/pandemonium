@@ -18,6 +18,7 @@ import { clamp } from '../../utils/format.js';
 import { openPair } from '../../state/actions.js';
 import { formStyles } from '../../styles/shared.js';
 import { leaveRect, takeRect, growFrom } from '../../utils/motion.js';
+import { openMoveMenu, hasMoveTargets } from './move-menu.js';
 import './attachment-viewer.js';
 import '../ui/link-preview.js';
 import { storablePreview, previewPatch, urlsIn } from '../../data/link-preview.js';
@@ -429,6 +430,9 @@ export class PandemoniumResearchReader extends LitElement {
   #menu(e) {
     const store = this._store.store;
     const d = this.doc;
+    // Read now: the event's currentTarget is gone by the time a menu item runs.
+    const r0 = e.currentTarget.getBoundingClientRect();
+    const at = { x: r0.left, y: r0.bottom + 4 };
     const hasFile = !!(d.attachment && d.attachment.data);
     const items = [
       {
@@ -439,6 +443,7 @@ export class PandemoniumResearchReader extends LitElement {
           fn: () => store.updateResearch(d.id, { color: c.key }),
         })),
       },
+      ...(hasMoveTargets(store, { kind: 'doc', id: d.id }) ? [{ divider: true }, { label: 'Move to folder...', fn: () => openMoveMenu(this, store, { kind: 'doc', id: d.id }, at) }] : []),
       { divider: true },
       { label: hasFile ? 'Replace the file' : 'Add a file', fn: () => this.#pickFile() },
       ...(hasFile ? [{ label: 'Remove the file', fn: () => this.#removeFile() }] : []),
@@ -501,7 +506,10 @@ export class PandemoniumResearchReader extends LitElement {
 
   #reattach(linkId) {
     const store = this._store.store;
-    store.setUI({ pendingRelink: { type: 'link', id: linkId }, draftId: store.finalScript().id });
+    const lk = store.project.links.find((l) => l.id === linkId);
+    // Switch to the draft the link lives in: that is where its passage was.
+    const owner = lk && lk.scriptId ? lk.scriptId : store.finalScript().id;
+    store.setUI({ pendingRelink: { type: 'link', id: linkId }, draftId: owner });
   }
 
   #unlink(linkId) {
@@ -526,7 +534,7 @@ export class PandemoniumResearchReader extends LitElement {
       const parts = captureParts(body, 'data-ri', this.renderRoot);
       if (!parts) return;
       if (ui.linking && ui.linking.from === 'script') {
-        store.addLink({ researchId: this.doc.id, sParts: ui.linking.parts, rParts: parts });
+        store.addLink({ researchId: this.doc.id, sParts: ui.linking.parts, rParts: parts, scriptId: ui.linking.scriptId });
         store.setUI({ linking: null });
         getRootSelection(this.renderRoot).removeAllRanges();
         dispatch(this, 'pandemonium-toast', { message: 'Linked.' });
@@ -638,7 +646,8 @@ export class PandemoniumResearchReader extends LitElement {
           const whole = !(o.lk.rAnchor && o.lk.rAnchor.parts && o.lk.rAnchor.parts.length);
           return html`
             <div class="backrow ${o.ok ? '' : 'lost'}">
-              <span class="q" title=${o.ok ? 'Go to this passage in the script' : 'This passage is no longer in the final draft'}
+              ${o.script && !o.script.final ? html`<span class="whole" title="This link is in a draft that is not the final one">${o.script.name}</span>` : nothing}
+              <span class="q" title=${o.ok ? 'Go to this passage in the script' : 'This passage is no longer in its draft'}
                 @click=${() => { if (o.ok) openPair(this._store.store, o.lk.id); }}>${q || 'Untitled passage'}</span>
               ${whole ? html`<span class="whole" title="This link points at the source as a whole, not at a passage inside it">whole source</span>` : nothing}
               ${o.ok ? nothing : html`<button @click=${() => this.#reattach(o.lk.id)}>Reattach</button>`}
@@ -736,7 +745,7 @@ export class PandemoniumResearchReader extends LitElement {
     const doc = this.doc;
     const ui = this._store.ui;
     const store = this._store.store;
-    const links = store.getFinalState().R.links.filter((o) => o.lk.researchId === doc.id);
+    const links = store.researchLinks(doc.id);
     const lost = links.filter((o) => !o.ok);
     const att = doc.attachment;
 

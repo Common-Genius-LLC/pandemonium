@@ -5,12 +5,15 @@ import { StoreController } from '../../state/store-controller.js';
 import { panelStyles } from '../../styles/shared.js';
 import { readFileAsDataURL, readFileAsText, isTextShaped } from '../../utils/files.js';
 import { dispatch } from '../../utils/events.js';
-import { filterResearch, normalizeUrl, allLabels, normalizeLabel } from '../../data/research-doc.js';
+import { browse, normalizeUrl, allLabels, normalizeLabel, addLabel, removeLabel, folderPath, folderCount, MAX_LABEL } from '../../data/research-doc.js';
 import { icon } from './icons.js';
 import { leaveRect } from '../../utils/motion.js';
 import '../ui/button.js';
 import '../ui/panel-picker.js';
 import './research-card.js';
+import './folder-card.js';
+import { isRefDrag, applyDrop, openMoveMenu, hasMoveTargets } from './move-menu.js';
+import { researchIdsInDraft } from '../../data/project-model.js';
 import './research-reader.js';
 
 // The research grid.
@@ -37,6 +40,10 @@ export class PandemoniumResearchPanel extends LitElement {
     _unlinkedOnly: { state: true },
     _labels: { state: true },
     _dragging: { state: true },
+    _folder: { state: true }, // the folder being looked at; null is the top level
+    _newFolder: { state: true }, // a folder just made, which opens ready to be named
+    _addingLabel: { state: true },
+    _crumbOver: { state: true },
   };
 
   static styles = [panelStyles, css`
@@ -53,6 +60,39 @@ export class PandemoniumResearchPanel extends LitElement {
     }
     .find input:focus-visible{border-color:var(--link)}
     .find input::placeholder{color:var(--mut)}
+    /* Where you are, as a path; each step is also somewhere to drop something. */
+    .crumbs{flex:none;display:flex;align-items:center;flex-wrap:wrap;gap:2px;padding:0 10px 4px;font-family:var(--sans);font-size:11px}
+    .crumb{
+      height:22px;padding:0 9px;border:0;border-radius:20px;cursor:pointer;font:inherit;color:var(--mut);background:transparent;
+      max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+      transition:background var(--dur-1) var(--ease-out),color var(--dur-1) var(--ease-out);
+    }
+    .crumb:hover{background:var(--panel);color:var(--ink)}
+    .crumb.here{color:var(--ink);font-weight:500}
+    .crumb.over{background:var(--res);color:#fff}
+    .sep{color:var(--mut);opacity:.6}
+    /* The header of the folder you are in. */
+    .fhead{display:flex;align-items:center;gap:6px;padding:0 10px 2px}
+    .fname{
+      flex:1;min-width:0;height:auto;padding:2px 6px;font-family:var(--sans);font-size:15px;font-weight:500;color:var(--ink);
+      background:transparent;border:0;border-radius:var(--r);outline:0;
+    }
+    .fname:hover,.fname:focus{background:var(--panel)}
+    .fhead .more{
+      width:24px;height:24px;flex:none;padding:0;border:0;border-radius:50%;cursor:pointer;
+      background:transparent;color:var(--mut);font-family:var(--sans);font-size:14px;line-height:1;
+    }
+    .fhead .more:hover{background:var(--panel);color:var(--ink)}
+    .flabels{display:flex;flex-wrap:wrap;align-items:center;gap:5px;padding:0 12px 10px}
+    .tag{
+      display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 4px 0 9px;
+      font-family:var(--sans);font-size:11px;color:var(--ink);background:var(--panel);border-radius:20px;
+    }
+    .tag button{width:15px;height:15px;padding:0;border:0;border-radius:50%;cursor:pointer;background:none;color:var(--mut);font-family:var(--sans);font-size:9px;line-height:1}
+    .tag button:hover{background:var(--ph);color:var(--ink)}
+    .addtag{height:20px;padding:0 9px;font-family:var(--sans);font-size:11px;font-weight:500;color:var(--mut);background:none;border:0;border-radius:20px;cursor:pointer}
+    .addtag:hover{background:var(--panel);color:var(--ink)}
+    .taginput{height:20px;width:120px;padding:0 9px;font-size:11px;font-family:var(--sans);background:var(--field);color:var(--ink);border:1px solid var(--link);border-radius:20px;outline:0}
     .filterbar{
       flex:none;display:flex;align-items:center;gap:8px;padding:0 12px 8px;
       font-family:var(--sans);font-size:11px;color:var(--mut);
@@ -128,6 +168,10 @@ export class PandemoniumResearchPanel extends LitElement {
     this._query = '';
     this._unlinkedOnly = false;
     this._labels = new Set(); // topics currently being shown, empty means all
+    this._folder = null;
+    this._newFolder = null;
+    this._addingLabel = false;
+    this._crumbOver = undefined;
     this._dragging = false;
   }
 
@@ -155,6 +199,24 @@ export class PandemoniumResearchPanel extends LitElement {
     super.disconnectedCallback();
   }
 
+  willUpdate() {
+    const project = this._store.project;
+    const ui = this._store.ui;
+    if (!project || !ui) return;
+    const folders = project.folders || [];
+    // A source opened from elsewhere (search, a link in the script) shows its
+    // folder when it is closed, so closing lands where it lives.
+    const doc = ui.openDoc && project.research.find((d) => d.id === ui.openDoc);
+    if (doc && this._openSeen !== doc.id) {
+      this._openSeen = doc.id;
+      const f = doc.folderId && folders.some((x) => x.id === doc.folderId) ? doc.folderId : null;
+      if (f !== this._folder) this._folder = f;
+    }
+    if (!ui.openDoc) this._openSeen = null;
+    // A folder deleted (here or on another device) is not somewhere to stand.
+    if (this._folder && !folders.some((x) => x.id === this._folder)) this._folder = null;
+  }
+
   // ---- creating ----
 
   // While the script is waiting for a source to be picked, anything created
@@ -166,7 +228,7 @@ export class PandemoniumResearchPanel extends LitElement {
     const store = this._store.store;
     const linking = store.ui.linking;
     if (!linking || linking.from !== 'script' || !linking.parts) return false;
-    store.addLink({ researchId: docId, sParts: linking.parts, rParts: null });
+    store.addLink({ researchId: docId, sParts: linking.parts, rParts: null, scriptId: linking.scriptId });
     store.setUI({ linking: null });
     return true;
   }
@@ -178,7 +240,7 @@ export class PandemoniumResearchPanel extends LitElement {
   #newSource(e) {
     if (e && e.currentTarget) leaveRect('research-open', e.currentTarget.getBoundingClientRect());
     const store = this._store.store;
-    const doc = store.addResearch({});
+    const doc = store.addResearch({ folderId: this._folder });
     const linked = this.#consumePendingLink(doc.id);
     store.setUI({ openDoc: doc.id, openDocFocus: true });
     if (linked) dispatch(this, 'pandemonium-toast', { message: 'Source created and linked to the passage.' });
@@ -209,9 +271,10 @@ export class PandemoniumResearchPanel extends LitElement {
     let last = null;
     for (const file of list) {
       last = isTextShaped(file)
-        ? this._store.store.addResearch({ title: file.name, body: await readFileAsText(file) })
+        ? this._store.store.addResearch({ title: file.name, body: await readFileAsText(file), folderId: this._folder })
         : this._store.store.addResearch({
           title: file.name,
+          folderId: this._folder,
           attachment: { name: file.name, mime: file.type, data: await readFileAsDataURL(file) },
         });
     }
@@ -229,7 +292,7 @@ export class PandemoniumResearchPanel extends LitElement {
 
   #addUrl(url) {
     const store = this._store.store;
-    const doc = store.addResearch({ url });
+    const doc = store.addResearch({ url, folderId: this._folder });
     const linked = this.#consumePendingLink(doc.id);
     store.setUI({ openDoc: doc.id, openDocFocus: true });
     dispatch(this, 'pandemonium-toast', {
@@ -303,6 +366,110 @@ export class PandemoniumResearchPanel extends LitElement {
     this._query = '';
     this._unlinkedOnly = false;
     this._labels = new Set();
+    if (this._store.ui && this._store.ui.refDraft) this._store.store.setUI({ refDraft: null });
+  }
+
+  // The draft the panel is limited to, when it is limited to one that exists.
+  #draftFilter() {
+    const project = this._store.project;
+    const id = this._store.ui && this._store.ui.refDraft;
+    return id && project ? project.scripts.find((x) => x.id === id) || null : null;
+  }
+
+  // On: limited to the draft the writer is in. "Linked in a draft" and
+  // "Unlinked" would contradict each other, so turning one on turns the other off.
+  #toggleDraft() {
+    const store = this._store.store;
+    if (this.#draftFilter()) { store.setUI({ refDraft: null }); return; }
+    this._unlinkedOnly = false;
+    store.setUI({ refDraft: store.activeScript().id });
+  }
+
+  #newFolder() {
+    const f = this._store.store.addFolder({ parentId: this._folder });
+    this._newFolder = f.id;
+    // Handed over once: the card starts editing on its first render, and
+    // this is cleared after, so a later re-render does not restart it.
+    requestAnimationFrame(() => { if (this._newFolder === f.id) this._newFolder = null; });
+  }
+
+  #goto(id) {
+    this._folder = id;
+    this._addingLabel = false;
+  }
+
+  #crumbDrop(e, id) {
+    if (!isRefDrag(e.dataTransfer)) return;
+    e.preventDefault();
+    this._crumbOver = undefined;
+    applyDrop(this, this._store.store, e.dataTransfer, id);
+  }
+
+  #crumbOver_(e, id) {
+    if (!isRefDrag(e.dataTransfer)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (this._crumbOver !== id) this._crumbOver = id;
+  }
+
+  // Where you are, as a path you can climb: every step is also a place to drop
+  // something, which is how a thing is filed back up a level.
+  #crumbs(project, folder) {
+    const path = folderPath(project.folders || [], this._folder);
+    const crumb = (id, label, here) => html`<button class="crumb ${here ? 'here' : ''} ${this._crumbOver === id ? 'over' : ''}"
+      @click=${() => this.#goto(id)}
+      @dragover=${(e) => this.#crumbOver_(e, id)} @dragleave=${() => { this._crumbOver = undefined; }}
+      @drop=${(e) => this.#crumbDrop(e, id)}>${label}</button>`;
+    return html`<nav class="crumbs" data-clarity-mask="true" aria-label="Folder path">
+      ${crumb(null, 'References', false)}
+      ${path.map((f, i) => html`<span class="sep">&rsaquo;</span>${crumb(f.id, f.name || 'Untitled', i === path.length - 1)}`)}
+    </nav>`;
+  }
+
+  // The header of the folder you are in: its name, its labels, its menu.
+  #folderHeader(project, folder) {
+    const store = this._store.store;
+    const known = allLabels([...(project.folders || []), ...project.research]).map((l) => l.label)
+      .filter((l) => !(folder.labels || []).some((x) => x.toLowerCase() === l.toLowerCase()));
+    const commitLabel = (text) => {
+      const next = addLabel(folder.labels, text);
+      if (next !== (folder.labels || [])) store.updateFolder(folder.id, { labels: next });
+      this._addingLabel = false;
+    };
+    const n = folderCount(project.research, project.folders, folder.id);
+    const item = { kind: 'folder', id: folder.id };
+    return html`
+      <div class="fhead" data-clarity-mask="true">
+        <input class="fname" type="text" maxlength="60" placeholder="Untitled folder" .value=${folder.name || ''}
+          @change=${(e) => { const v = e.target.value.trim(); if (v) store.updateFolder(folder.id, { name: v }); else e.target.value = folder.name || ''; }}
+          @keydown=${(e) => { if (e.key === 'Enter') e.target.blur(); }}>
+        <button class="more" title="Folder options" @click=${(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          dispatch(this, 'pandemonium-open-menu', { anchor: e.currentTarget, items: [
+            ...(hasMoveTargets(store, item) ? [{ label: 'Move to folder...', fn: () => openMoveMenu(this, store, item, { x: r.left, y: r.bottom + 4 }) }] : []),
+            { label: 'Delete folder', danger: true, fn: () => {
+              if (confirm('Delete the folder "' + (folder.name || 'Untitled') + '"?' + (n ? ' Its ' + n + ' item' + (n === 1 ? '' : 's') + ' move up a level, nothing else is deleted.' : ''))) {
+                const up = folder.parentId || null;
+                store.deleteFolder(folder.id);
+                this._folder = up;
+              }
+            } },
+          ] });
+        }}>&#8943;</button>
+      </div>
+      <div class="flabels" data-clarity-mask="true">
+        ${(folder.labels || []).map((l) => html`<span class="tag">${l}<button title="Remove this label" @click=${() => store.updateFolder(folder.id, { labels: removeLabel(folder.labels, l) })}>&#10005;</button></span>`)}
+        ${this._addingLabel
+          ? html`<input class="taginput" list="fl" maxlength=${MAX_LABEL} placeholder="Topic name"
+              @keydown=${(e) => { if (e.key === 'Enter') { e.preventDefault(); commitLabel(e.target.value); } if (e.key === 'Escape') { e.stopPropagation(); this._addingLabel = false; } }}
+              @blur=${(e) => commitLabel(e.target.value)}>
+            <datalist id="fl">${known.map((l) => html`<option value=${l}></option>`)}</datalist>`
+          : html`<button class="addtag" title="Group this folder under a topic" @click=${() => {
+            this._addingLabel = true;
+            this.updateComplete.then(() => { const el = this.renderRoot.querySelector('.taginput'); if (el) el.focus(); });
+          }}>+ Label</button>`}
+      </div>
+    `;
   }
 
   // ---- rendering ----
@@ -315,10 +482,14 @@ export class PandemoniumResearchPanel extends LitElement {
           <input type="text" placeholder="Find in sources" aria-label="Find in sources"
             .value=${this._query} @input=${(e) => { this._query = e.target.value; }}>
         </div>
+        <pd-button variant=${this.#draftFilter() ? 'dark' : 'default'}
+          title=${this.#draftFilter() ? 'Showing only the references linked in this draft. Click to show all.' : 'Show only the references linked in the draft you are in'}
+          @click=${() => this.#toggleDraft()}>This draft</pd-button>
         <pd-button variant=${this._unlinkedOnly ? 'dark' : 'default'}
           title="Show only the sources not yet linked to the script"
-          @click=${() => { this._unlinkedOnly = !this._unlinkedOnly; }}>Unlinked</pd-button>
+          @click=${() => { this._unlinkedOnly = !this._unlinkedOnly; if (this._unlinkedOnly) this._store.store.setUI({ refDraft: null }); }}>Unlinked</pd-button>
       ` : nothing}
+      <pd-button icon title="New folder" @click=${() => this.#newFolder()}>${icon('folderAdd')}</pd-button>
       <pd-button icon title="Add files: images, video, audio, PDFs, anything" @click=${() => this.#upload()}>${icon('upload')}</pd-button>
     `;
   }
@@ -328,7 +499,7 @@ export class PandemoniumResearchPanel extends LitElement {
   // entirely until something is labelled: an empty row of an unexplained
   // control is worse than no control.
   #topics(project) {
-    const labels = allLabels(project.research);
+    const labels = allLabels([...(project.folders || []), ...project.research]);
     if (!labels.length) return nothing;
     return html`
       <div class="topics" data-clarity-mask="true">
@@ -367,6 +538,7 @@ export class PandemoniumResearchPanel extends LitElement {
       <div class="nores">
         <p>Anything you put here can back a passage of the script.</p>
         ${this.#newTile()}
+        <pd-button @click=${() => this.#newFolder()}>New folder</pd-button>
       </div>
     `;
   }
@@ -384,27 +556,29 @@ export class PandemoniumResearchPanel extends LitElement {
     const counts = {};
     for (const l of project.links) counts[l.researchId] = (counts[l.researchId] || 0) + 1;
     const linked = new Set(Object.keys(counts));
-    // Newest first. Insertion order put every new source at the foot of the
-    // grid, below the fold on a full panel, so adding one looked like nothing
-    // had happened.
-    const shown = filterResearch(project.research, {
-      query: this._query,
-      unlinkedOnly: this._unlinkedOnly,
-      labels: this._labels,
-      linked,
-    }).slice().reverse();
-    const filtered = shown.length !== project.research.length;
+    const folders = project.folders || [];
+    // One folder's contents, or (while searching, or a topic or the unlinked
+    // filter is on) every match across all folders at once. Newest first, so
+    // adding something is never below the fold.
+    const draft = this.#draftFilter();
+    const ids = draft ? researchIdsInDraft(project, draft.id, this._store.store.finalScript().id) : null;
+    const view = browse({ research: project.research, folders, folderId: this._folder, query: this._query, unlinkedOnly: this._unlinkedOnly, labels: this._labels, linked, ids });
+    const here = view.here ? folders.find((f) => f.id === view.here) : null;
+    const empty = !view.docs.length && !view.folders.length;
     return html`
-      ${filtered ? html`
+      ${here && !view.flat ? html`${this.#crumbs(project, here)}${this.#folderHeader(project, here)}` : nothing}
+      ${view.flat ? html`
         <div class="filterbar">
-          <span>${shown.length} of ${project.research.length} sources${this._unlinkedOnly ? ', not yet linked' : ''}${this._labels.size ? ', in ' + [...this._labels].join(' or ') : ''}</span>
+          <span>${view.docs.length} of ${project.research.length} sources${view.folders.length ? ', ' + view.folders.length + ' folder' + (view.folders.length === 1 ? '' : 's') : ''}${this._unlinkedOnly ? ', not yet linked' : ''}${draft ? ', linked in ' + draft.name : ''}${this._labels.size ? ', in ' + [...this._labels].join(' or ') : ''}, across every folder</span>
           <button @click=${() => this.#clearFilters()}>Show all</button>
         </div>` : nothing}
-      ${shown.length ? html`
+      ${view.flat && empty ? this.#noMatches() : html`
         <div id="researchList">
-          ${this.#newTile()}
-          ${shown.map((d) => html`<pandemonium-research-card .doc=${d} .linkCount=${counts[d.id] || 0}></pandemonium-research-card>`)}
-        </div>` : this.#noMatches()}
+          ${view.flat ? nothing : this.#newTile()}
+          ${view.folders.map((f) => html`<pandemonium-folder-card .folder=${f}
+            .count=${folderCount(project.research, folders, f.id)} .autoEdit=${f.id === this._newFolder}></pandemonium-folder-card>`)}
+          ${view.docs.map((d) => html`<pandemonium-research-card .doc=${d} .linkCount=${counts[d.id] || 0}></pandemonium-research-card>`)}
+        </div>`}
     `;
   }
 
@@ -413,10 +587,11 @@ export class PandemoniumResearchPanel extends LitElement {
     if (!project) return html``;
     const ui = this._store.ui;
     const openDoc = project.research.find((d) => d.id === ui.openDoc);
-    const hasAny = project.research.length > 0;
+    const hasAny = project.research.length > 0 || (project.folders || []).length > 0;
 
     return html`
       <div class="shell" style="--pane-bg:var(--bg)"
+        @pandemonium-open-folder=${(e) => this.#goto(e.detail.id)}
         @dragover=${(e) => this.#onDragOver(e)}
         @dragleave=${(e) => this.#onDragLeave(e)}
         @drop=${(e) => this.#onDrop(e)}>

@@ -29,8 +29,8 @@ place, with a timeline that shows how done you actually are.
 From the product spec. Confirm against the code before relying on it.
 
 - **Script**: a Fountain document. Multiple scripts are allowed per project, but
-  only one is the **final draft**, and only the final draft links to storyboards
-  and references.
+  only one is the **final draft**. Storyboards and comments attach to the final
+  draft only; a reference link may be made in any draft (see hard rule 4).
 - **Storyboard link**: a script section connected to a **storyboard**. A
   storyboard is one record with two image frames, a final one (`img`) and a
   reference one (`refImg`), either of which may be empty, plus its own `note`
@@ -161,8 +161,15 @@ whole app matches the Figma file yet.
 3. **The timeline math must be honest.** Percent storyboarded, percent
    researched, and estimated length are the product's whole promise. If a number
    cannot be computed reliably, show it as unknown. Never fake it.
-4. **One final draft owns the links.** Storyboard and reference links attach to the
-   final draft only. Do not let other drafts silently accumulate links.
+4. **The final draft owns the storyboards, the comments and the timeline.**
+   Storyboard links and comments attach to the final draft only, and the
+   timeline's numbers are computed from the final draft alone. A **reference**
+   link may be made in any draft (changed from "final draft only" at the
+   author's request), but never silently: it records the draft it was made in
+   (`link.scriptId`), stays with that draft, is shown as belonging to it
+   wherever it is listed, is deleted with it, and is never counted in the
+   timeline's sourced percentage (rule 3). A link made in the final draft is
+   left unmarked and follows the final draft if another is promoted.
 
 ---
 
@@ -646,6 +653,47 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
     `view.lineBlockAt` of its page's first line, from the same height map as the
     text. Verified in a real browser at 2200, 1500, 1000 and 700px: font stays
     16px, no line outside its sheet.
+
+
+23. **References in any draft, and folders.** **Rule change**: hard rule 4 said
+    reference links attach to the final draft only; it now says storyboards,
+    comments and the timeline are the final draft's, and a reference link can be
+    made in any draft (see the rule for what keeps that honest). Model: an
+    optional `link.scriptId`, set only for a non-final draft
+    (`store.addLink`), so every existing file is unchanged. `store.getFinalState`
+    resolves the final draft's links only (highlights and timeline coverage);
+    `store.getDraftState(id)` resolves another draft's own links against its own
+    text (memoized, and a link-in-progress belongs to the draft it was started
+    in); `store.researchLinks(id)` lists a reference's links across all drafts
+    for the reader, each with its draft. The selection toolbar and rail offer
+    "Reference" in any draft (plus "Make final for storyboards"), anchors follow
+    edits in whichever draft owns them (`#remapAnchors`), Reattach switches to
+    the owning draft, and deleting a draft deletes its links. Tested through the
+    real store (`draft-links.test.js`) and in a browser. **Folders**:
+    `project.folders` (`{id, name, parentId, labels}`, nested freely) and
+    `research[].folderId`, both optional so old files load unchanged (merge.js,
+    the schema and the server's branch defaults know the new collection). Pure
+    helpers and reducers (`browse`, `folderPath`, `canMoveFolder`,
+    `moveTargets`, `addFolder`, `moveFolder`, `moveResearch`, `deleteFolder`;
+    tested in `folders.test.js`). A folder shows one level at a time with a
+    breadcrumb; while searching or filtering (a topic, "Unlinked") it shows
+    every match across all folders at once, because a search that only looked in
+    the folder you stand in would wrongly find nothing. Folders carry labels
+    exactly like references (inline in the folder header, or Add a label on its
+    card) and appear in the topic row. Organising: drag a reference or folder
+    onto a folder card or a breadcrumb, or use "Move to folder..." on a card,
+    a folder, or in the reader; a folder can never go inside itself; deleting a
+    folder moves its contents up a level and deletes nothing else; a reference
+    or folder whose parent is gone reads as top level. New things are filed in
+    the folder you are looking at, and closing a source shows its folder.
+    **This draft's references**: a References button in the script panel (with
+    a count) reveals the References panel limited to the references the draft
+    has links to, and the panel has a matching "This draft" filter
+    (`ui.refDraft`, transient, `researchIdsInDraft`, tested); the limit follows
+    the writer when they switch drafts, shows across every folder like any other
+    filter, and excludes "Unlinked", which would contradict it.
+    **Not done**: manual ordering inside a folder (folders sort by name,
+    references newest first), and a folder-level colour.
 
 ---
 

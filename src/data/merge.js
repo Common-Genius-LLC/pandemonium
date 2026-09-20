@@ -32,7 +32,7 @@
 // everything that genuinely differs becomes a conflict rather than a guess.
 'use strict';
 
-const RECORD_COLLECTIONS = ['boards', 'research', 'links', 'comments'];
+const RECORD_COLLECTIONS = ['boards', 'research', 'folders', 'links', 'comments'];
 const META_FIELDS = ['name', 'workspace', 'type', 'targetMins', 'layout', 'contributors'];
 
 function jsonEqual(a, b) {

@@ -9,6 +9,7 @@ import { previewOf, optimizeImage } from '../../data/link-preview.js';
 import { mediaIcon } from './icons.js';
 import { withGlobalItems } from '../../utils/context-menu.js';
 import { leaveRect, takeRect, shrinkFrom } from '../../utils/motion.js';
+import { startDrag, openMoveMenu, hasMoveTargets } from './move-menu.js';
 
 // One research source in the grid. A source is one record that may carry a
 // piece of media, a URL and notes in any combination, so the card shows
@@ -106,7 +107,7 @@ export class PandemoniumResearchCard extends LitElement {
     const store = this._store.store;
     const ui = store.ui;
     if (ui.linking && ui.linking.from === 'script') {
-      store.addLink({ researchId: this.doc.id, sParts: ui.linking.parts, rParts: null });
+      store.addLink({ researchId: this.doc.id, sParts: ui.linking.parts, rParts: null, scriptId: ui.linking.scriptId });
       // Clearing ui.linking is all the linkbar needs: it derives its own
       // visibility from that state, so there is nothing to tell it to hide.
       store.setUI({ linking: null });
@@ -146,9 +147,10 @@ export class PandemoniumResearchCard extends LitElement {
     dispatch(this, 'pandemonium-pick-label', { label });
   }
 
-  #menuItems() {
+  #menuItems(at) {
     const store = this._store.store;
     const d = this.doc;
+    const item = { kind: 'doc', id: d.id };
     // No "Open": clicking the card is what opens it, and a menu item for the
     // thing the object already does on a plain click is a row that can only
     // ever be read and skipped.
@@ -161,6 +163,7 @@ export class PandemoniumResearchCard extends LitElement {
           fn: () => store.updateResearch(d.id, { color: c.key }),
         })),
       },
+      ...(hasMoveTargets(store, item) ? [{ divider: true }, { label: 'Move to folder...', fn: () => openMoveMenu(this, store, item, at) }] : []),
       { divider: true },
       { label: 'Delete source', danger: true, fn: () => this.#delete() },
     ];
@@ -168,7 +171,8 @@ export class PandemoniumResearchCard extends LitElement {
 
   #menu(e) {
     e.stopPropagation();
-    dispatch(this, 'pandemonium-open-menu', { anchor: e.currentTarget, items: this.#menuItems() });
+    const r = e.currentTarget.getBoundingClientRect();
+    dispatch(this, 'pandemonium-open-menu', { anchor: e.currentTarget, items: this.#menuItems({ x: r.left, y: r.bottom + 4 }) });
   }
 
   // Right-click reaches the same menu, which is where anyone coming from any
@@ -179,9 +183,8 @@ export class PandemoniumResearchCard extends LitElement {
   #contextMenu(e) {
     e.preventDefault();
     e.stopPropagation();
-    dispatch(this, 'pandemonium-open-menu', {
-      x: e.clientX, y: e.clientY, items: withGlobalItems(this, this.#menuItems()),
-    });
+    const at = { x: e.clientX, y: e.clientY };
+    dispatch(this, 'pandemonium-open-menu', { ...at, items: withGlobalItems(this, this.#menuItems(at)) });
   }
 
   #delete() {
@@ -234,7 +237,8 @@ export class PandemoniumResearchCard extends LitElement {
     const snip = docSnippet(d);
     const n = this.linkCount || 0;
     return html`
-      <div class="rcard" style="--card:${colorToken(d.color)}"
+      <div class="rcard" style="--card:${colorToken(d.color)}" draggable="true"
+        @dragstart=${(e) => startDrag(e, 'doc', d.id)}
         @click=${() => this.#click()} @contextmenu=${(e) => this.#contextMenu(e)}>
         ${this.#thumb()}
         <button class="more" title="Source options" @click=${(e) => this.#menu(e)}>&#8943;</button>

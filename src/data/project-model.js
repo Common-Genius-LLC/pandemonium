@@ -10,7 +10,7 @@
 
 import { uid, CHIPCOLORS } from '../utils/format.js';
 import { defaultFountain } from './schema.js';
-import { researchKind } from './research-doc.js';
+import { researchKind, canMoveFolder } from './research-doc.js';
 
 // ---- scripts ----
 
@@ -97,7 +97,27 @@ export function duplicateScript(project, id) {
 export function deleteScript(project, id) {
   const s = project.scripts.find((x) => x.id === id);
   if (!s || s.final) return project;
-  return { ...project, scripts: project.scripts.filter((x) => x.id !== id) };
+  // A draft's own reference links go with it: they anchor to its text and
+  // could never resolve anywhere else.
+  return { ...project, scripts: project.scripts.filter((x) => x.id !== id), links: (project.links || []).filter((l) => l.scriptId !== id) };
+}
+
+// The draft a link belongs to: the one it was made in, else the final draft.
+export function linkOwnerId(link, finalId) {
+  return link.scriptId || finalId;
+}
+
+// The ids of the references a draft has at least one link to (a link to a
+// draft that no longer exists is read as the final draft's, as the rest of the
+// app reads it).
+export function researchIdsInDraft(project, scriptId, finalId) {
+  const ids = new Set();
+  const known = new Set((project.scripts || []).map((s) => s.id));
+  for (const l of project.links || []) {
+    const owner = l.scriptId && known.has(l.scriptId) ? l.scriptId : finalId;
+    if (owner === scriptId) ids.add(l.researchId);
+  }
+  return ids;
 }
 
 // Moves `id` to just before `beforeId` in tab order (drag-and-drop reorder).
@@ -384,7 +404,7 @@ export function deleteBoard(project, id) {
 // itself afterwards. Callers may still pass a kind; it is ignored, which is
 // what keeps old call sites honest instead of silently authoritative.
 
-export function addResearch(project, { title, url, body, attachment, color } = {}) {
+export function addResearch(project, { title, url, body, attachment, color, folderId } = {}) {
   const doc = {
     id: uid(),
     // Empty, not the literal string "Untitled": every surface names a source
@@ -399,6 +419,8 @@ export function addResearch(project, { title, url, body, attachment, color } = {
     // whole label list is derived from these (see allLabels): nothing to set
     // up before using one, nothing left behind when the last use goes.
     labels: [],
+    // The folder it is filed in; null is the top level.
+    folderId: folderId && (project.folders || []).some((f) => f.id === folderId) ? folderId : null,
     createdAt: Date.now(),
   };
   if (attachment) doc.attachment = attachment; // {name, mime, data: dataURL}
@@ -430,10 +452,59 @@ export function deleteResearch(project, id) {
   };
 }
 
+// ---- folders (organising references) ----
+
+export function addFolder(project, { name, parentId = null, labels = [] } = {}) {
+  const folders = project.folders || [];
+  const folder = {
+    id: uid(),
+    name: (name || '').trim() || 'New folder',
+    parentId: parentId && folders.some((f) => f.id === parentId) ? parentId : null,
+    labels: labels.slice(),
+    createdAt: Date.now(),
+  };
+  return { project: { ...project, folders: [...folders, folder] }, folder };
+}
+
+export function updateFolder(project, id, patch) {
+  return { ...project, folders: (project.folders || []).map((f) => (f.id === id ? { ...f, ...patch, id: f.id } : f)) };
+}
+
+export function moveFolder(project, id, parentId) {
+  const folders = project.folders || [];
+  if (!canMoveFolder(folders, id, parentId)) return project;
+  return { ...project, folders: folders.map((f) => (f.id === id ? { ...f, parentId: parentId || null } : f)) };
+}
+
+export function moveResearch(project, id, folderId) {
+  const fid = folderId && (project.folders || []).some((f) => f.id === folderId) ? folderId : null;
+  return { ...project, research: project.research.map((d) => (d.id === id ? { ...d, folderId: fid } : d)) };
+}
+
+// Deleting a folder never deletes what is in it: its references and folders
+// move up to the folder's own parent.
+export function deleteFolder(project, id) {
+  const folders = project.folders || [];
+  const f = folders.find((x) => x.id === id);
+  if (!f) return project;
+  const up = f.parentId && folders.some((x) => x.id === f.parentId) ? f.parentId : null;
+  return {
+    ...project,
+    folders: folders.filter((x) => x.id !== id).map((x) => (x.parentId === id ? { ...x, parentId: up } : x)),
+    research: project.research.map((d) => (d.folderId === id ? { ...d, folderId: up } : d)),
+  };
+}
+
 // ---- links (script <-> research) ----
 
-export function addLink(project, { researchId, sParts, rParts }) {
+// `scriptId` is the draft the link was made in, and is only recorded for a
+// draft that is NOT the final one. A link with no scriptId belongs to the final
+// draft and follows it if another draft is promoted (the original behaviour);
+// one with a scriptId stays with that draft. The caller passes the id only for
+// a non-final draft (see store.addLink).
+export function addLink(project, { researchId, sParts, rParts, scriptId }) {
   const link = { id: uid(), anchor: { parts: sParts }, researchId, rAnchor: rParts ? { parts: rParts } : null };
+  if (scriptId) link.scriptId = scriptId;
   return { project: { ...project, links: [...project.links, link] }, link };
 }
 

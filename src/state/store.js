@@ -27,7 +27,7 @@ export class PandemoniumStore extends EventTarget {
 
   loadProject(rawProject) {
     const project = Object.assign(
-      { name: 'Untitled', workspace: '', type: '', targetMins: 0, contributors: [], scripts: [], boards: [], research: [], links: [], comments: [], layout: null },
+      { name: 'Untitled', workspace: '', type: '', targetMins: 0, contributors: [], scripts: [], boards: [], research: [], folders: [], links: [], comments: [], layout: null },
       rawProject,
     );
     // Projects saved before a storyboard held both its frames are one board
@@ -93,7 +93,9 @@ export class PandemoniumStore extends EventTarget {
   }
 
   setPaneDraft(leafId, id) {
-    this.setUI({ paneDrafts: { ...this.#ui.paneDrafts, [leafId]: id }, pair: null });
+    // A References filter that is limited to a draft follows the writer when
+    // they switch drafts, since it means "the draft I am in".
+    this.setUI({ paneDrafts: { ...this.#ui.paneDrafts, [leafId]: id }, pair: null, ...(this.#ui.refDraft ? { refDraft: id } : {}) });
   }
 
   // The structural path for whatever is on screen, e.g. '/project/boards'.
@@ -117,11 +119,66 @@ export class PandemoniumStore extends EventTarget {
     const fsc = this.finalScript();
     const fparsed = getParsed(fsc);
     const fscenes = labelScenes(scenesOf(fparsed));
-    const R = computeResolved(fparsed, fscenes, this.#project, this.#ui);
+    // Only the final draft's own links count here: a link made in another
+    // draft anchors to that draft's text, and must neither paint highlights on
+    // the final draft nor count towards the timeline (which is about the final
+    // draft, per hard rule 3). See getDraftState for those.
+    const own = { ...this.#project, links: this.#project.links.filter((l) => !l.scriptId || l.scriptId === fsc.id) };
+    const R = computeResolved(fparsed, fscenes, own, this.#linkingFor(fsc.id));
     coverage(fscenes, R);
     const result = { fsc, fparsed, fscenes, R };
     this.#finalStateCache = { project: this.#project, ui: this.#ui, result };
     return result;
+  }
+
+  // The link-in-progress belongs to the draft it was started in: a passage
+  // picked in Draft 2 must not also light up (wrongly) in the final draft.
+  #linkingFor(scriptId) {
+    const ui = this.#ui;
+    const l = ui.linking;
+    if (!l || l.from !== 'script') return ui;
+    const owner = l.scriptId || this.finalScript().id;
+    return owner === scriptId ? ui : { ...ui, linking: null };
+  }
+
+  // The same derived state for a draft that is not the final one: its own
+  // reference links resolved against its own text. No boards, comments or
+  // coverage: those belong to the final draft alone.
+  #draftStateCache = new Map();
+  getDraftState(scriptId) {
+    if (!this.#project) return null;
+    const fsc = this.finalScript();
+    if (!scriptId || scriptId === fsc.id) return this.getFinalState();
+    const sc = this.#project.scripts.find((x) => x.id === scriptId);
+    if (!sc) return this.getFinalState();
+    const hit = this.#draftStateCache.get(scriptId);
+    if (hit && hit.project === this.#project && hit.ui === this.#ui && hit.text === sc.text) return hit.result;
+    const parsed = getParsed(sc);
+    const scenes = labelScenes(scenesOf(parsed));
+    const mine = { ...this.#project, boards: [], comments: [], links: this.#project.links.filter((l) => l.scriptId === scriptId) };
+    const R = computeResolved(parsed, scenes, mine, this.#linkingFor(scriptId));
+    const result = { sc, parsed, scenes, R };
+    this.#draftStateCache.set(scriptId, { project: this.#project, ui: this.#ui, text: sc.text, result });
+    return result;
+  }
+
+  // Every link a reference has, across all drafts, each with the draft it is
+  // in and whether its passage can still be found there.
+  researchLinks(researchId) {
+    if (!this.#project) return [];
+    const fsc = this.finalScript();
+    const owners = new Set();
+    for (const l of this.#project.links) {
+      if (l.researchId !== researchId) continue;
+      owners.add(l.scriptId && this.#project.scripts.some((x) => x.id === l.scriptId) ? l.scriptId : fsc.id);
+    }
+    const out = [];
+    for (const id of owners) {
+      const st = id === fsc.id ? this.getFinalState() : this.getDraftState(id);
+      const script = id === fsc.id ? fsc : st.sc;
+      for (const it of st.R.links) if (it.lk.researchId === researchId) out.push({ ...it, script });
+    }
+    return out;
   }
 
   // ---- internal ----
@@ -307,10 +364,25 @@ export class PandemoniumStore extends EventTarget {
     if (this.#ui.openDoc === id) this.setUI({ openDoc: null });
   }
 
+  // ---- folder actions (organising references) ----
+
+  addFolder(opts) {
+    const { project, folder } = model.addFolder(this.#project, opts);
+    this.#applyProject(project);
+    return folder;
+  }
+  updateFolder(id, patch) { this.#applyProject(model.updateFolder(this.#project, id, patch)); }
+  moveFolder(id, parentId) { this.#applyProject(model.moveFolder(this.#project, id, parentId)); }
+  moveResearch(id, folderId) { this.#applyProject(model.moveResearch(this.#project, id, folderId)); }
+  deleteFolder(id) { this.#applyProject(model.deleteFolder(this.#project, id)); }
+
   // ---- link actions ----
 
   addLink(opts) {
-    const { project, link } = model.addLink(this.#project, opts);
+    // Only a draft other than the final one is recorded on the link; the final
+    // draft's links stay unmarked so they follow it (see model.addLink).
+    const scriptId = opts.scriptId && opts.scriptId !== this.finalScript().id ? opts.scriptId : null;
+    const { project, link } = model.addLink(this.#project, { ...opts, scriptId });
     this.#applyProject(project);
     trackResearchLinkAdd({
       script_parts: (opts.sParts || []).length,
@@ -435,6 +507,9 @@ function defaultUI(draftId) {
     // more: a source's notes are always editable in place, so this says where
     // to start, not what is permitted.
     openDocFocus: false,
+    // The draft whose references the References panel is limited to, or null
+    // for all of them. Transient, like every other view filter.
+    refDraft: null,
     linking: null, // {from:'script', parts} | {from:'research', docId, rParts}
     pair: null, // id of the link currently shown with its connector
     pendingRelink: null, // {type:'board'|'link', id} -- reattaching an existing board/link to a new passage

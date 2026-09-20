@@ -30,7 +30,7 @@ interface Project {
 function ensureBranches(p: Record<string, unknown>): Project {
   return {
     name: 'Untitled', workspace: '', type: '', targetMins: 0,
-    contributors: [], scripts: [], boards: [], research: [], links: [], comments: [],
+    contributors: [], scripts: [], boards: [], research: [], folders: [], links: [], comments: [],
     ...p,
   } as Project;
 }
