@@ -3,17 +3,20 @@
 import { LitElement, html, css, nothing } from 'lit';
 import '../ui/segmented.js';
 import { crossfade } from '../../utils/motion.js';
-
-const SB_OPTIONS = [{ value: 'final', label: 'Final' }, { value: 'reference', label: 'Reference' }];
 import { StoreController } from '../../state/store-controller.js';
-import { CONTENT_TYPES } from '../../fountain/blocks.js';
-import { linkedBoards } from '../../state/selectors.js';
+import { slidePlan, sceneExcerpt } from '../../state/selectors.js';
+import { DEFAULT_SPLIT, MIN_SPLIT, MAX_SPLIT, clampSplit, splitFromPointer, textScale } from './split.js';
 import { frameImg } from '../../data/project-model.js';
 import { readFileAsDataURL, isVideoSrc } from '../../utils/files.js';
 import { keyed } from 'lit/directives/keyed.js';
 import { parseFountain } from '../../fountain/parse.js';
 import { plainRangeToRaw } from '../../fountain/doc-map.js';
 import { snapToWords } from '../../fountain/resolve.js';
+
+const SB_OPTIONS = [{ value: 'final', label: 'Final' }, { value: 'reference', label: 'Reference' }];
+const SPLIT_KEY = 'pnd_show_split';
+const MIN_PCT = MIN_SPLIT * 100;
+const MAX_PCT = MAX_SPLIT * 100;
 
 // Raw character offset of the start of 0-indexed line `lineIdx` in `text`.
 // The plain-text-string counterpart of CodeMirror's doc.line(n).from, needed
@@ -34,7 +37,7 @@ function lineStartOffset(text, lineIdx) {
 // in the bottom fifth. One instance at app-root, opened via
 // `pandemonium-open-slideshow`.
 export class PandemoniumSlideshow extends LitElement {
-  static properties = { _open: { state: true }, _slides: { state: true }, _ix: { state: true }, _recording: { state: true }, _sbMode: { state: true } };
+  static properties = { _open: { state: true }, _slides: { state: true }, _ix: { state: true }, _recording: { state: true }, _sbMode: { state: true }, _split: { state: true } };
 
   // Playback is always dark, whatever the app around it is doing: this is a
   // room-lights-down surface, so the colours are literals here rather than the
@@ -43,24 +46,53 @@ export class PandemoniumSlideshow extends LitElement {
   static styles = css`
     :host{position:fixed;inset:0;z-index:85;background:#000;display:none;flex-direction:column;font-family:var(--sans);--sink:#f2f2f2;--smut:#9a9a9a}
     :host([data-open]){display:flex}
-    .stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;position:relative}
-    .stage img,.stage video{max-width:100%;max-height:100%;object-fit:contain;display:block}
+    /* container-type:size so the placeholder frames below can be sized against
+       the room the stage actually has (cqw/cqh), the way the picture is fitted
+       into it. The stage's height comes from the flex column, not its
+       contents, so it can be a size container. */
+    .stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;position:relative;container-type:size}
+    /* The picture is fitted to the stage, never cropped to fill it: it fills
+       the box and object-fit:contain letterboxes it, so it scales up and down
+       with the stage (the divider below resizes the stage) at its own aspect
+       ratio. Absolutely placed so its size is the stage's, not its own. */
+    .stage img,.stage video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block}
     /* An image can be dropped straight onto the slide on screen, so the slide
        has to say when it will accept one. Inset rather than a border so the
        frame does not shift under the presenter mid-drag. */
     .stage.dropping::after{content:"";position:absolute;inset:10px;outline:2px dashed var(--res);border-radius:3px;pointer-events:none}
-    .noimg{width:min(58%,640px);aspect-ratio:16/9;background:#1a1a1a;display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center;color:var(--smut);text-align:center;padding:24px;box-sizing:border-box;overflow:hidden;border-radius:2px}
-    .noimg-hint{font-size:12px;letter-spacing:.08em;text-transform:uppercase}
+    /* Both placeholder frames are 16:9 and fitted to the stage like a picture
+       would be: as wide as 80% of it allows without being taller than 80% of
+       it. A blank storyboard is a shot waiting for its image; an unlinked frame
+       is script no storyboard covers. Different fills so they never read as
+       one another. */
+    .noimg,.unlinked{width:min(80cqw,calc(80cqh * 16 / 9));aspect-ratio:16/9;display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center;color:var(--smut);text-align:center;padding:24px;box-sizing:border-box;overflow:hidden;border-radius:2px}
+    .noimg{background:#1a1a1a}
+    .unlinked{background:#101010}
+    .noimg-hint,.unl-tag{font-size:12px;letter-spacing:.08em;text-transform:uppercase}
+    .unl-tag{color:var(--sink);font-weight:600}
+    .unl-hint{font-size:12px;line-height:1.4;max-width:34ch}
     /* The storyboard's own note, standing in for the shot that is not drawn yet. */
     .shotnote{font-family:var(--sans);font-size:clamp(15px,1.6vw,22px);line-height:1.35;color:var(--sink);white-space:pre-wrap;overflow-wrap:anywhere;max-height:70%;overflow:hidden}
     button{color:var(--sink);background:rgba(255,255,255,.12);border:0;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:var(--sans)}
     button:hover:not(:disabled){background:rgba(255,255,255,.26)}
     button:disabled{opacity:.25;cursor:default}
-    .x{position:absolute;top:14px;right:16px;width:28px;height:28px;font-size:14px;border-radius:50%}
-    .nav{position:absolute;top:50%;transform:translateY(-50%);width:40px;height:40px;border-radius:50%;font-size:17px;line-height:1}
+    .x{position:absolute;z-index:1;top:14px;right:16px;width:28px;height:28px;font-size:14px;border-radius:50%}
+    .nav{position:absolute;z-index:1;top:50%;transform:translateY(-50%);width:40px;height:40px;border-radius:50%;font-size:17px;line-height:1}
     .nav.prev{left:16px}
     .nav.next{right:16px}
-    .bottom{flex:none;height:30%;min-height:200px;background:#0d0d0d;display:flex;flex-direction:column}
+    /* The strip's height is the writer's to set (see .split): it is inline,
+       from _split. --txt-scale carries how much room that is, so the type
+       grows and shrinks with it. */
+    .bottom{flex:none;background:#0d0d0d;display:flex;flex-direction:column}
+    /* The divider. Zero height, so it takes no room of its own: a wide, invisible
+       hit area straddles the seam between picture and strip, and a small grip
+       shows on it (brighter on hover, focus and while dragging). */
+    .split{flex:none;height:0;position:relative;z-index:6;outline:none;touch-action:none}
+    .split::before{content:"";position:absolute;left:0;right:0;top:-8px;height:16px;cursor:row-resize}
+    .split::after{content:"";position:absolute;left:50%;top:-9px;width:46px;height:4px;margin-left:-23px;border-radius:2px;
+      background:rgba(255,255,255,.22);transition:background var(--dur-1) var(--ease-out);pointer-events:none}
+    .split:hover::after,.split:focus-visible::after,.split.drag::after{background:rgba(255,255,255,.6)}
+    .split:focus-visible::after{background:var(--res)}
     /* The shared sliding switch (ui/segmented.js), in the show's own
        lights-down colours (this surface is one of the two documented places
        literals are allowed). */
@@ -122,6 +154,14 @@ export class PandemoniumSlideshow extends LitElement {
     // attempting to patch whatever the browser left behind.
     this._editGen = 0;
     this._sbMode = 'final';
+    // The divider between picture and script. A per-viewer convenience like a
+    // remembered tab, so it survives a reload and every later preview, and
+    // renders at the default when storage is unavailable.
+    this._split = DEFAULT_SPLIT;
+    try {
+      const saved = parseFloat(localStorage.getItem(SPLIT_KEY));
+      if (Number.isFinite(saved)) this._split = clampSplit(saved);
+    } catch { /* private mode: keep the default */ }
   }
 
   connectedCallback() {
@@ -147,55 +187,32 @@ export class PandemoniumSlideshow extends LitElement {
     super.disconnectedCallback();
   }
 
-  // One slide per STORYBOARD (see linkedBoards in selectors.js), and every
+  // The deck is planned in selectors.js (slidePlan): one slide per STORYBOARD,
+  // in scene order, and one per stretch of script no storyboard covers. Every
   // storyboard has both a final and a reference frame, either of which may be
-  // empty. So the deck is identical in either mode, slide for slide and line
+  // empty, so the deck is identical in either mode, slide for slide and line
   // for line: switching mode mid-show swaps only the image (or a blank, waiting
-  // for one). The lines are always the storyboard's own linked passage, never
-  // a wider excerpt, so Reference shows exactly the script Final does.
+  // for one). A board's lines are its own linked passage, never a wider
+  // excerpt, so Reference shows exactly the script Final does.
   //
-  // Boarded passages get one slide per storyboard, in scene order. But
-  // stretches of script with no board anywhere are no longer chopped into one
-  // slide per scene -- that used scene breaks as a stand-in for pacing they
-  // don't actually carry, so a script with zero storyboards played back as a
-  // slow click-through of individual scenes. A run of consecutive boardless
-  // scenes is now one continuous slide instead, read straight through rather
-  // than stepped.
+  // Script between two linked passages plays too, as an unlinked slide: no
+  // picture, a frame that says so, and the text along the bottom like any other
+  // slide. That covers the rest of a scene after its last board, scenes with
+  // none, and the top of the next scene before its first. Script before the
+  // first link and after the last stays whole scenes folded into one
+  // continuous slide each (see slidePlan).
   #buildSlides() {
     const store = this._store.store;
     const state = store.getFinalState();
     const scenes = state.fscenes, parsed = state.fparsed;
-    const byScene = scenes.map(() => []);
-    linkedBoards(state.R.boards).forEach((o) => {
-      if (byScene[o.sceneIdx]) byScene[o.sceneIdx].push(o);
-    });
-    // Slide text is kept as [{type, text}], not a flat string: the strip
-    // renders it with the same element formatting as the editor, and that
-    // needs the parser's block type for every line rather than a guess made
-    // from the words.
-    // Each line carries bi/s/e (its span within that block's plain text) so
-    // an in-show edit can be spliced back into the document -- see
-    // #commitLineEdit. A boardless excerpt line is the whole block (s:0,
-    // e:end), never partial.
-    const excerpt = (sc) => {
-      const parts = [];
-      let n = 0;
-      for (let bi = Math.max(0, sc.start); bi <= sc.end && bi < parsed.blocks.length; bi++) {
-        const b = parsed.blocks[bi];
-        if (CONTENT_TYPES[b.type] && b.plain) {
-          parts.push({ type: b.type, text: b.plain, bi, s: 0, e: b.plain.length });
-          n += b.plain.length;
-          if (n > 340) break;
-        }
-      }
-      return parts;
-    };
     // What a board is actually linked to: its resolved spans, in the block
     // each one landed in, so a part-line link shows just that part, formatted
-    // as the element it came from. partIndex is this span's position in the
-    // board's own anchor.parts (not in the filtered/resolved list here,
-    // which can skip an unresolved part and shift indices), so an edit can
-    // update the exact part it came from.
+    // as the element it came from. Each line carries bi/s/e (its span within
+    // that block's plain text) so an in-show edit can be spliced back into the
+    // document (see #commitLineEdit). partIndex is this span's position in the
+    // board's own anchor.parts (not in the filtered/resolved list here, which
+    // can skip an unresolved part and shift indices), so an edit can update the
+    // exact part it came from.
     const boardLines = (o) => (o.res || [])
       .map((r, pi) => (r ? { r, pi } : null))
       .filter(Boolean)
@@ -204,37 +221,18 @@ export class PandemoniumSlideshow extends LitElement {
         return b ? { type: b.type, text: b.plain.slice(r.s, r.e), bi: r.bi, s: r.s, e: r.e, boardId: o.bd.id, partIndex: pi } : null;
       })
       .filter((l) => l && l.text);
-    const slides = [];
-    let pending = [];
-    const flushPending = () => {
-      if (!pending.length) return;
-      slides.push({ boardId: null, img: null, lines: pending });
-      pending = [];
-    };
-    scenes.forEach((sc, ix) => {
-      if (sc.end < sc.start && !byScene[ix].length) return;
-      if (!byScene[ix].length) {
-        // A scene with no boards at all, in either storyboard: fold its text
-        // into the run of boardless script being built up, rather than
-        // giving it a slide (and a slide-advance) of its own.
-        const lines = excerpt(sc);
-        pending.push(...(lines.length ? lines : [{ type: 'scene', text: sc.name }]));
-        return;
-      }
-      flushPending();
-      byScene[ix].forEach((o) => {
-        const lines = boardLines(o);
-        slides.push({
-          boardId: o.bd.id,
-          img: frameImg(o.bd, this._sbMode),
-          cap: o.bd.caption,
-          note: o.bd.note,
-          lines: lines.length ? lines : excerpt(sc),
-        });
-      });
+    return slidePlan(parsed.blocks, scenes, state.R.boards).map((it) => {
+      if (it.type === 'unlinked') return { boardId: null, img: null, unlinked: true, lines: it.lines };
+      const o = it.o;
+      const lines = boardLines(o);
+      return {
+        boardId: o.bd.id,
+        img: frameImg(o.bd, this._sbMode),
+        cap: o.bd.caption,
+        note: o.bd.note,
+        lines: lines.length ? lines : sceneExcerpt(parsed.blocks, scenes[o.sceneIdx]),
+      };
     });
-    flushPending();
-    return slides;
   }
 
   open(opts = {}) {
@@ -393,6 +391,48 @@ export class PandemoniumSlideshow extends LitElement {
     this.#refreshSlides();
   }
 
+  // ---- the divider between the picture and the script ----
+
+  #setSplit(v, persist = false) {
+    this._split = clampSplit(v);
+    if (!persist) return;
+    try { localStorage.setItem(SPLIT_KEY, String(this._split)); } catch { /* not persisted: fine */ }
+  }
+
+  #onSplitDown(e) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    this._dragSplit = true;
+    e.currentTarget.classList.add('drag');
+  }
+
+  #onSplitMove(e) {
+    if (!this._dragSplit) return;
+    const box = this.getBoundingClientRect();
+    this.#setSplit(splitFromPointer(e.clientY, box.top, box.height));
+  }
+
+  #onSplitUp(e) {
+    if (!this._dragSplit) return;
+    this._dragSplit = false;
+    e.currentTarget.classList.remove('drag');
+    this.#setSplit(this._split, true);
+  }
+
+  // Arrow keys move the divider by a few percent; Up gives the script more of
+  // the screen, Down gives the picture more. Stopped here so they do not also
+  // flip the show between Final and Reference (see the document keydown).
+  #onSplitKey(e) {
+    const step = e.shiftKey ? 0.1 : 0.03;
+    if (e.key === 'ArrowUp') this.#setSplit(this._split + step, true);
+    else if (e.key === 'ArrowDown') this.#setSplit(this._split - step, true);
+    else if (e.key === 'Home') this.#setSplit(DEFAULT_SPLIT, true);
+    else return;
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
   // Script type size for one slide. A short line plays big; the longer the
   // excerpt, the further the type steps down, so the whole of it still fits
   // the bottom strip and wraps rather than scrolling. Linear between the two
@@ -404,7 +444,9 @@ export class PandemoniumSlideshow extends LitElement {
     const SHORT = 90, LONG = 420, MAX = 42, MIN = 20;
     const t = Math.max(0, Math.min(1, (n - SHORT) / (LONG - SHORT)));
     const px = MAX - (MAX - MIN) * t;
-    return `clamp(${MIN}px, ${(px * 0.55).toFixed(1)}px + ${((px * 0.45) / 14.4).toFixed(2)}vw, ${px.toFixed(1)}px)`;
+    const fit = `clamp(${MIN}px, ${(px * 0.55).toFixed(1)}px + ${((px * 0.45) / 14.4).toFixed(2)}vw, ${px.toFixed(1)}px)`;
+    // Then with the room the writer has given the strip (see split.js).
+    return `calc(${fit} * var(--txt-scale, 1))`;
   }
 
   render() {
@@ -431,9 +473,21 @@ export class PandemoniumSlideshow extends LitElement {
           ? (isVideoSrc(s.img)
             ? html`<video src=${s.img} autoplay muted loop playsinline></video>`
             : html`<img alt="" src=${s.img}>`)
-          : html`<div class="noimg">${s.note ? html`<span class="shotnote">${s.note}</span>` : ''}<span class="noimg-hint">${s.boardId ? `Drop ${this._sbMode === 'reference' ? 'a reference' : 'the final'} image here` : 'No board yet'}</span></div>`}
+          : s.unlinked
+            ? html`<div class="unlinked"><span class="unl-tag">Unlinked</span><span class="unl-hint">No storyboard is linked to this part of the script.</span></div>`
+            : html`<div class="noimg">${s.note ? html`<span class="shotnote">${s.note}</span>` : ''}<span class="noimg-hint">Drop ${this._sbMode === 'reference' ? 'a reference' : 'the final'} image here</span></div>`}
       </div>
-      <div class="bottom">
+      <div class="split" role="separator" aria-orientation="horizontal" tabindex="0"
+        aria-label="Resize the picture and the script. Up and Down arrows move it, Home resets it."
+        aria-valuemin=${Math.round(MIN_PCT)} aria-valuemax=${Math.round(MAX_PCT)} aria-valuenow=${Math.round(this._split * 100)}
+        title="Drag to resize. Double-click to reset."
+        @pointerdown=${(e) => this.#onSplitDown(e)}
+        @pointermove=${(e) => this.#onSplitMove(e)}
+        @pointerup=${(e) => this.#onSplitUp(e)}
+        @pointercancel=${(e) => this.#onSplitUp(e)}
+        @dblclick=${() => this.#setSplit(DEFAULT_SPLIT, true)}
+        @keydown=${(e) => this.#onSplitKey(e)}></div>
+      <div class="bottom" style="height:${(this._split * 100).toFixed(2)}%;--txt-scale:${textScale(this._split).toFixed(3)}">
         <div class="prog"><i style="width:${((this._ix + 1) / this._slides.length) * 100}%"></i></div>
         <div class="txt">
           <div class="left">

@@ -18,6 +18,11 @@ export class PdButton extends LitElement {
     // A square, label-less button for a single icon/glyph (e.g. an inline
     // SVG slotted in), rather than the padded pill a text label needs.
     icon: { type: Boolean, reflect: true },
+    // 'lg' is for the one action a whole screen is about (Get Started, Sign in
+    // on the sign-in page); everything inside the app stays the default size.
+    size: { type: String, reflect: true },
+    // Fill the width of its container: a form's submit.
+    block: { type: Boolean, reflect: true },
   };
 
   static styles = css`
@@ -74,6 +79,10 @@ export class PdButton extends LitElement {
        left the glyph small enough to need squinting at). */
     :host([icon]) button{width:28px;height:28px;padding:5px;gap:0}
     :host([icon]) ::slotted(svg){width:18px;height:18px;fill:currentColor}
+
+    :host([size=lg]) button{height:40px;padding:0 24px;font-size:14px;line-height:14px}
+    :host([block]){display:flex;width:100%}
+    :host([block]) button{width:100%}
   `;
 
   constructor() {
@@ -81,6 +90,8 @@ export class PdButton extends LitElement {
     this.variant = 'default';
     this.disabled = false;
     this.icon = false;
+    this.size = 'default';
+    this.block = false;
   }
 
   render() {

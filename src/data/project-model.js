@@ -550,13 +550,25 @@ export function setLayout(project, layout) {
 
 // ---- project meta ----
 
-export function updateProjectMeta(project, { name, type, workspace, targetMins }) {
+export function updateProjectMeta(project, { name, type, workspace, description, targetMins }) {
   const next = { ...project };
   if (name != null) next.name = name.trim() || project.name;
   if (type != null) next.type = type.trim();
   if (workspace != null) next.workspace = workspace.trim();
+  // Only the ends are trimmed: the writer's own line breaks are the point.
+  if (description != null) next.description = description.trim();
   if (targetMins != null) next.targetMins = parseInt(targetMins, 10) || 0;
   return next;
+}
+
+// Whether a project holds anything a person would miss: written script, a
+// board, a reference, a link or a comment. One that was opened and never
+// touched is not worth offering back (see the start screen's note about the
+// project left in this browser from before accounts were required).
+export function hasWork(project) {
+  if (!project) return false;
+  if ((project.scripts || []).some((s) => s && typeof s.text === 'string' && s.text.trim())) return true;
+  return ['boards', 'research', 'links', 'comments'].some((k) => Array.isArray(project[k]) && project[k].length > 0);
 }
 
 export function addContributor(project, name) {

@@ -16,13 +16,18 @@ import { readFileAsDataURL } from '../utils/files.js';
 import { BETA } from '../config/beta.js';
 import { bugReporter } from '../utils/bug-report.js';
 import { withGlobalItems } from '../utils/context-menu.js';
+import { trackVirtualView } from '../utils/analytics.js';
+import { screenFor, isLoginPath } from './gate.js';
 
 import './start-screen.js';
+import '../components/landing/landing.js';
+import '../components/auth/login.js';
 import './topbar.js';
 import './panel-layout.js';
 import '../components/ui/toast.js';
 import '../components/ui/dialog.js';
 import '../components/ui/menu.js';
+import '../components/ui/logo.js';
 import '../components/ui/project-card.js';
 import '../components/linking/selection-toolbar.js';
 import '../components/linking/linkbar.js';
@@ -32,6 +37,14 @@ import '../components/slideshow/slideshow.js';
 import '../components/auth/account-dialog.js';
 import '../components/collab/merge-dialog.js';
 import '../components/collab/share-dialog.js';
+
+// The screens that live outside a project, as analytics views (structure only,
+// nothing of anyone's work). The start screen's path matches the store's own.
+const SCREEN_VIEWS = {
+  landing: { title: 'Landing', path: '/' },
+  login: { title: 'Sign in', path: '/login' },
+  start: { title: 'Start screen', path: '/start' },
+};
 
 // The root shell. Owns the one PandemoniumStore instance for the whole app
 // and hands it down through Lit Context (see state/context.js) rather than
@@ -45,17 +58,35 @@ import '../components/collab/share-dialog.js';
 // are never nested inside another component's shadow root -- see each
 // component's own file for why that matters (cross-shadow floating UI,
 // print root visibility, etc).
+//
+// It also decides which screen the person is on (gate.js): an account is
+// required, so without one they see the landing page and then the sign-in page,
+// and the home screen and any project are for signed-in people only (a shared
+// read-only link is the one exception, since it is public by design).
 export class PandemoniumApp extends LitElement {
+  static properties = {
+    // False until the session has been restored, so a signed-in person is never
+    // shown the landing page for the moment it takes to find out they are.
+    _booted: { state: true },
+    _path: { state: true },
+  };
+
   static styles = [formStyles, chipStyles, css`
     :host{display:block;height:100%}
     .app{height:100%;display:flex;flex-direction:column}
     #toastHost,#dialogHost{position:fixed;inset:0;pointer-events:none;z-index:90}
+    /* Shown while the session is restored. Nothing on it can be wrong. */
+    .boot{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+      background:linear-gradient(180deg,var(--scrim-a) 0%,var(--scrim-b) 100%)}
+    .boot pd-logo{font-size:27.612px;color:var(--res);opacity:.6}
   `];
 
   #debouncedAutosave;
 
   constructor() {
     super();
+    this._booted = false;
+    this._path = location.pathname;
     this.store = new PandemoniumStore();
     this._provider = new ContextProvider(this, { context: storeContext, initialValue: this.store });
     // Not a StoreController: this element hosts the ContextProvider itself,
@@ -125,9 +156,16 @@ export class PandemoniumApp extends LitElement {
       saveMergedRemote(e.detail.project, e.detail.theirUpdatedAt)
         .then(() => syncStatus.markSynced(), (err) => { syncStatus.markFailed(err && err.message); console.warn('Merged save failed:', err); });
     });
-    // Account state (signed in/out) changes what the topbar and start screen
-    // offer; re-render on it as well as on store changes.
-    session.addEventListener('change', () => this.requestUpdate());
+    // Account state (signed in/out) changes which screen shows and what the
+    // topbar offers; re-render on it as well as on store changes. Signing in
+    // from the sign-in page leaves it for the address the person actually wants.
+    session.addEventListener('change', () => {
+      if (session.isAuthed() && isLoginPath(this._path)) this.#navigate('/', { replace: true });
+      this.requestUpdate();
+    });
+    this.addEventListener('pandemonium-navigate', (e) => this.#navigate(e.detail.path));
+    this.addEventListener('pandemonium-sign-out', () => this.#signOut());
+    window.addEventListener('popstate', this.#onPopState);
     // Disables the browser's native menu everywhere and offers the global
     // items (see utils/context-menu.js). Panel leaves handle their own
     // right-click with more specific items first and stopPropagation() before
@@ -166,18 +204,50 @@ export class PandemoniumApp extends LitElement {
   }
 
   // Restore any signed-in session first (trades the refresh cookie for a token),
-  // then load the project the current mode points at: the last cloud project if
-  // signed in, otherwise the local IndexedDB autosave. A share link in the URL
-  // takes over the whole boot instead.
+  // then, only if there is one, load the last cloud project. Without an account
+  // nothing is loaded at all: the browser-local project a signed-out visit used
+  // to restore is not opened any more (it is offered to the account from the
+  // home screen instead, see start-screen.js). A share link in the URL takes
+  // over the whole boot instead. Either way the gate opens when this is done.
   async #boot() {
-    if (await this.#bootSharedView()) return;
-    await session.restore().catch(() => {});
     try {
-      const project = await loadAutosavedProject();
-      if (project && !this.store.project) this.store.loadProject(project);
-    } catch (err) {
-      console.warn('Could not restore a project:', err);
+      if (await this.#bootSharedView()) return;
+      await session.restore().catch(() => {});
+      if (!session.isAuthed()) return;
+      try {
+        const project = await loadAutosavedProject();
+        if (project && !this.store.project) this.store.loadProject(project);
+      } catch (err) {
+        console.warn('Could not restore a project:', err);
+      }
+    } finally {
+      this._booted = true;
     }
+  }
+
+  // The address bar. The app is one page with two public addresses: / (the
+  // landing page) and /login. Everything signed in happens at / as before. This
+  // keeps the browser's Back button meaning what people expect on the way in.
+  #navigate(path, { replace = false } = {}) {
+    if (location.pathname !== path) {
+      if (replace) history.replaceState({}, '', path);
+      else history.pushState({}, '', path);
+    }
+    this._path = path;
+  }
+
+  #onPopState = () => { this._path = location.pathname; };
+
+  // Leaving the account: the open project is saved to it first (while it is still
+  // reachable), then closed, then the session ends and the landing page shows.
+  // The browser-local slot is deliberately not touched, and nothing is written
+  // to it: the project just left must not end up sitting in it.
+  async #signOut() {
+    await this.#flushAutosave();
+    if (this.store.ui && this.store.ui.merge) return; // see #openRemoteProject
+    this.store.closeProject();
+    await session.logout();
+    this.#navigate('/', { replace: true });
   }
 
   // ?share=TOKEN opens a read-only projection of someone's final draft and
@@ -207,12 +277,14 @@ export class PandemoniumApp extends LitElement {
   // letting whatever changed in the last second or two evaporate. This is
   // what lets #newProject and #openRemoteProject act immediately with no
   // "are you sure?" gate -- the answer is always "yes, and it is saved
-  // first." A signed-in save reaches the account; a signed-out one reaches
-  // this browser's local slot (see clearAutosavedProject's own note on why
-  // that slot, specifically, is always safe to clear next).
+  // first." The save reaches the account (a shared read-only view never gets
+  // here with anything to save).
   async #flushAutosave() {
     this.#debouncedAutosave.cancel();
-    if (!this.store.project) return;
+    // A shared read-only view is a visitor's copy of someone else's script: it is
+    // never saved anywhere, or it would land in this browser's local slot and be
+    // offered back later as "a project from before accounts".
+    if (!this.store.project || this._sharedView) return;
     try {
       await autosaveProject(this.store.project);
       syncStatus.markSynced();
@@ -251,6 +323,7 @@ export class PandemoniumApp extends LitElement {
   disconnectedCallback() {
     document.removeEventListener('keydown', this.#onKeydown);
     document.removeEventListener('paste', this.#onPaste);
+    window.removeEventListener('popstate', this.#onPopState);
     super.disconnectedCallback();
   }
 
@@ -348,15 +421,38 @@ export class PandemoniumApp extends LitElement {
     });
   }
 
+  #screen() {
+    return screenFor({
+      booted: this._booted,
+      hasProject: !!this.store.project,
+      sharedView: !!this._sharedView,
+      authed: session.isAuthed(),
+      path: this._path,
+    });
+  }
+
+  // The panels are tracked by the store (a project's own views); the screens
+  // outside a project are tracked here, once each time the screen changes.
+  updated() {
+    const screen = this.#screen();
+    if (screen === this._lastScreen) return;
+    this._lastScreen = screen;
+    const view = SCREEN_VIEWS[screen];
+    if (view) trackVirtualView(view.title, { page_path: view.path });
+  }
+
   render() {
-    const project = this.store.project;
+    const screen = this.#screen();
     return html`
-      ${!project ? html`<pandemonium-start-screen></pandemonium-start-screen>` : html`
+      ${screen === 'app' ? html`
         <div class="app">
           <pandemonium-topbar></pandemonium-topbar>
           <pandemonium-panel-layout></pandemonium-panel-layout>
         </div>
-      `}
+      ` : screen === 'start' ? html`<pandemonium-start-screen></pandemonium-start-screen>`
+        : screen === 'landing' ? html`<pandemonium-landing></pandemonium-landing>`
+        : screen === 'login' ? html`<pandemonium-login></pandemonium-login>`
+        : html`<div class="boot"><pd-logo></pd-logo></div>`}
       <pd-toast id="toast"></pd-toast>
       <pd-dialog id="dialog" data-clarity-mask="true"></pd-dialog>
       <pd-menu id="menu"></pd-menu>

@@ -11,7 +11,7 @@ import { readFileAsText, downloadBlob } from '../utils/files.js';
 import { slug } from '../utils/format.js';
 import { printScript, printBoards } from '../components/print/print.js';
 import { getParsed } from '../fountain/cache.js';
-import { formStyles, chipStyles } from '../styles/shared.js';
+import { formStyles, chipStyles, avatarStyles } from '../styles/shared.js';
 import '../components/ui/logo.js';
 import '../components/ui/button.js';
 import '../components/ui/settings-dialog.js';
@@ -28,7 +28,7 @@ import '../components/search/search-field.js';
 export class PandemoniumTopbar extends LitElement {
   static properties = {};
 
-  static styles = [formStyles, chipStyles, css`
+  static styles = [formStyles, chipStyles, avatarStyles, css`
     /* Grid rather than flex so the search field centers on the page, where the
        frame puts it, instead of centering in whatever space the brand and the
        actions happen to leave. */
@@ -61,18 +61,6 @@ export class PandemoniumTopbar extends LitElement {
        still on its way to storage, green once it has landed, red when the last
        write was refused. Always visible, because a dot that only appears when
        something is wrong cannot tell you that things are right. */
-    /* Signed in, the account is a round badge of the person's initials rather
-       than a button with their name on it: it says who is here at a glance and
-       takes no room. The same lift as the File button beside it. */
-    #avatar{
-      width:28px;height:28px;flex:none;padding:0;border:0;border-radius:50%;cursor:pointer;
-      display:flex;align-items:center;justify-content:center;
-      font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.02em;
-      color:var(--overlay-ink);background:var(--overlay);box-shadow:0 1px 1.25px rgba(0,0,0,.25);
-      transition:background var(--dur-1) var(--ease-out);
-    }
-    #avatar:hover{background:var(--ui)}
-    #avatar:active{box-shadow:inset 0 1px 4.2px 0 #000}
     #saveDot{width:7px;height:7px;border-radius:50%;flex:none;margin-right:2px;transition:background .18s}
     #saveDot.pending{background:var(--act)}
     #saveDot.synced{background:var(--ok)}
@@ -284,7 +272,7 @@ export class PandemoniumTopbar extends LitElement {
         <span id="saveDot" class=${syncStatus.state} title=${this.#syncTitle()}></span>
         <pd-button @click=${(e) => this.#openFileMenu(e)} title="New, open, save, share and export">File</pd-button>
         ${session.isAuthed()
-          ? html`<button id="avatar" data-clarity-mask="true" @click=${() => this.#openAccount()}
+          ? html`<button class="avatar" data-clarity-mask="true" @click=${() => this.#openAccount()}
               title=${this.#accountLabel() + ' - your account and cloud projects'} aria-label="Your account">${initialsOf(session.getUser())}</button>`
           : html`<pd-button variant="pink" @click=${() => this.#openAccount()} title="Sign in to sync your projects">Sign in</pd-button>`}
       </div>

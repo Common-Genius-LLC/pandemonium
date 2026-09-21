@@ -9,7 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   addBoard, addBlankBoard, placeFrame, replaceBoardImage, swapBoardFrames, setBoardNote,
-  frameImg, otherMode, migrateBoards, reattachBoard, deleteBoard,
+  frameImg, otherMode, migrateBoards, reattachBoard, deleteBoard, updateProjectMeta, hasWork,
 } from './project-model.js';
 
 const parts = [{ q: 'INT. HOUSE - DAY', b: 0, s: 0 }];
@@ -199,5 +199,34 @@ describe('migrateBoards', () => {
   it('treats a board from before the reference feature (no ref key at all) as a final board', () => {
     const p = migrateBoards({ boards: [{ id: 'old', anchor: { parts }, img: 'F', caption: '', seq: 0 }] });
     expect(p.boards[0]).toMatchObject({ id: 'old', img: 'F', refImg: null });
+  });
+});
+
+describe('updateProjectMeta', () => {
+  it('sets the description, keeping the writer\'s own line breaks and trimming only the ends', () => {
+    const p = updateProjectMeta({ name: 'A', description: '' }, { description: '  A quiet film.\n\nSecond paragraph.  ' });
+    expect(p.description).toBe('A quiet film.\n\nSecond paragraph.');
+  });
+  it('leaves the description alone when the patch does not mention it', () => {
+    const p = updateProjectMeta({ name: 'A', description: 'Keep me.' }, { name: 'B' });
+    expect(p.description).toBe('Keep me.');
+    expect(p.name).toBe('B');
+  });
+  it('lets the description be cleared', () => {
+    expect(updateProjectMeta({ name: 'A', description: 'x' }, { description: '' }).description).toBe('');
+  });
+});
+
+describe('hasWork', () => {
+  it('is false for nothing, and for a project that was never written in', () => {
+    expect(hasWork(null)).toBe(false);
+    expect(hasWork({ scripts: [{ text: '' }, { text: '  \n' }], boards: [], research: [], links: [], comments: [] })).toBe(false);
+  });
+  it('is true for script text, or any board, reference, link or comment', () => {
+    expect(hasWork({ scripts: [{ text: 'INT. ROOM - DAY' }] })).toBe(true);
+    expect(hasWork({ scripts: [], boards: [{ id: 'b' }] })).toBe(true);
+    expect(hasWork({ scripts: [], research: [{ id: 'r' }] })).toBe(true);
+    expect(hasWork({ scripts: [], links: [{ id: 'l' }] })).toBe(true);
+    expect(hasWork({ scripts: [], comments: [{ id: 'c' }] })).toBe(true);
   });
 });

@@ -165,10 +165,15 @@ export class PdAccountDialog extends LitElement {
     }
   }
 
-  async #signOut() {
-    await session.logout();
+  // The shell does the leaving (pandemonium-app.js): it saves the open project
+  // to the account first, closes it, ends the session and shows the landing
+  // page. An account is required, so signing out never leaves the person in the
+  // app.
+  #signOut() {
     this._projects = null;
     this._tab = 'signin';
+    this.close();
+    dispatch(this, 'pandemonium-sign-out', {});
   }
 
   #fmtWhen(iso) {

@@ -27,7 +27,7 @@ export class PandemoniumStore extends EventTarget {
 
   loadProject(rawProject) {
     const project = Object.assign(
-      { name: 'Untitled', workspace: '', type: '', targetMins: 0, contributors: [], scripts: [], boards: [], research: [], folders: [], links: [], comments: [], layout: null },
+      { name: 'Untitled', workspace: '', type: '', description: '', targetMins: 0, contributors: [], scripts: [], boards: [], research: [], folders: [], links: [], comments: [], layout: null },
       rawProject,
     );
     // Projects saved before a storyboard held both its frames are one board

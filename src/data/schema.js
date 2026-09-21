@@ -11,6 +11,10 @@ export function emptyProject(overrides) {
     name: 'Untitled',
     workspace: '',
     type: '',
+    // A few sentences about the film, written on the back of the project's
+    // clapperboard. Optional everywhere: files written before it existed have
+    // no key and read as empty.
+    description: '',
     targetMins: 0,
     contributors: [],
     scripts: [],

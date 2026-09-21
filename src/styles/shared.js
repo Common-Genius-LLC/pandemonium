@@ -122,3 +122,19 @@ export const chipStyles = css`
   .chip .x{cursor:pointer;opacity:.55;font-family:var(--sans)}
   .chip .x:hover{opacity:1}
 `;
+
+// The signed-in account as a round badge of the person's initials
+// (utils/initials.js): it says who is here at a glance and takes no room.
+// Shared because the title bar and the home screen both wear it, and shadow
+// DOM does not carry ordinary rules across. The same lift as the File button.
+export const avatarStyles = css`
+  .avatar{
+    width:28px;height:28px;flex:none;padding:0;border:0;border-radius:50%;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.02em;
+    color:var(--overlay-ink);background:var(--overlay);box-shadow:0 1px 1.25px rgba(0,0,0,.25);
+    transition:background var(--dur-1) var(--ease-out);
+  }
+  .avatar:hover{background:var(--ui)}
+  .avatar:active{box-shadow:inset 0 1px 4.2px 0 #000}
+`;

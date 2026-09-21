@@ -20,7 +20,7 @@
 //   - anchors are deliberately not merged at all. resolve.js re-searches
 //     quoted text rather than trusting offsets, so a link finds its passage
 //     again after a merged edit for the same reason it survives a local one
-//   - project meta (name, workspace, type, target, layout, contributors)
+//   - project meta (name, workspace, type, description, target, layout, contributors)
 //     merges field-wise and never conflicts: when both sides changed the same
 //     field, mine wins. A modal conflict over a project name is
 //     disproportionate to a field the settings card can change back in one
@@ -33,7 +33,7 @@
 'use strict';
 
 const RECORD_COLLECTIONS = ['boards', 'research', 'folders', 'links', 'comments'];
-const META_FIELDS = ['name', 'workspace', 'type', 'targetMins', 'layout', 'contributors'];
+const META_FIELDS = ['name', 'workspace', 'type', 'description', 'targetMins', 'layout', 'contributors'];
 
 function jsonEqual(a, b) {
   if (a === b) return true;

@@ -58,15 +58,39 @@ export function loadAutosavedProject() {
 }
 
 // Deselects the open project. In remote mode this only forgets which project is
-// open (it never deletes server data); the local IndexedDB slot is always safe
-// to clear.
+// open (it never deletes server data). It does NOT touch the browser-local slot:
+// an account is required now, so that slot only ever holds a project written
+// before that, still waiting for its owner to add it to their account (see
+// peekLocalProject / adoptLocalProject), and going back to the home screen must
+// not be what deletes it.
 export function clearAutosavedProject() {
   if (session.getMode() === 'remote') {
     session.setCurrentRemoteId(null);
     session.setBase(null);
     session.setBaseSnapshot(null);
+    return Promise.resolve();
   }
   return clearCurrentProjectLocally();
+}
+
+// A project left in this browser's local slot from before an account was
+// required. Looked at, never consumed: nothing is deleted until a copy is safely
+// in the account.
+export function peekLocalProject() {
+  return loadCurrentProjectLocally();
+}
+
+// Moves that project into the signed-in account and only then empties the local
+// slot, so a failed upload leaves it exactly where it was. The open-project
+// bookkeeping is cleared first because saveProjectRemote updates whatever
+// project is remembered as open, and this must create a new one, never write
+// over a cloud project the person had open last time.
+export async function adoptLocalProject(project) {
+  session.setCurrentRemoteId(null);
+  session.setBase(null);
+  session.setBaseSnapshot(null);
+  await saveProjectRemote(project);
+  await clearCurrentProjectLocally();
 }
 
 // Loading a project the user picked from their cloud list. Kept here (rather

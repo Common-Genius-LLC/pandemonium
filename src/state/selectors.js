@@ -9,7 +9,7 @@
 'use strict';
 
 import { resolvePart } from '../fountain/resolve.js';
-import { sceneIndexOf } from '../fountain/blocks.js';
+import { sceneIndexOf, CONTENT_TYPES } from '../fountain/blocks.js';
 import { clamp, fmtT } from '../utils/format.js';
 import { frameImg } from '../data/project-model.js';
 
@@ -155,6 +155,153 @@ export function boardOrder(a, b) {
 // each one.
 export function linkedBoards(resolvedBoards) {
   return resolvedBoards.filter((o) => o.ok).sort(boardOrder);
+}
+
+// ---- the preview deck ----
+
+// The plain-text lines of one scene, for a slide that has no passage of its own
+// to show: the scene's content blocks, capped so a long scene is a digest and
+// not a wall (the cap stops it at the first block that takes it past ~340
+// characters). Each line carries bi/s/e, its span inside its block's plain
+// text, which is how an edit made in the show is spliced back into the script.
+export function sceneExcerpt(blocks, sc) {
+  const parts = [];
+  let n = 0;
+  for (let bi = Math.max(0, sc.start); bi <= sc.end && bi < blocks.length; bi++) {
+    const b = blocks[bi];
+    if (CONTENT_TYPES[b.type] && b.plain) {
+      parts.push({ type: b.type, text: b.plain, bi, s: 0, e: b.plain.length });
+      n += b.plain.length;
+      if (n > 340) break;
+    }
+  }
+  return parts;
+}
+
+// One slide of unlinked script never grows past about this many characters:
+// a stretch longer than that is dealt across several slides, in order, at
+// block boundaries. Nothing is dropped to make it fit, so a long unlinked
+// scene between two boards is read in full, a slide at a time.
+export const UNLINKED_SLIDE_CHARS = 600;
+
+function chunkLines(lines, max) {
+  const chunks = [];
+  let cur = [];
+  let n = 0;
+  for (const l of lines) {
+    if (cur.length && n + l.text.length > max) { chunks.push(cur); cur = []; n = 0; }
+    cur.push(l);
+    n += l.text.length;
+  }
+  if (cur.length) chunks.push(cur);
+  return chunks;
+}
+
+const byPos = (a, b) => (a.bi - b.bi) || (a.s - b.s);
+
+// What an unlinked stretch is made of: the same lines a digest is (dialogue,
+// action and the rest of CONTENT_TYPES), plus scene headings, because a slide of
+// script with no picture reads oddly without saying where it is.
+const GAP_TYPES = { ...CONTENT_TYPES, scene: 1 };
+
+// The passages storyboards are linked to, as one sorted list of non-overlapping
+// {bi, s, e} spans in document order. Two boards on one passage, or on
+// overlapping words, are one stretch of linked script here.
+function linkedSpans(resolvedBoards) {
+  const spans = [];
+  for (const it of resolvedBoards) {
+    if (!it.ok) continue;
+    for (const r of it.res || []) if (r && r.e > r.s) spans.push({ bi: r.bi, s: r.s, e: r.e });
+  }
+  spans.sort(byPos);
+  const merged = [];
+  for (const sp of spans) {
+    const last = merged[merged.length - 1];
+    if (last && last.bi === sp.bi && sp.s <= last.e) last.e = Math.max(last.e, sp.e);
+    else merged.push({ ...sp });
+  }
+  return merged;
+}
+
+// The script that sits BETWEEN two linked passages and belongs to neither: from
+// where one linked span ends to where the next begins, across as many blocks as
+// that takes, cut at the words (a paragraph can be linked at both ends with
+// unlinked words in the middle). Returns one entry per stretch, each with the
+// position it ends at (so the deck can place it) and its lines. Fragments with
+// no letter or digit in them (the comma between two linked words) are not
+// script worth a slide and are skipped.
+function unlinkedGaps(blocks, cover) {
+  const piece = (bi, s, e) => {
+    const b = blocks[bi];
+    if (!b || !GAP_TYPES[b.type] || !b.plain) return null;
+    const raw = b.plain.slice(s, e);
+    const text = raw.trim();
+    if (!/[\p{L}\p{N}]/u.test(text)) return null;
+    const lead = raw.length - raw.trimStart().length;
+    return { type: b.type, text, bi, s: s + lead, e: s + lead + text.length };
+  };
+  const gaps = [];
+  for (let k = 0; k + 1 < cover.length; k++) {
+    const a = cover[k], b = cover[k + 1];
+    const lines = [];
+    const add = (p) => { if (p) lines.push(p); };
+    if (a.bi === b.bi) {
+      add(piece(a.bi, a.e, b.s));
+    } else {
+      add(piece(a.bi, a.e, blocks[a.bi] ? blocks[a.bi].plain.length : 0));
+      for (let bi = a.bi + 1; bi < b.bi; bi++) add(piece(bi, 0, blocks[bi] ? blocks[bi].plain.length : 0));
+      add(piece(b.bi, 0, b.s));
+    }
+    if (lines.length) gaps.push({ end: { bi: b.bi, s: b.s }, lines });
+  }
+  return gaps;
+}
+
+// The preview deck, in playing order, as data: one `board` entry per linked
+// storyboard and one `unlinked` entry per stretch of script no storyboard
+// covers. The show turns these into slides; keeping the plan here keeps it
+// pure and testable.
+//
+// Unlinked script is played, not skipped, wherever it lies BETWEEN two linked
+// passages: the rest of a scene after its last board, whole scenes with none,
+// and the top of the next scene before its first (see unlinkedGaps). Script
+// before the first link and after the last is whole scenes only, each a digest
+// (sceneExcerpt), folded into one continuous slide: a scene that carries the
+// first or last link contributes only what it links. With no link anywhere the
+// whole script is that one slide.
+export function slidePlan(blocks, scenes, resolvedBoards) {
+  const boards = linkedBoards(resolvedBoards);
+  const cover = linkedSpans(boards);
+
+  const edge = (keep) => {
+    const lines = [];
+    for (const sc of scenes) {
+      if (!keep(sc) || sc.end < sc.start) continue;
+      const ex = sceneExcerpt(blocks, sc);
+      lines.push(...(ex.length ? ex : [{ type: 'scene', text: sc.name }]));
+    }
+    return lines.length ? [{ type: 'unlinked', lines }] : [];
+  };
+
+  if (!cover.length) return edge(() => true);
+
+  const gaps = unlinkedGaps(blocks, cover)
+    .flatMap((g) => chunkLines(g.lines, UNLINKED_SLIDE_CHARS).map((lines) => ({ end: g.end, lines })));
+
+  const firstBi = cover[0].bi;
+  const lastBi = cover[cover.length - 1].bi;
+  const plan = [...edge((sc) => sc.end < firstBi)];
+  let g = 0;
+  for (const o of boards) {
+    const pos = o.res.filter(Boolean).reduce((m, r) => (m && byPos(m, r) <= 0 ? m : r), null);
+    while (g < gaps.length && pos && byPos(gaps[g].end, pos) <= 0) {
+      plan.push({ type: 'unlinked', lines: gaps[g++].lines });
+    }
+    plan.push({ type: 'board', o });
+  }
+  while (g < gaps.length) plan.push({ type: 'unlinked', lines: gaps[g++].lines });
+  plan.push(...edge((sc) => sc.start > lastBi));
+  return plan;
 }
 
 export function labelScenes(scenes) {

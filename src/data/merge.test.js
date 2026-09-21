@@ -230,4 +230,12 @@ describe('mergeProjects: scripts and commit', () => {
     expect(r.project.targetMins).toBe(20);     // only theirs changed: theirs
     expect(r.hunks).toHaveLength(0);
   });
+
+  it('merges the description like any other meta field', () => {
+    const base = project({ description: 'Base.' });
+    const theirs = { ...base, description: 'Theirs.' };
+    expect(mergeProjects(base, base, theirs).project.description).toBe('Theirs.');
+    const mine = { ...base, description: 'Mine.' };
+    expect(mergeProjects(base, mine, theirs).project.description).toBe('Mine.');
+  });
 });
