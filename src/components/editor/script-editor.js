@@ -709,7 +709,10 @@ export class PandemoniumScriptEditor extends LitElement {
       if (!sel.empty) {
         const parsed = this.#view.plugin(this.#plugin).parsed;
         const parts = captureFromSelection(parsed, this.#view.state.doc, sel.from, sel.to);
-        if (parts) { this.#completePendingRelink(parts); return; }
+        // The draft has to be passed: a relink only completes in the draft it
+        // belongs to (see #completePendingRelink), and without it that check
+        // fails and this silently did nothing.
+        if (parts) { this.#completePendingRelink(parts, script); return; }
       }
     }
 
