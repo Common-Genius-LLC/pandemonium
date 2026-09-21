@@ -101,6 +101,12 @@
   --dur-3:320ms;
   --ease-out:cubic-bezier(.2,.8,.2,1);
   --ease-in-out:cubic-bezier(.45,0,.2,1);
+  /* Elevation, copied from Material Design's shadow ramp as published: three
+     stacked layers per level (key light, penumbra, ambient) whose negative
+     spread and small offsets are what make it read as one soft shadow instead
+     of a grey smudge. 8dp is Material's "raised card" (a card under the
+     pointer). Add other levels from the same table, do not tune these. */
+  --elev-8:0px 5px 5px -3px rgba(0,0,0,.2),0px 8px 10px 1px rgba(0,0,0,.14),0px 3px 14px 2px rgba(0,0,0,.12);
   --sans:'Untitled Sans','Neue Haas Grotesk Text','Helvetica Neue',Helvetica,Arial,sans-serif;
   --mono:'Courier Prime','Courier New',Courier,monospace;
   --script:'Courier Prime Sans','Courier Prime','Courier New',monospace; /* screenplay editor */

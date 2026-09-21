@@ -92,7 +92,9 @@ export class PandemoniumStartScreen extends LitElement {
 
     .recents{margin-top:52px;flex:none;width:min(760px,92vw);display:flex;flex-direction:column;align-items:center;gap:16px}
     .recents-h{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);opacity:.7}
-    .recents-row{display:flex;flex-wrap:wrap;justify-content:center;gap:22px 26px}
+    /* The gaps are sized for a hovered tile: its 8dp shadow reaches about 14px
+       to the sides and 16px below at this scale, so neighbours stay clear of it. */
+    .recents-row{display:flex;flex-wrap:wrap;justify-content:center;gap:32px 38px}
     .recents-msg{font-size:12px;color:var(--ink);opacity:.6;text-align:center}
 
     .foot{

@@ -22,7 +22,8 @@ import './button.js';
 // the front and, once it has come over, on the right of the back, while the
 // writing stays the right way round. A recents tile (`compact`) is the same
 // board with only the project and workspace names written on it, centred, and
-// it does not turn: the whole board opens the project.
+// it does not turn: the whole board opens the project. It opens its clapper a
+// little and lifts on a Material shadow while the pointer is on it.
 //
 // `scale` scales the whole assembly. The scaled box is given its own wrapper
 // sized to the scaled dimensions, rather than a transform plus a compensating
@@ -184,10 +185,32 @@ export class PdProjectCard extends LitElement {
     .mirror{position:absolute;left:0;top:0;width:228.692px;height:266px;transform:scaleX(-1)}
     .card.on-back{left:0}
 
-    /* A recents tile: the same board, name and workspace written on it. A lift
-       on hover says it opens. */
-    .wrap.compact{transition:transform var(--dur-2) var(--ease-out)}
-    .wrap.compact:hover{transform:translateY(-3px)}
+    /* A recents tile: the same board, name and workspace written on it. Under the
+       pointer (or keyboard focus) it says it opens: the board rises 3px, the
+       clapper lifts a little, and Material's 8dp shadow fades in beneath it.
+       --sh is the one dial for the shadow, so the body and the arm take it
+       together. It is a box-shadow on real boxes, not a filter, because
+       Material's shadow depends on negative spread, which drop-shadow() has
+       none of. The body's shadow starts at the bottom stripe, not at the
+       resting arm, so nothing casts a shadow over the gap the arm opens into.
+       The arm opens 8deg, about half of the create card's resting angle, so
+       its raised end stays inside the tile's own empty top and reaches nothing
+       around it. */
+    .wrap.compact{--sh:none;transition:transform var(--dur-2) var(--ease-out)}
+    .wrap.compact:hover,.wrap.compact:has(.open:focus-visible){--sh:var(--elev-8);transform:translateY(-3px)}
+    .sh-body{
+      position:absolute;left:2.298px;top:84.04px;bottom:0;width:226.394px;
+      border-radius:0 0 18.015px 18.015px;pointer-events:none;
+      box-shadow:var(--sh);transition:box-shadow var(--dur-2) var(--ease-out);
+    }
+    :host([closed]) .wrap.compact .top-clip .rot{
+      box-shadow:var(--sh);
+      transition:transform var(--dur-2) var(--ease-out),box-shadow var(--dur-2) var(--ease-out);
+    }
+    :host([closed]) .wrap.compact:hover .top-clip .rot,
+    :host([closed]) .wrap.compact:has(.open:focus-visible) .top-clip .rot{
+      transform:translate(3.857px,29.297px) rotate(-8deg);
+    }
     .open{
       position:absolute;inset:0;z-index:2;padding:0;margin:0;border:0;background:none;
       cursor:pointer;border-radius:0 0 18.015px 18.015px;font:inherit;color:inherit;
@@ -414,6 +437,7 @@ export class PdProjectCard extends LitElement {
   // fixed bar and the hinge. Everything below it is the slate.
   #art() {
     return html`
+      ${this.compact ? html`<div class="sh-body"></div>` : nothing}
       <div class="bar-back"></div>
       <div class="top-clip">
         <div class="rot">
