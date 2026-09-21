@@ -239,14 +239,18 @@ export class PandemoniumApp extends LitElement {
   #onPopState = () => { this._path = location.pathname; };
 
   // Leaving the account: the open project is saved to it first (while it is still
-  // reachable), then closed, then the session ends and the landing page shows.
-  // The browser-local slot is deliberately not touched, and nothing is written
-  // to it: the project just left must not end up sitting in it.
+  // reachable), then the session ends and the landing page shows, then the
+  // project is closed. In that order so the person goes straight from their work
+  // to the landing page: closing first would show the home screen for as long as
+  // the sign-out request takes, and the gate never shows a project to someone
+  // who is not signed in (see gate.js), so it is hidden the moment the session
+  // ends. The browser-local slot is deliberately not touched, and nothing is
+  // written to it: the project just left must not end up sitting in it.
   async #signOut() {
     await this.#flushAutosave();
     if (this.store.ui && this.store.ui.merge) return; // see #openRemoteProject
-    this.store.closeProject();
     await session.logout();
+    this.store.closeProject();
     this.#navigate('/', { replace: true });
   }
 

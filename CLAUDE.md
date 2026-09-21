@@ -121,17 +121,20 @@ as of the migration:
   `cache.js`), lifted from the original single file. `resolve.js` documents the
   anchor-resolution scheme (quote-search, not fixed offsets) that lets edits
   elsewhere in the document not sever existing board/reference links.
-- Storage backend: local by default. A project is a `.pandemonium.json` file the
-  user explicitly saves (download) and opens (file picker); images and other
+- Storage backend: an account is required (item 29), and projects live in it. A
+  project is also a `.pandemonium.json` file the user can explicitly save
+  (download) and open (file picker); images and other
   embedded files are data URLs inside that JSON. All of this goes through
   `src/data/db.js`, a deliberately thin seam so an alternate backend is a second
   adapter module dropped in behind the same functions, without UI code changing.
   An initial remote backend exists under `server/` (Bun + Hono, TypeScript, with
   SQLite in dev and PostgreSQL in prod behind one query layer) implementing Phase
   A document sync, and the client seam is wired to it: `src/data/session.js` holds the account session, `src/data/remote-api-adapter.js`
-  is the third adapter, and `db.js` dispatches autosave/load by mode (local
-  IndexedDB when signed out, the backend when signed in). Sign-in is offered in
-  the topbar and start screen. The full architecture, schema, and deployment plan
+  is the third adapter, and `db.js` dispatches autosave/load by mode (the backend
+  when signed in; the local IndexedDB adapter is now only the path an old
+  browser-local project is read from once, to be added to an account). The app is
+  gated on sign-in: a landing page and a sign-in page for anyone without an
+  account (`src/app-root/gate.js`). The full architecture, schema, and deployment plan
   (Cloudflare Pages plus Oracle Cloud) live in `docs/BACKEND_ARCHITECTURE.md`.
 - PDF export: browser print (`window.print()`) against a dedicated light-DOM
   `#printRoot` element (see `src/components/print/print.js` and the comment
@@ -248,7 +251,8 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
    only for now, reusing the same `listProjectsRemote()` list the account
    dialog's picker already had; local projects are a single browser-resident
    slot with no history to list yet, so the row is absent rather than empty
-   when signed out. **Done.**
+   when signed out. **Done.** Superseded by item 29: an account is required, so
+   the row is always there, and the tile is the whole clapperboard.
 10. New-project default layout changed to storyboards top-left, script editor
     top-right, timeline as a minimum-height strip across the foot
     (`defaultLayout()` in `src/data/layout-tree.js`); research is no longer
@@ -782,6 +786,80 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
     of the text (14px clear), falling back to centred on the page when there is
     no room to its left (a narrow page or a long transition). Every other row is
     unchanged. Verified in a browser at 1500, 1000 and 700px.
+
+
+29. **Accounts are required; landing and sign-in pages; the clapper flips; the
+    preview plays the gaps.**
+    **Login is mandatory.** `screenFor` in `src/app-root/gate.js` (pure, tested
+    in `gate.test.js`) picks the screen: `boot` until the session is restored (so
+    a signed-in person never sees the landing page flash), `app` for an open
+    project, `start` signed in with none, and otherwise `landing` or `login`
+    (address `/login`; `public/_redirects` already falls back to `index.html`).
+    The shell (`pandemonium-app.js`) owns the address bar
+    (`pandemonium-navigate`, `popstate`), so Back means what it should on the way
+    in. `#boot` no longer loads the browser-local project: without a session
+    nothing is opened. A project in memory is never shown to someone who is not
+    signed in, with one exception: a `?share=TOKEN` read-only view stays public
+    (`_sharedView`), and `#flushAutosave` now refuses to save it, or it would land
+    in the local slot and be offered back later. Sign-out (`pandemonium-sign-out`,
+    `#signOut`) saves the open project to the account, ends the session, then
+    closes the project, in that order so there is no flash of the home screen.
+    **Nothing local is lost.** A person who used the app signed out has a project
+    in this browser's slot. `clearAutosavedProject` used to clear it as a side
+    effect of going Home; in remote mode it now only forgets the open cloud
+    project. The start screen offers a project holding real work (`hasWork`) once,
+    "Add to my account" (`adoptLocalProject` in `db.js`: clears the remembered
+    cloud project first so it can only create, uploads, and only then empties the
+    slot, so a failed upload leaves it where it was) or "Not now".
+    **Landing page** (`components/landing/landing.js`), ordered by importance: the
+    four things the product is (script, storyboards, references, timeline) each
+    get a section with the detail and a drawing made of the app's own tokens and
+    carrying no figures; a band on linking (green, pink, amber); then a grid of
+    the smaller features. Every "Get Started" goes to the sign-in page. It says
+    nothing the app does not do, and its drawings show no numbers, so nothing on
+    it can misstate what the timeline computes (hard rule 3). **Sign-in page**
+    (`components/auth/login.js`): the screen split 50/50, the form on the left
+    (Sign in and Create account are one form with a switch), and the right half
+    reserved for a picture: put an image at `src/assets/login-image.(jpg, jpeg,
+    png, webp or avif)` and it fills that half (a build-time glob, no code
+    change); until then it is a plain surface. The form is masked for Clarity.
+    `pd-button` gained `size="lg"` and `block`.
+    **Home screen.** "Open from cloud" and "Sign in" are gone. The account is the
+    initials badge at the top right (`avatarStyles` in `styles/shared.js`, shared
+    with the title bar), which opens the account dialog (projects, delete, sign
+    out). Recent projects are the whole clapperboard (`compact` mode of
+    `pd-project-card`), blank but for the project name (large, centred) and its
+    workspace (smaller, centred), sized to read at thumbnail scale, with no flip.
+    **The clapper flips.** `pd-project-card` has a flip button on its right (the
+    Material "rotate" glyph) that turns the board over in 3D about its vertical
+    axis. The back is the board seen from behind: the art is mirrored (`.mirror`)
+    so the hinge, the clapper's origin, is on the right, while the slate stays
+    the right way round. It holds a description (`project.description`, in
+    `emptyProject`, the store defaults, `updateProjectMeta`, and the merge's
+    `META_FIELDS`), edited when creating a project and in project settings; more
+    details belong as further rows on the back face. No server change was needed:
+    the project is stored whole, so the field travels with it.
+    **Preview.** Script that sits BETWEEN two linked passages now plays, as an
+    "Unlinked" frame (its own dark fill and label, not the blank-storyboard drop
+    hint) with the text along the bottom. `slidePlan` in `selectors.js` (pure,
+    tested in `slide-plan.test.js`) merges every linked span, cuts the script
+    between consecutive spans at the words (unlinked words inside one paragraph
+    count), skips fragments with no letter or digit, and deals a long stretch
+    across slides of about 600 characters at block boundaries, dropping nothing.
+    Script before the first link and after the last is still whole scenes folded
+    into one digest slide each, as before. The picture is fitted, not filled
+    (`object-fit: contain` in a box that is the stage, so it scales with it), and
+    a divider between picture and script (`split.js`, tested) is dragged, moved
+    with the arrow keys, reset by double-click or Home, and remembered
+    (`localStorage` `pnd_show_split`); the script type scales with the strip by the
+    square root of its size (text needs room in proportion to the square of its
+    size). Verified in a browser: deck order, image fit while resizing, clamping,
+    keyboard, persistence.
+    **Not done**: the picture for the sign-in page itself; a password reset (the
+    backend has none); anything for a session that expires mid-work (a 401 that
+    cannot refresh still leaves the person in the app, as before); and signing in
+    from a shared read-only view still copies that view into the account
+    (`#pushToCloud`, unchanged).
 
 ---
 
