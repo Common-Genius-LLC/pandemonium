@@ -8,6 +8,7 @@ import { dispatch } from '../../utils/events.js';
 import { formStyles } from '../../styles/shared.js';
 import { fmtAgo } from '../../utils/format.js';
 import '../ui/button.js';
+import '../ui/confirm-bubble.js';
 
 // One instance lives at app-root, opened by dispatching `pandemonium-open-account`.
 // It is both the sign-in surface and, once signed in, the cloud project picker.
@@ -22,6 +23,8 @@ export class PdAccountDialog extends LitElement {
     _busy: { state: true },
     _error: { state: true },
     _projects: { state: true }, // null while loading, [] when empty
+    _confirm: { state: true }, // {id, anchor} while "Delete Project?" is up for a row
+    _deleting: { state: true },
   };
 
   static styles = [formStyles, css`
@@ -51,7 +54,10 @@ export class PdAccountDialog extends LitElement {
       display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:1px 8px;
       padding:8px 10px;border-radius:var(--r);background:var(--panel);cursor:pointer;
     }
-    .proj:hover{background:var(--ph)}
+    .proj:hover,.proj.armed{background:var(--ph)}
+    /* The row whose Delete is being asked about keeps the look the pointer gave
+       it, so the bubble's pointer has something lit to point at. */
+    .proj.armed pd-button::part(button){background:var(--panel);color:var(--ui)}
     .proj pd-button,.proj .role{grid-column:1;grid-row:1 / span 2;align-self:center}
     .proj .name{grid-column:2;font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .proj .sub2{
@@ -74,6 +80,8 @@ export class PdAccountDialog extends LitElement {
     this._busy = false;
     this._error = '';
     this._projects = null;
+    this._confirm = null;
+    this._deleting = false;
     this._store = new StoreController(this);
     this._onSession = () => this.#onSessionChange();
   }
@@ -81,7 +89,12 @@ export class PdAccountDialog extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     session.addEventListener('change', this._onSession);
-    this._onKey = (e) => { if (e.key === 'Escape' && this._open) this.close(); };
+    // Escape backs out one layer: an open question first, then the dialog.
+    this._onKey = (e) => {
+      if (e.key !== 'Escape' || !this._open) return;
+      if (this._confirm) this._confirm = null;
+      else this.close();
+    };
     document.addEventListener('keydown', this._onKey);
   }
 
@@ -104,6 +117,7 @@ export class PdAccountDialog extends LitElement {
 
   close() {
     this._open = false;
+    this._confirm = null;
     this.removeAttribute('data-open');
   }
 
@@ -154,15 +168,41 @@ export class PdAccountDialog extends LitElement {
     this.close();
   }
 
-  async #deleteProject(e, id) {
+  // Delete asks in place: a bubble pointing at the row's own button
+  // (pd-confirm-bubble), not the browser's confirm(). A second press on the same
+  // button puts the question away again.
+  #askDelete(e, id) {
     e.stopPropagation();
-    if (!confirm('Delete this project from your account? This cannot be undone.')) return;
+    this._confirm = this._confirm && this._confirm.id === id ? null : { id, anchor: e.currentTarget };
+  }
+
+  async #deleteProject() {
+    if (!this._confirm || this._deleting) return;
+    const { id } = this._confirm;
+    this._deleting = true;
     try {
       await deleteProjectRemote(id);
-      this._projects = this._projects.filter((p) => p.id !== id);
+      // Signing out while the request was in flight empties the list.
+      if (this._projects) this._projects = this._projects.filter((p) => p.id !== id);
     } catch (err) {
       this._error = 'Could not delete that project.';
+    } finally {
+      this._deleting = false;
+      this._confirm = null;
     }
+  }
+
+  // A press anywhere else only puts the question away; it does not also close
+  // the dialog behind it. Presses on the bubble and on the button that opened it
+  // are left alone (the button's own click toggles).
+  #onOverlayDown(e) {
+    if (this._confirm) {
+      const path = e.composedPath();
+      const own = path.includes(this._confirm.anchor) || path.some((n) => n.localName === 'pd-confirm-bubble');
+      if (!own) this._confirm = null;
+      return;
+    }
+    if (e.target === e.currentTarget) this.close();
   }
 
   // The shell does the leaving (pandemonium-app.js): it saves the open project
@@ -223,9 +263,10 @@ export class PdAccountDialog extends LitElement {
           ? html`<div class="empty">No cloud projects yet. Any project you have open is saved to your account automatically.</div>`
           : html`<div class="list">
               ${this._projects.map((p) => html`
-                <div class="proj" @click=${() => this.#openProject(p.id)} title="Open">
+                <div class="proj ${this._confirm && this._confirm.id === p.id ? 'armed' : ''}"
+                  @click=${() => this.#openProject(p.id)} title="Open">
                   ${!p.role || p.role === 'owner'
-                    ? html`<pd-button variant="ghost" @click=${(e) => this.#deleteProject(e, p.id)}>Delete</pd-button>`
+                    ? html`<pd-button variant="ghost" @click=${(e) => this.#askDelete(e, p.id)}>Delete</pd-button>`
                     : html`<span class="role">shared · ${p.role}</span>`}
                   <span class="name">${p.name || 'Untitled'}</span>
                   <span class="sub2">
@@ -240,10 +281,17 @@ export class PdAccountDialog extends LitElement {
   render() {
     if (!this._open) return html``;
     return html`
-      <div class="ov" @mousedown=${(e) => { if (e.target === e.currentTarget) this.close(); }}>
-        <div class="dlg">
+      <div class="ov" @mousedown=${(e) => this.#onOverlayDown(e)}>
+        <!-- The list scrolls, and the bubble is fixed to the viewport, so a scroll
+             would leave it pointing at nothing: put the question away instead. -->
+        <div class="dlg" @scroll=${() => { this._confirm = null; }}>
           ${session.isAuthed() ? this.#renderAccount() : this.#renderForm()}
         </div>
+        ${this._confirm ? html`
+          <pd-confirm-bubble .anchor=${this._confirm.anchor} question="Delete Project?" confirm-label="Delete"
+            ?busy=${this._deleting}
+            @pd-confirm=${() => this.#deleteProject()}
+            @pd-dismiss=${() => { this._confirm = null; }}></pd-confirm-bubble>` : ''}
       </div>
     `;
   }

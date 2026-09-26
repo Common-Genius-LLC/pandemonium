@@ -861,6 +861,26 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
     from a shared read-only view still copies that view into the account
     (`#pushToCloud`, unchanged).
 
+
+30. **Deleting a project asks in place, not in a system window.** The account
+    dialog's Delete used the browser's `confirm()`, which cannot be styled or
+    anchored and blocks the page. It now opens `pd-confirm-bubble`
+    (`components/ui/confirm-bubble.js`, Figma "Delete Dialogue box" 144-423): a
+    black bubble whose pointer touches the row's own Delete button, "Delete
+    Project?" with Cancel and Delete. The Figma vector is a mask (the way
+    `panel-layout.js` draws the corner handles) so the fill is a token:
+    `--confirm` (black in the light theme, the ordinary overlay in the dark one)
+    and `--confirm-danger`. Placement is pure (`confirm-place.js`, tested):
+    pointer tip under the button's middle, held inside the viewport, flipped
+    above when there is no room below. The armed row keeps its hover look, Cancel
+    takes focus so Enter never deletes, Escape puts the question away before it
+    closes the dialog, a press elsewhere only dismisses the question, and a
+    scroll or resize dismisses it (the bubble is fixed to the viewport). The copy
+    is the design's, which drops the old "This cannot be undone." line. **Not
+    done**: the other `confirm()` calls (drafts, folders, references, link
+    removal, share link revoke) still use the native dialog; the bubble takes a
+    `question` and `confirm-label` so they can move over one at a time.
+
 ---
 
 ## Working context

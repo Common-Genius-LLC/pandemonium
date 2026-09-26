@@ -33,6 +33,14 @@
      directions, so one token cannot serve both. */
   --overlay:#343434;
   --overlay-ink:#ffffff;
+  /* The confirmation bubble (Figma "Delete Dialogue box", 144-423): pure black
+     in the light theme, where the Figma file is, and the ordinary floating
+     chrome in the dark one (a black bubble over a dark page is a hole, not a
+     surface). --confirm-danger is its destructive fill: the design's red at
+     84% over that black, flattened to one value so it does not depend on what
+     the bubble sits on. It keeps its hue in both themes, like --sound. */
+  --confirm:#000000;
+  --confirm-danger:#d60000;
   --board:#c5ef9c;       /* storyboard highlight */
   --board-ink:#7fae53;   /* storyboard figures, readable on the page */
   --board-strong:#78a849;/* saturated storyboard green, white text (link pills) */
@@ -145,6 +153,7 @@
      inverse of the light theme and the reason this is not --ui. */
   --overlay:#3a3d43;
   --overlay-ink:#f2f1ef;
+  --confirm:var(--overlay);
   --board:#5d7a45;
   --board-ink:#8cbb63;
   --res:#d254ad;
