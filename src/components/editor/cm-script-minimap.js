@@ -37,16 +37,18 @@ export function kindsOfDecoration(deco) {
 }
 
 // The tint each kind paints behind its words, as [colour token, alpha].
-const TINT = { board: ['--board', 0.85], boardRef: ['--board-ref', 0.6], ref: ['--res', 0.4], comment: ['--act', 0.6] };
+// The page's own palette (tokens.css --pg-*), the same one the editor paints
+// the words with, so the two read as one document.
+const TINT = { board: ['--pg-board', 0.85], boardRef: ['--pg-board-ref', 0.7], ref: ['--pg-res', 0.55], comment: ['--pg-comment', 0.6] };
 
 const STYLE = {
-  scene: { weight: '700', ink: '--ink' },
-  character: { weight: '700', ink: '--ink' },
-  paren: { weight: '400', ink: '--ui' },
-  transition: { weight: '400', ink: '--ui' },
-  lyric: { weight: '400', ink: '--ui' },
-  synopsis: { weight: '400', ink: '--mut' },
-  section: { weight: '700', ink: '--mut' },
+  scene: { weight: '700', ink: '--pg-ink' },
+  character: { weight: '700', ink: '--pg-ink' },
+  paren: { weight: '400', ink: '--pg-ui' },
+  transition: { weight: '400', ink: '--pg-ui' },
+  lyric: { weight: '400', ink: '--pg-ui' },
+  synopsis: { weight: '400', ink: '--pg-mut' },
+  section: { weight: '700', ink: '--pg-mut' },
 };
 
 export function scriptMinimap({ getHighlights }) {
@@ -162,7 +164,7 @@ export function scriptMinimap({ getHighlights }) {
         });
       }
 
-      const sheet = color('--field');
+      const sheet = color('--pg-paper');
       const edge = color('--ph');
       for (let p = firstPage; p <= lastPage; p++) {
         const top = p * period - offset;
@@ -177,11 +179,14 @@ export function scriptMinimap({ getHighlights }) {
         for (let i = pg.start; i < end; i++) {
           const type = layout.types[i];
           if (type === 'blank' || type === 'page') continue;
-          const text = doc.line(i + 1).text;
+          // The DRAWN text, the same one the page layout counted rows from
+          // (fountain/paginate.js displayLines), so the minimap wraps where
+          // the editor wraps instead of counting concealed markup.
+          const text = (layout.display && layout.display[i] != null) ? layout.display[i] : doc.line(i + 1).text;
           if (!text.trim()) continue;
           const box = elementBox(type, layout.cols, layout.refCols);
           const segs = wrapSegments(text, box.width);
-          const st = STYLE[type] || { weight: '400', ink: '--ink' };
+          const st = STYLE[type] || { weight: '400', ink: '--pg-ink' };
           const lineMarks = marks.get(i) || [];
           segs.forEach(([a, b], r) => {
             const len = b - a;

@@ -34,23 +34,24 @@ import { EditorView } from '@codemirror/view';
 //             reference, then a storyboard (HOVER_PRIORITY). The hover says
 //             "this is what you are on"; a click shows everything attached
 //
-// The text colours are the kind colours mixed toward the ink, so they stay
-// legible on the page in both themes; the hover tints are light washes. Every
-// rule is generated from this one table, so the single, two-kind and three-kind
-// cases cannot drift apart.
+// The colours are the page's own (tokens.css --pg-*), taken as given rather
+// than mixed toward the ink: they were chosen against this paper, so mixing
+// would only pull them off it. The hover tints are washes of the same four.
+// Every rule is generated from this one table, so the single, two-kind and
+// three-kind cases cannot drift apart.
 const KIND_TEXT = {
-  hb: 'color-mix(in srgb, var(--board-strong) 78%, var(--ink))',
-  hbr: 'color-mix(in srgb, var(--board-ref) 82%, var(--ink))',
-  hr: 'color-mix(in srgb, var(--res) 82%, var(--ink))',
-  hc: 'color-mix(in srgb, var(--act) 55%, var(--ink))',
+  hb: 'var(--pg-board)',
+  hbr: 'var(--pg-board-ref)',
+  hr: 'var(--pg-res)',
+  hc: 'var(--pg-comment)',
 };
 // Which kind's tint wins on hover when the same words carry more than one.
 const HOVER_PRIORITY = ['hc', 'hr', 'hb', 'hbr'];
 const KIND_TINT = {
-  hb: 'var(--board)',
-  hbr: 'color-mix(in srgb, var(--board-ref) 50%, transparent)',
-  hr: 'color-mix(in srgb, var(--res) 24%, transparent)',
-  hc: 'color-mix(in srgb, var(--act) 55%, transparent)',
+  hb: 'color-mix(in srgb, var(--pg-board) 22%, transparent)',
+  hbr: 'color-mix(in srgb, var(--pg-board-ref) 26%, transparent)',
+  hr: 'color-mix(in srgb, var(--pg-res) 24%, transparent)',
+  hc: 'color-mix(in srgb, var(--pg-comment) 30%, transparent)',
 };
 
 function linkRules() {
@@ -94,7 +95,7 @@ function linkRules() {
 
 export const fountainTheme = EditorView.theme({
   '&': {
-    color: 'var(--ink)',
+    color: 'var(--pg-ink)',
     // The panel shell (styles/shared.js) owns the pane's fill and its corners;
     // the editor just fills it.
     backgroundColor: 'transparent',
@@ -139,20 +140,22 @@ export const fountainTheme = EditorView.theme({
     margin: '12px auto 38vh auto',
     padding: 'var(--pg-top, 96px) calc(var(--pg-w, 794px) - var(--pg-left, 144px) - var(--pg-cols, 57) * 1ch - 0.3ch) 0 var(--pg-left, 144px)',
     backgroundColor: 'transparent',
-    caretColor: 'var(--ink)',
+    caretColor: 'var(--pg-ink)',
     overflow: 'hidden',
     isolation: 'isolate',
   },
   // A sheet: the typing surface's own fill, set off from the white desk by a
   // hairline in the theme's placeholder grey and the faintest lift.
   '.cm-page-sheet': {
-    backgroundColor: 'var(--field)',
+    backgroundColor: 'var(--pg-paper)',
     boxShadow: '0 0 0 1px var(--ph), 0 2px 6px rgba(0,0,0,.05)',
   },
-  '.cm-page-gap': { position: 'relative' },
+  // Decorative, and not a place to select from: the caret goes to the nearest
+  // line instead (PageGap.ignoreEvent in cm-pages.js).
+  '.cm-page-gap': { position: 'relative', userSelect: 'none', cursor: 'text' },
   // The page number, top right of its page, at the right margin, as printed.
   '.cm-page-num': {
-    position: 'absolute', right: '0', color: 'var(--mut)', fontFamily: 'var(--script)',
+    position: 'absolute', right: '0', color: 'var(--pg-mut)', fontFamily: 'var(--script)',
     fontSize: 'inherit', lineHeight: 'var(--pg-lh, 16px)', pointerEvents: 'none',
   },
   // "Start with a summary of the script", shown only over an empty document.
@@ -160,7 +163,7 @@ export const fountainTheme = EditorView.theme({
   // below), since that is the element the first keystroke actually becomes
   // (see cm-summary-default.js).
   '.cm-placeholder': {
-    color: 'var(--mut)',
+    color: 'var(--pg-mut)',
     fontStyle: 'italic',
     fontWeight: '400',
     fontFamily: 'var(--script)',
@@ -179,10 +182,15 @@ export const fountainTheme = EditorView.theme({
     fontWeight: '400',
     fontStyle: 'normal',
     letterSpacing: 'normal',
-    color: 'var(--ink)',
+    color: 'var(--pg-ink)',
   },
-  '&.cm-focused .cm-cursor': { borderLeftColor: 'var(--ink)' },
-  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'var(--pend) !important' },
+  '&.cm-focused .cm-cursor': { borderLeftColor: 'var(--pg-ink)' },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--pg-ink)' },
+  // A wash of the page's own ink, so a selection stays clearly different from
+  // a passage waiting to be linked, which is --pend (.hp below).
+  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
+    backgroundColor: 'color-mix(in srgb, var(--pg-ink) 22%, transparent) !important',
+  },
 
   // Standard screenplay formatting, applied live (cm-fountain-plugin.js).
   // Character cues and section titles are bold; scene headings / characters /
@@ -203,12 +211,12 @@ export const fountainTheme = EditorView.theme({
   // .cm-line prefix also keeps these off the marks inside a line.
   '.cm-line.cmf-scene': {
     textAlign: 'left', maxWidth: 'none', margin: '0', textTransform: 'uppercase',
-    fontWeight: '700', fontStyle: 'normal', color: 'var(--ink)', letterSpacing: 'normal',
+    fontWeight: '700', fontStyle: 'normal', color: 'var(--pg-ink)', letterSpacing: 'normal',
     fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0',
   },
   '.cm-line.cmf-action': {
     textAlign: 'left', maxWidth: 'none', margin: '0', textTransform: 'none',
-    fontWeight: '400', fontStyle: 'normal', color: 'var(--ink)', letterSpacing: 'normal',
+    fontWeight: '400', fontStyle: 'normal', color: 'var(--pg-ink)', letterSpacing: 'normal',
     fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0',
   },
   // The cue 2.1in in, the parenthetical 1.6in in and 2.2in wide, the speech
@@ -217,17 +225,17 @@ export const fountainTheme = EditorView.theme({
   // as the column, so exactly that many characters fit.
   '.cm-line.cmf-character': {
     textAlign: 'left', maxWidth: 'calc((var(--pg-cols, 57) - var(--pg-i-char, 21)) * 1ch + 0.3ch)', margin: '0', textTransform: 'uppercase',
-    fontWeight: '700', fontStyle: 'normal', color: 'var(--ink)', letterSpacing: 'normal',
+    fontWeight: '700', fontStyle: 'normal', color: 'var(--pg-ink)', letterSpacing: 'normal',
     fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0 0 0 calc(var(--pg-i-char, 21) * 1ch)',
   },
   '.cm-line.cmf-paren': {
     textAlign: 'left', maxWidth: 'calc(var(--pg-w-paren, 22) * 1ch + 0.3ch)', margin: '0', textTransform: 'none',
-    fontWeight: '400', fontStyle: 'normal', color: 'var(--ui)', letterSpacing: 'normal',
+    fontWeight: '400', fontStyle: 'normal', color: 'var(--pg-ui)', letterSpacing: 'normal',
     fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0 0 0 calc(var(--pg-i-paren, 16) * 1ch)',
   },
   '.cm-line.cmf-dialogue': {
     textAlign: 'left', maxWidth: 'calc(var(--pg-w-dlg, 34) * 1ch + 0.3ch)', margin: '0', textTransform: 'none',
-    fontWeight: '400', fontStyle: 'normal', color: 'var(--ink)', letterSpacing: 'normal',
+    fontWeight: '400', fontStyle: 'normal', color: 'var(--pg-ink)', letterSpacing: 'normal',
     fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0 0 0 calc(var(--pg-i-dlg, 10) * 1ch)',
   },
   '.cm-line.cmf-transition': {
@@ -236,12 +244,12 @@ export const fountainTheme = EditorView.theme({
     // attention. Same tier as paren, not synopsis's lighter --mut, since it's
     // still a craft element a writer reads deliberately, not a summary aside.
     textAlign: 'right', maxWidth: 'none', margin: '0', textTransform: 'uppercase',
-    fontWeight: '400', fontStyle: 'italic', color: 'var(--ui)', letterSpacing: 'normal',
+    fontWeight: '400', fontStyle: 'italic', color: 'var(--pg-ui)', letterSpacing: 'normal',
     fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0',
   },
   '.cm-line.cmf-centered': {
     textAlign: 'center', maxWidth: 'none', margin: '0', textTransform: 'none',
-    fontWeight: '400', fontStyle: 'normal', color: 'var(--ink)', letterSpacing: 'normal',
+    fontWeight: '400', fontStyle: 'normal', color: 'var(--pg-ink)', letterSpacing: 'normal',
     fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0',
   },
   '.cm-line.cmf-lyric': {
@@ -249,17 +257,17 @@ export const fountainTheme = EditorView.theme({
     // precisely because it's a secondary reading, sung rather than spoken,
     // and should read as a step removed from ordinary dialogue.
     textAlign: 'left', maxWidth: 'calc(var(--pg-w-dlg, 34) * 1ch + 0.3ch)', margin: '0', textTransform: 'none',
-    fontWeight: '400', fontStyle: 'italic', color: 'var(--ui)', letterSpacing: 'normal',
+    fontWeight: '400', fontStyle: 'italic', color: 'var(--pg-ui)', letterSpacing: 'normal',
     fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0 0 0 calc(var(--pg-i-dlg, 10) * 1ch)',
   },
   '.cm-line.cmf-section': {
     textAlign: 'left', maxWidth: 'none', margin: '0', textTransform: 'none',
-    fontWeight: '700', fontStyle: 'normal', color: 'var(--ink)', letterSpacing: 'normal',
+    fontWeight: '700', fontStyle: 'normal', color: 'var(--pg-ink)', letterSpacing: 'normal',
     fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0',
   },
   '.cm-line.cmf-synopsis': {
     textAlign: 'left', maxWidth: 'none', margin: '0', textTransform: 'none',
-    fontWeight: '400', fontStyle: 'italic', color: 'var(--mut)', letterSpacing: 'normal',
+    fontWeight: '400', fontStyle: 'italic', color: 'var(--pg-mut)', letterSpacing: 'normal',
     fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0',
   },
 
@@ -269,7 +277,11 @@ export const fountainTheme = EditorView.theme({
   '.cmf-b': { fontWeight: '700' },
   '.cmf-i': { fontStyle: 'italic' },
   '.cmf-u': { textDecoration: 'underline' },
-  '.cmf-note': { color: 'var(--mut)', fontStyle: 'italic' },
+  '.cmf-note': { color: 'var(--pg-mut)', fontStyle: 'italic' },
+  // The boneyard (/* ... */): in the file, not in the script. Shown where it
+  // stands, a step back, rather than silently dropped -- the parser blanks it
+  // in place (parse.js maskBoneyard) so the two agree on every column.
+  '.cmf-boneyard': { color: 'var(--pg-mut)', fontStyle: 'italic', opacity: '.75' },
   '.cmf-syntax': { opacity: '0.45' },
 
   // Storyboard links: green for a final board, yellow for a reference board.
@@ -279,7 +291,7 @@ export const fountainTheme = EditorView.theme({
   ...linkRules(),
   '.hp': { background: 'var(--pend)', borderRadius: '1px' },
 
-  '.hl-flash': { background: 'var(--act) !important', color: 'var(--ink) !important' },
+  '.hl-flash': { background: 'var(--act) !important', color: 'var(--act-ink) !important' },
 
   // Section hover model (cm-sections.js): a flat band behind the whole hovered
   // Fountain section, plus the two-pill rail from the Figma paragraph element
@@ -302,7 +314,7 @@ export const fountainTheme = EditorView.theme({
   },
   // While an image is being dragged over the editor, the row it would board
   // lights the app pink with white script text (drop to board it).
-  '.cm-scroller.img-drag .cm-sec-hover::before': { background: 'var(--res)', opacity: '1' },
+  '.cm-scroller.img-drag .cm-sec-hover::before': { background: 'var(--pg-board-ref)', opacity: '1' },
   '.cm-scroller.img-drag .cm-sec-hover': { color: '#fff' },
   '.cm-sec-acts': {
     position: 'absolute', right: '10px', zIndex: '6', display: 'flex', gap: '6px', fontFamily: 'var(--sans)',

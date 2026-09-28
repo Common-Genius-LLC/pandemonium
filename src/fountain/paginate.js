@@ -156,6 +156,32 @@ export function wrapSegments(text, width) {
   return segs;
 }
 
+// What each line of the document RENDERS as in the editor, which is not the
+// raw line: the syntax that marks an element is concealed on every line the
+// caret is not on (cm-fountain-plugin.js), so `.FORCED HEADING` is drawn as
+// "FORCED HEADING", `> THE END <` as "THE END", and `**bold**` as "bold".
+//
+// The page layout has to wrap what is DRAWN, or it counts rows the browser
+// does not lay out: a paragraph full of emphasis was paginated several
+// characters per marker too long, and the sheets drifted away from the text
+// they hold. A line no block claims (a title-page line, a line inside a
+// boneyard) renders exactly as it stands.
+//
+// Derived the same way the plugin conceals: the prefix up to `.textOffset`
+// goes, a centered line's trailing ` <` goes, the inline delimiters go (that
+// is what `.plain` already is), and whatever follows the element's own text
+// (a dual-dialogue `^`, trailing spaces) stays, because nothing hides it.
+export function displayLines(parsed, lines) {
+  const out = lines.slice();
+  for (const b of (parsed && parsed.blocks) || []) {
+    if (b.line == null || b.line >= lines.length) continue;
+    const raw = String(lines[b.line]);
+    const tail = b.type === 'centered' ? '' : raw.slice(b.textOffset + b.text.length);
+    out[b.line] = b.plain + tail;
+  }
+  return out;
+}
+
 // The element type of every line of the document, from the parser's blocks.
 // A line no block claims is a title-page line if it comes before the first
 // block, and a blank line otherwise.
@@ -187,12 +213,20 @@ const KEEP_ROWS = 2;
 // and its row count. Breaks can only fall between lines, since a line is one
 // unit in the editor; a single line longer than a whole page (rare) is put on
 // a page of its own and allowed to run over.
-export function paginate({ lines, types, cols, rows, refCols = cols }) {
+// `display` (optional) is what each line is DRAWN as; see displayLines. It is
+// what rows are counted from, since that is what the browser wraps. Without it
+// the raw lines are used, which is right only for a document with no markup.
+export function paginate({ lines, types, cols, rows, refCols = cols, display = null }) {
   const n = lines.length;
+  const drawn = display || lines;
   const rowsOf = new Array(n);
   for (let i = 0; i < n; i++) {
     const t = types[i] || 'action';
-    rowsOf[i] = t === 'blank' || t === 'page' ? 1 : wrapRows(lines[i], elementBox(t, cols, refCols).width);
+    // 'blank' is "no block claims this line", which is usually an empty line
+    // but is also every line inside a boneyard: those are still drawn, and a
+    // long one wraps, so they are wrapped at the plain action width rather
+    // than assumed to be one row.
+    rowsOf[i] = t === 'page' ? 1 : wrapRows(drawn[i], elementBox(t === 'blank' ? 'action' : t, cols, refCols).width);
   }
   const pageOf = new Array(n);
   const rowOf = new Array(n);
@@ -236,5 +270,5 @@ export function paginate({ lines, types, cols, rows, refCols = cols }) {
     pages[p].number = pages[p].title ? null : num;
     pages[p].shown = pages[p].number != null && pages[p].number >= 2;
   }
-  return { pages, pageOf, rowOf, rowsOf, types, cols, rows, refCols };
+  return { pages, pageOf, rowOf, rowsOf, types, cols, rows, refCols, display: drawn };
 }

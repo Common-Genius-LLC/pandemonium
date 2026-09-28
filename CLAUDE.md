@@ -881,6 +881,86 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
     removal, share link revoke) still use the native dialog; the bubble takes a
     `question` and `confirm-label` so they can move over one at a time.
 
+
+31. **The script page: why the text came out of it, and four colours.**
+    **The sheets were hung off the wrong block.** `cm-pages.js` anchors every
+    sheet to where CodeMirror itself puts that page's first line, and read that
+    position from `lineBlockAt`, which hands back a COMPOSITE whose `type` is
+    the array of blocks making up the line. It took the last entry. On the last
+    page that is the end-of-document page filler, not the text, so the sheet was
+    drawn as far below its own text as the page had rows left: the writing sat
+    above its sheet and a page of empty desk opened under it. `textBlockAt`
+    picks the `BlockType.Text` entry now, and is the one place any of this is
+    read from.
+    **The layout counted characters the editor never draws.** The syntax that
+    marks an element is concealed on every line the caret is not on, so
+    `.FORCED HEADING` is drawn as "FORCED HEADING" and `**bold**` as "bold",
+    but pagination wrapped the RAW line. `displayLines` in `fountain/paginate.js`
+    (pure, tested) derives what each line is drawn as the same way the plugin
+    conceals it, and `paginate` takes it as `display`; the minimap draws from
+    the same array, so the three cannot disagree.
+    **The boneyard moved the whole file.** `parseFountain` cut `/* ... */` out
+    of the source before splitting it into lines, so every block after a
+    multi-line boneyard reported a line number that many lines too low: the
+    editor formatted the wrong lines, the page layout counted the wrong rows,
+    and every link anchor below it resolved to the wrong characters. It is
+    blanked IN PLACE now (`maskBoneyard`: every character a space, every newline
+    kept), so nothing moves, and it is shown a step back in the editor
+    (`.cmf-boneyard`, from `boneyardRanges`) rather than silently dropped.
+    Hard rule 2.
+    **Forcing marks beat guesses.** `!` and `~` were tested after the INT./EXT.
+    and "... TO:" rules, so `!CUT TO:` parsed as a transition and `!INT. HOUSE`
+    as a scene heading. Since `!` is exactly what the element picker writes to
+    say "this is action", the picker could not turn a heading or a transition
+    back into action at all. Both are tested first now. Related:
+    `applyElement('...', 'scene')` used to add one dot per press (`....`,
+    `.....`) and never become a heading, because a `.` followed by a `.` is not
+    a forced heading; it writes `. ...` instead.
+    **The hover rail showed on the first line only.** `sectionAt` tested the
+    pointer against `coordsAtPos(line.from)`, which is one character's rectangle,
+    so on any paragraph that wraps the "bottom" was the bottom of its FIRST row.
+    It uses the whole line block now (`sectionSpan`). The rail also comes back
+    by itself after an edit instead of waiting for the mouse to be moved
+    (`rehoverSoon`), unless the pointer is on the passage being typed into.
+    **Undo put the words back and the links somewhere else.** Board, reference
+    and comment anchors live in the store, and every edit re-derives them from
+    the text; re-deriving forward through an undo is not the inverse of
+    re-deriving forward through the edit. The history now carries the anchors as
+    they were before each edit (`invertedEffects` -> `restoreAnchors`), and an
+    undo or redo puts exactly those back, merged by id so a board added or
+    deleted elsewhere in the meantime is not resurrected or lost. A draft switch
+    starts a fresh `EditorState` (`#applyDocFromStore(text, true)`), because
+    sharing one history let Cmd+Z paste the draft you came from into the one you
+    are looking at; any other reconcile stays out of the history.
+    **The caret and the clicks.** `drawSelection()` is in (it was themed for but
+    never added, so `.cm-selectionBackground` was dead CSS): the caret is
+    CodeMirror's own and always exactly one line tall, instead of the native one
+    taking its height from the uneditable page-gap block beside it. The page gap
+    no longer swallows presses (`ignoreEvent` returns false), so clicking a page
+    margin, including the whole unused bottom of the last page, puts the caret
+    on the nearest line; pressing the desk around the page does too.
+    **Four colours** (tokens.css `--pg-*`): the sheet `#B7DFBB`, the script
+    `#03049E`, words linked to a storyboard `#EF4024`, words linked to a
+    reference `#09A74B`, plus three derived values for the steps back (a
+    parenthetical, a summary) and one for a comment, which the author did not
+    specify and which the bare `--act` yellow cannot hold on this paper. Scoped
+    to the writing surface and its minimap ON PURPOSE: `--board` and `--res`
+    still mean storyboard and reference in the timeline, the cards and the link
+    pills, so the page did not repaint half the app. Declared once and not
+    re-declared for the dark theme, so the same page shows after dark.
+    **Stress test**: `src/fountain/stress.test.js` drives parse, displayLines,
+    lineTypes and paginate over a construct torture file and 400 generated
+    documents, asserting that the boneyard never moves a column, that every
+    block sits on its real line, that `plainToRaw` maps to the real character,
+    that no page holds more rows than a page has, and that `rowsOf` and
+    `wrapSegments` always agree (the minimap and the sheets are drawn from
+    those two).
+    **Not done**: the minimap paints a link's tint at raw columns rather than
+    drawn ones, so on a line with concealed markup it can sit a character or two
+    off at minimap scale; `buildDecorations` still rebuilds the whole document's
+    decorations on every keystroke rather than the viewport's; and the page
+    palette has no dark-theme reading of its own.
+
 ---
 
 ## Working context

@@ -14,6 +14,7 @@
 
 import { ViewPlugin, Decoration } from '@codemirror/view';
 import { StateField, StateEffect, RangeSetBuilder } from '@codemirror/state';
+import { textBlockAt } from './cm-pages.js';
 
 export const setHoverSection = StateEffect.define();
 
@@ -135,8 +136,12 @@ export function sectionAffordances({ getParsed, onAct, onLink, onElement, onDrop
       });
       view.scrollDOM.appendChild(this.acts);
 
+      // Where the pointer last was, so the rail can come back by itself after
+      // an edit rather than waiting for the mouse to be jiggled (see update).
+      this.pointer = null;
+      this.rehoverRAF = 0;
       this.onMove = (e) => this.onMouseMove(e);
-      this.onLeave = () => this.setHover(-1);
+      this.onLeave = () => { this.pointer = null; this.setHover(-1); };
       view.scrollDOM.addEventListener('mousemove', this.onMove);
       view.scrollDOM.addEventListener('mouseleave', this.onLeave);
 
@@ -178,6 +183,13 @@ export function sectionAffordances({ getParsed, onAct, onLink, onElement, onDrop
 
     // The section index under a viewport point, or -1. Shared by hover and the
     // image-drop drag feedback.
+    //
+    // The vertical test is against the whole line BLOCK, not the first row of
+    // it. coordsAtPos(line.from) returns the rect of one character, so on a
+    // paragraph that wraps -- which is most of them -- "bottom" was the bottom
+    // of its FIRST row: hovering any row below that failed the test and the
+    // rail went away again. That is why it only ever showed on the first line,
+    // and why it flickered on and off as the pointer moved down a paragraph.
     sectionAt(clientX, clientY) {
       const pos = this.view.posAtCoords({ x: clientX, y: clientY }, false);
       if (pos == null) return -1;
@@ -185,15 +197,26 @@ export function sectionAffordances({ getParsed, onAct, onLink, onElement, onDrop
       const idx = this.sections.findIndex((s) => line >= s.firstLine && line <= s.lastLine);
       if (idx < 0) return -1;
       const sec = this.sections[idx];
-      const top = this.lineCoords(sec.firstLine, 'top');
-      const bottom = this.lineCoords(sec.lastLine, 'bottom');
-      if (top == null || bottom == null || clientY < top - 2 || clientY > bottom + 2) return -1;
+      const span = this.sectionSpan(sec);
+      if (!span || clientY < span.top - 2 || clientY > span.bottom + 2) return -1;
       return idx;
+    }
+
+    // The section's top and bottom in viewport coordinates, covering every
+    // wrapped row of every line it spans.
+    sectionSpan(sec) {
+      const doc = this.view.state.doc;
+      if (sec.firstLine + 1 > doc.lines || sec.lastLine + 1 > doc.lines) return null;
+      const first = textBlockAt(this.view, doc.line(sec.firstLine + 1).from);
+      const last = textBlockAt(this.view, doc.line(sec.lastLine + 1).from);
+      const docTop = this.view.documentTop;
+      return { top: docTop + first.top, bottom: docTop + last.bottom };
     }
 
     onMouseMove(e) {
       // Over the rail itself: hold the current section so the click lands.
       if (this.acts.contains(e.target)) return;
+      this.pointer = { x: e.clientX, y: e.clientY };
       // The rail shows on every draft now (element pill at minimum), so only
       // an active selection (the selection toolbar's turf) hides it.
       if (!this.view.state.selection.main.empty) { this.setHover(-1); return; }
@@ -203,13 +226,6 @@ export function sectionAffordances({ getParsed, onAct, onLink, onElement, onDrop
     setHover(idx) {
       if (this.view.state.field(hoverSectionField) === idx) return;
       this.view.dispatch({ effects: setHoverSection.of(idx) });
-    }
-
-    lineCoords(line0, edge) {
-      const doc = this.view.state.doc;
-      if (line0 + 1 > doc.lines) return null;
-      const c = this.view.coordsAtPos(doc.line(line0 + 1).from);
-      return c ? c[edge] : null;
     }
 
     build(view) {
@@ -232,6 +248,26 @@ export function sectionAffordances({ getParsed, onAct, onLink, onElement, onDrop
       if (update.docChanged) this.sections = computeSections(this.getParsed(update.view));
       this.decorations = this.build(update.view);
       this.requestPosition(update.view);
+      // An edit clears the hover (hoverSectionField), so the writer is not
+      // offered a rail over the words they are typing. But once the text has
+      // settled the pointer is still sitting where it was, and the rail used to
+      // stay gone until the mouse was moved -- which is most of "it shows up,
+      // then it doesn't". Work out what is under the pointer again, and put it
+      // back unless it is the passage being typed into.
+      if (update.docChanged && this.pointer) this.rehoverSoon();
+    }
+
+    rehoverSoon() {
+      cancelAnimationFrame(this.rehoverRAF);
+      this.rehoverRAF = requestAnimationFrame(() => {
+        const v = this.view;
+        if (!v || !this.pointer || !v.state.selection.main.empty) return;
+        const idx = this.sectionAt(this.pointer.x, this.pointer.y);
+        const sec = this.sections[idx];
+        if (!sec) { this.setHover(-1); return; }
+        const caret = v.state.doc.lineAt(v.state.selection.main.head).number - 1;
+        this.setHover(caret >= sec.firstLine && caret <= sec.lastLine ? -1 : idx);
+      });
     }
 
     requestPosition(view) {
@@ -286,6 +322,7 @@ export function sectionAffordances({ getParsed, onAct, onLink, onElement, onDrop
     }
 
     destroy() {
+      cancelAnimationFrame(this.rehoverRAF);
       this.view.scrollDOM.removeEventListener('mousemove', this.onMove);
       this.view.scrollDOM.removeEventListener('mouseleave', this.onLeave);
       this.view.scrollDOM.removeEventListener('dragover', this.onDragOver);

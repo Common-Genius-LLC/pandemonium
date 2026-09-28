@@ -1,9 +1,9 @@
 'use strict';
 
 import { LitElement, html, css } from 'lit';
-import { EditorState } from '@codemirror/state';
-import { EditorView, keymap, placeholder } from '@codemirror/view';
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import { EditorState, StateEffect, Transaction } from '@codemirror/state';
+import { EditorView, keymap, placeholder, drawSelection, dropCursor } from '@codemirror/view';
+import { defaultKeymap, history, historyKeymap, invertedEffects } from '@codemirror/commands';
 import { StoreController } from '../../state/store-controller.js';
 import { dispatch } from '../../utils/events.js';
 import { fountainDecorations } from './cm-fountain-plugin.js';
@@ -16,6 +16,7 @@ import { pageFit, elementBox, LPI } from '../../fountain/paginate.js';
 import { attachedTo } from '../../state/selectors.js';
 import { captureFromSelection } from './selection-capture.js';
 import { parseFountain } from '../../fountain/parse.js';
+import { parseText } from '../../fountain/cache.js';
 import { resolvePart, snapToWords } from '../../fountain/resolve.js';
 import { plainPosToRaw, rawOffsetToPlainPos, blockRawRange } from '../../fountain/doc-map.js';
 import { elementOfBlock, ELEMENT_LABELS, ELEMENT_MENU } from '../../fountain/element-ops.js';
@@ -30,6 +31,21 @@ import { frameImg } from '../../data/project-model.js';
 import { imageFromClipboard } from '../../utils/clipboard.js';
 import { openPair } from '../../state/actions.js';
 import { clamp } from '../../utils/format.js';
+
+// The anchors (board / reference / comment) as they stood before an edit,
+// handed to the history so undo and redo can put them back instead of having
+// them re-derived from the reverted text. Carried as id -> anchor rather than
+// as whole records, so restoring an undo cannot also resurrect a board that
+// was deleted from the Boards panel since, or drop one that was added there.
+const restoreAnchors = StateEffect.define();
+
+// The snapshot an undo/redo in this update is restoring, or null.
+function restoredAnchors(update) {
+  for (const tr of update.transactions) {
+    for (const e of tr.effects) if (e.is(restoreAnchors)) return e.value;
+  }
+  return null;
+}
 
 // The single editable+formatted+linkable script surface that replaces the
 // old Preview/Edit split. There is exactly one interaction model here,
@@ -61,10 +77,114 @@ export class PandemoniumScriptEditor extends LitElement {
   #lastPulsed = null;
   #pendingBoardParts = null;
   #reconciling = false;
+  #onDeskDown = null;
 
   constructor() {
     super();
     this._store = new StoreController(this);
+  }
+
+  // Every extension the editor runs, in one place, so a fresh document (a
+  // draft switch) can be given the same set. It has to be rebuilt rather than
+  // reused because a switch starts a new undo history: sharing one would let
+  // Cmd+Z pull the other draft's text into this one.
+  #extensions() {
+    return [
+      history(),
+      // Undo and redo have to put the LINKS back too. Board, reference and
+      // comment anchors live in the store, not in the document, and every
+      // edit re-derives them from the text (#remapAnchors). Re-deriving them
+      // forward through an undo is not the inverse of re-deriving them
+      // forward through the edit, so undo left the words reverted but the
+      // highlights sitting somewhere else -- "undo just makes the text
+      // highlighting change". This hands the history the anchors as they
+      // were before each edit, so it can give exactly those back.
+      invertedEffects.of((tr) => (tr.docChanged && !this.#reconciling ? [restoreAnchors.of(this.#anchorSnapshot())] : [])),
+      // CodeMirror's own caret and selection, instead of the browser's.
+      // The native caret in a contenteditable takes its height from whatever
+      // box it lands next to, which beside a page-gap widget is most of a
+      // page: that is the "really long caret". This one is always exactly
+      // one line tall, and .cm-selectionBackground (already themed) becomes
+      // real rather than dead CSS.
+      drawSelection(),
+      dropCursor(),
+      // Before the element keymap: while the element menu is open it owns
+      // Enter and the letter keys (element-menu.js sets its own precedence).
+      elementMenu({ onPick: (view, key) => applyElementAtCaret(view, key) }),
+      elementKeymap({ getParsed: (v) => v.plugin(this.#plugin)?.parsed || parseText(v.state.doc.toString()) }),
+      emphasisKeymap({ getParsed: (v) => v.plugin(this.#plugin)?.parsed || parseText(v.state.doc.toString()) }),
+      keymap.of([...defaultKeymap, ...historyKeymap]),
+      // Shown only while the document is empty, so it appears on a new
+      // draft, goes on the first keystroke, and comes back if the writer
+      // clears everything out again. CodeMirror owns that toggle. Styled as
+      // a synopsis (cm-theme.js .cm-placeholder) because that is genuinely
+      // what the first keystroke becomes -- see cm-summary-default.js.
+      placeholder('Start with a summary of the script'),
+      EditorView.lineWrapping,
+      fountainTheme,
+      this.#plugin,
+      // Real pages (cm-pages.js), and the minimap that draws the same pages
+      // small with every linked passage painted in (cm-script-minimap.js).
+      scriptPages,
+      scriptMinimap({ getHighlights: (v) => v.plugin(this.#plugin)?.decorations }),
+      scriptMinimapTheme,
+      activeElementField,
+      // Both fields belong to the element flow: the journal records what a
+      // transform overwrote so Shift+Tab can give it back, and the exemption
+      // is what stops autoUppercase from immediately undoing that.
+      caseJournal,
+      caseExempt,
+      // Before autoUppercase: a blank script's first keystroke becomes a
+      // Summary (Fountain synopsis) instead of Action (see cm-summary-default).
+      summaryDefault,
+      autoUppercase,
+      hoverSectionField,
+      pinnedSectionField,
+      sectionAffordances({
+        getParsed: (v) => v.plugin(this.#plugin)?.parsed || parseText(v.state.doc.toString()),
+        canLink: () => { const s = this._store.store.scriptForLeaf(this.leafId); return !!(s && s.final); },
+        onAct: (act, sec, rect) => this.#onSectionAct(act, sec, rect),
+        onLink: (sec, rect) => this.#openLinkMenu(sec, rect),
+        onElement: (sec, rect) => this.#openElementMenu(sec, rect),
+        onDropImage: (sec, file) => this.#dropImageOnSection(sec, file),
+        elementLabelForSection: (sec) => this.#sectionElementLabel(sec),
+      }),
+      EditorView.domEventHandlers({
+        mouseup: () => this.#deferSelectionGesture(),
+        keyup: (e) => { if (e.shiftKey || ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) this.#deferSelectionGesture(); },
+        click: (e) => this.#onClick(e),
+        paste: (e) => this.#onPaste(e),
+      }),
+      EditorView.updateListener.of((update) => {
+        if (!update.docChanged) return;
+        // Skip programmatic doc swaps we make to mirror the store (draft
+        // switch / reconcile): those already match the store, so writing
+        // back or remapping anchors off them would be wrong.
+        if (this.#reconciling) return;
+        const text = update.state.doc.toString();
+        // An undo or a redo carries the anchors that belong with the text it
+        // is restoring (see invertedEffects above). Put those back verbatim
+        // rather than re-deriving them, which is what used to move the
+        // highlights around every time the writer stepped back.
+        const snap = restoredAnchors(update);
+        if (snap) {
+          const back = this.#restoreAnchors(snap);
+          this._store.store.applyLiveEdit(this.#loadedScriptId, text, back.boards, back.links, back.comments);
+          queueMicrotask(() => this.#view && this.#view.dispatch({}));
+          return;
+        }
+        const remap = this.#remapAnchors(update);
+        if (remap) {
+          this._store.store.applyLiveEdit(this.#loadedScriptId, text, remap.boards, remap.links, remap.comments);
+          // Recompute highlight decorations against the just-written anchors
+          // now, instead of waiting out the debounced 'change' emit, so a
+          // link the user is typing inside doesn't visibly blink out.
+          queueMicrotask(() => this.#view && this.#view.dispatch({}));
+        } else {
+          this._store.store.updateScriptTextLive(this.#loadedScriptId, text);
+        }
+      }),
+    ];
   }
 
   firstUpdated() {
@@ -72,78 +192,28 @@ export class PandemoniumScriptEditor extends LitElement {
     this.#plugin = fountainDecorations((parsed) => this.#getHighlights(parsed));
     const script = this._store.store.scriptForLeaf(this.leafId);
     this.#loadedScriptId = script.id;
-    const state = EditorState.create({
-      doc: script.text,
-      extensions: [
-        history(),
-        // Before the element keymap: while the element menu is open it owns
-        // Enter and the letter keys (element-menu.js sets its own precedence).
-        elementMenu({ onPick: (view, key) => applyElementAtCaret(view, key) }),
-        elementKeymap({ getParsed: (v) => v.plugin(this.#plugin)?.parsed || parseFountain(v.state.doc.toString()) }),
-        emphasisKeymap({ getParsed: (v) => v.plugin(this.#plugin)?.parsed || parseFountain(v.state.doc.toString()) }),
-        keymap.of([...defaultKeymap, ...historyKeymap]),
-        // Shown only while the document is empty, so it appears on a new
-        // draft, goes on the first keystroke, and comes back if the writer
-        // clears everything out again. CodeMirror owns that toggle. Styled as
-        // a synopsis (cm-theme.js .cm-placeholder) because that is genuinely
-        // what the first keystroke becomes -- see cm-summary-default.js.
-        placeholder('Start with a summary of the script'),
-        EditorView.lineWrapping,
-        fountainTheme,
-        this.#plugin,
-        // Real pages (cm-pages.js), and the minimap that draws the same pages
-        // small with every linked passage painted in (cm-script-minimap.js).
-        scriptPages,
-        scriptMinimap({ getHighlights: (v) => v.plugin(this.#plugin)?.decorations }),
-        scriptMinimapTheme,
-        activeElementField,
-        // Both fields belong to the element flow: the journal records what a
-        // transform overwrote so Shift+Tab can give it back, and the exemption
-        // is what stops autoUppercase from immediately undoing that.
-        caseJournal,
-        caseExempt,
-        // Before autoUppercase: a blank script's first keystroke becomes a
-        // Summary (Fountain synopsis) instead of Action (see cm-summary-default).
-        summaryDefault,
-        autoUppercase,
-        hoverSectionField,
-        pinnedSectionField,
-        sectionAffordances({
-          getParsed: (v) => v.plugin(this.#plugin)?.parsed || parseFountain(v.state.doc.toString()),
-          canLink: () => { const s = this._store.store.scriptForLeaf(this.leafId); return !!(s && s.final); },
-          onAct: (act, sec, rect) => this.#onSectionAct(act, sec, rect),
-          onLink: (sec, rect) => this.#openLinkMenu(sec, rect),
-          onElement: (sec, rect) => this.#openElementMenu(sec, rect),
-          onDropImage: (sec, file) => this.#dropImageOnSection(sec, file),
-          elementLabelForSection: (sec) => this.#sectionElementLabel(sec),
-        }),
-        EditorView.domEventHandlers({
-          mouseup: () => this.#deferSelectionGesture(),
-          keyup: (e) => { if (e.shiftKey || ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) this.#deferSelectionGesture(); },
-          click: (e) => this.#onClick(e),
-          paste: (e) => this.#onPaste(e),
-        }),
-        EditorView.updateListener.of((update) => {
-          if (!update.docChanged) return;
-          // Skip programmatic doc swaps we make to mirror the store (draft
-          // switch / reconcile): those already match the store, so writing
-          // back or remapping anchors off them would be wrong.
-          if (this.#reconciling) return;
-          const text = update.state.doc.toString();
-          const remap = this.#remapAnchors(update);
-          if (remap) {
-            this._store.store.applyLiveEdit(this.#loadedScriptId, text, remap.boards, remap.links, remap.comments);
-            // Recompute highlight decorations against the just-written anchors
-            // now, instead of waiting out the debounced 'change' emit, so a
-            // link the user is typing inside doesn't visibly blink out.
-            queueMicrotask(() => this.#view && this.#view.dispatch({}));
-          } else {
-            this._store.store.updateScriptTextLive(this.#loadedScriptId, text);
-          }
-        }),
-      ],
-    });
+    const state = EditorState.create({ doc: script.text, extensions: this.#extensions() });
     this.#view = new EditorView({ state, parent: host, root: this.renderRoot });
+
+    // Pressing the desk around the page puts the caret at the nearest place in
+    // the script and takes focus, the way clicking under the text does in any
+    // word processor. CodeMirror only listens inside the page itself, so a
+    // press on the grey around it -- which is most of a wide pane, and all of
+    // the room under the last line -- simply did nothing.
+    this.#onDeskDown = (e) => {
+      if (e.button !== 0 || !this.#view) return;
+      if (e.target !== this.#view.scrollDOM) return; // the bare desk, nothing on it
+      const r = this.#view.contentDOM.getBoundingClientRect();
+      const pos = this.#view.posAtCoords({
+        x: clamp(e.clientX, r.left + 1, r.right - 1),
+        y: clamp(e.clientY, r.top + 1, r.bottom - 1),
+      }, false);
+      if (pos == null) return;
+      e.preventDefault();
+      this.#view.dispatch({ selection: { anchor: pos } });
+      this.#view.focus();
+    };
+    this.#view.scrollDOM.addEventListener('mousedown', this.#onDeskDown);
 
     // The page follows the writer's paper and text size (Settings), and
     // shrinks to fit a pane narrower than the page. Neither moves a page
@@ -199,6 +269,7 @@ export class PandemoniumScriptEditor extends LitElement {
     cancelAnimationFrame(this._pageRAF);
     if (this._onPrefs) scriptPrefs.removeEventListener('change', this._onPrefs);
     if (this._pageRO) this._pageRO.disconnect();
+    if (this.#onDeskDown && this.#view) this.#view.scrollDOM.removeEventListener('mousedown', this.#onDeskDown);
     this.#view?.destroy();
     super.disconnectedCallback();
   }
@@ -513,6 +584,39 @@ export class PandemoniumScriptEditor extends LitElement {
     if (pr.type === 'link') { store.reattachLink(pr.id, parts); dispatch(this, 'pandemonium-toast', { message: 'Reattached.' }); }
   }
 
+  // id -> anchor for everything the store anchors to this script, captured
+  // before an edit is applied (see invertedEffects in #extensions).
+  #anchorSnapshot() {
+    const project = this._store.store.project;
+    if (!project) return null;
+    const pick = (list) => (list || []).map((o) => [o.id, o.anchor]);
+    return { boards: pick(project.boards), links: pick(project.links), comments: pick(project.comments) };
+  }
+
+  // The current records with their anchors put back to what the snapshot says,
+  // for the ones that still exist. A record added or deleted elsewhere since
+  // the edit is left exactly as it is: an undo of a TEXT change must not undo
+  // anything else.
+  #restoreAnchors(snap) {
+    const project = this._store.store.project;
+    const put = (list, pairs) => {
+      const was = new Map(pairs || []);
+      let changed = false;
+      const out = (list || []).map((o) => {
+        const a = was.get(o.id);
+        if (!a || a === o.anchor) return o;
+        changed = true;
+        return { ...o, anchor: a };
+      });
+      return changed ? out : null;
+    };
+    return {
+      boards: put(project.boards, snap && snap.boards),
+      links: put(project.links, snap && snap.links),
+      comments: put(project.comments, snap && snap.comments),
+    };
+  }
+
   // Bug #1: editing text inside a linked passage used to sever the link,
   // because anchors are stored as a quoted substring and the quote no longer
   // matched once you typed into it. Here, on every edit, we map each anchor's
@@ -538,7 +642,10 @@ export class PandemoniumScriptEditor extends LitElement {
 
     const prevDoc = update.startState.doc;
     const nextDoc = update.state.doc;
-    const prev = parseFountain(prevDoc.toString());
+    // parseText, not parseFountain: the document as it stood one keystroke ago
+    // is almost always still in the parse cache, so this costs a lookup instead
+    // of a second full parse of the whole script on every key pressed.
+    const prev = parseText(prevDoc.toString());
     const next = this.#view.plugin(this.#plugin)?.parsed || parseFountain(nextDoc.toString());
     const changes = update.changes;
     const prevPlains = prev.blocks.map((b) => b.plain);
@@ -672,10 +779,29 @@ export class PandemoniumScriptEditor extends LitElement {
 
   // Replace the whole document to match the store, without letting the
   // updateListener treat it as a user edit (see #reconciling).
-  #applyDocFromStore(text) {
+  //
+  // `fresh` is a draft SWITCH, which starts a new document and so a new undo
+  // history: keeping the old one would let Cmd+Z paste the draft you came from
+  // into the one you are now looking at. Anything else (another pane editing
+  // the same draft, an import) keeps the history but stays out of it, since
+  // undoing a change that was not made here would only fight the pane that
+  // did make it.
+  #applyDocFromStore(text, fresh = false) {
     this.#reconciling = true;
     try {
-      this.#view.dispatch({ changes: { from: 0, to: this.#view.state.doc.length, insert: text } });
+      if (fresh) {
+        this.#view.setState(EditorState.create({ doc: text, extensions: this.#extensions() }));
+        // A new state starts on the default page metrics, so they have to be
+        // sent again; the cache key would otherwise say nothing had changed.
+        this.#lastMetrics = '';
+        this.#applyPageMetrics();
+      }
+ else {
+        this.#view.dispatch({
+          changes: { from: 0, to: this.#view.state.doc.length, insert: text },
+          annotations: Transaction.addToHistory.of(false),
+        });
+      }
     } finally {
       this.#reconciling = false;
     }
@@ -689,8 +815,8 @@ export class PandemoniumScriptEditor extends LitElement {
 
     if (script.id !== this.#loadedScriptId) {
       this.#loadedScriptId = script.id;
-      this.#applyDocFromStore(script.text);
-    } else if (script.text !== this.#view.state.doc.toString()) {
+      this.#applyDocFromStore(script.text, true);
+    } else if (script.text.length !== this.#view.state.doc.length || script.text !== this.#view.state.doc.toString()) {
       // Same draft, but the store's text moved out from under us: another
       // script panel showing this same draft edited it (duplicates are
       // allowed), or it changed via import/undo. Adopt it so the panels agree.

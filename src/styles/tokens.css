@@ -81,6 +81,25 @@
   --note-orange-dot:#e0702c;
   /* Chrome, from the Figma "Button-Standard-Component" (21:69),
      "panel-dropdown" (31:188) and "Title bar" (39:72) components. */
+  /* The script page. The writing surface has its own small palette, set by
+     the author: a green sheet, blue ink, and the two link colours a writer
+     reads while writing. It is deliberately NOT the app palette: --board and
+     --res still mean storyboard and reference everywhere else (the timeline,
+     the cards, the link pills), so changing them here would have repainted
+     half the app. These four are declared once and not re-declared for the
+     dark theme, because they are literal choices rather than a reading of the
+     surface they sit on; the same page shows after dark.
+
+     The three derived values are plain hex, not color-mix, because the
+     minimap paints them into a canvas and reads them off the computed style. */
+  --pg-paper:#B7DFBB;      /* the sheet */
+  --pg-ink:#03049E;        /* script text */
+  --pg-ui:#3946A7;         /* a step back from the ink: parenthetical, transition, lyric */
+  --pg-mut:#667CAE;        /* two steps back: summary, page numbers, placeholder */
+  --pg-board:#EF4024;      /* words linked to a storyboard */
+  --pg-board-ref:#DA7C5D;  /* ... where only its reference frame has an image */
+  --pg-res:#09A74B;        /* words linked to a reference */
+  --pg-comment:#9E7D2B;    /* words carrying a comment: --act read down onto the paper, where the bare yellow does not hold */
   --btn-line:#b8b8b8;    /* button border, at rest */
   --btn-line-on:#9c9c9c; /* button border, pressed */
   --btn-bg:#ffffff;      /* button fill, at rest */

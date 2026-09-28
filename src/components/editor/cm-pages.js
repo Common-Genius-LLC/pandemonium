@@ -21,9 +21,9 @@
 'use strict';
 
 import { StateField, StateEffect, RangeSetBuilder } from '@codemirror/state';
-import { EditorView, Decoration, WidgetType, layer, RectangleMarker } from '@codemirror/view';
+import { EditorView, Decoration, WidgetType, layer, RectangleMarker, BlockType } from '@codemirror/view';
 import { parseText } from '../../fountain/cache.js';
-import { pageGrid, lineTypes, paginate, MARGINS, LPI } from '../../fountain/paginate.js';
+import { pageGrid, lineTypes, paginate, displayLines, MARGINS, LPI } from '../../fountain/paginate.js';
 
 export const setPageMetrics = StateEffect.define();
 
@@ -63,7 +63,13 @@ class PageGap extends WidgetType {
     return el;
   }
   get estimatedHeight() { return this.height; }
-  ignoreEvent() { return true; }
+  // false, so CodeMirror handles a click here itself and puts the caret on the
+  // nearest line. Returning true (the WidgetType default) meant a press
+  // anywhere in a page margin -- including the whole unused bottom of the last
+  // page, which is often most of the pane -- reached nothing: the click did
+  // nothing at all, and the browser was left to put a native caret beside an
+  // uneditable block, which it drew as tall as the block.
+  ignoreEvent() { return false; }
 }
 
 function compute(state) {
@@ -75,7 +81,15 @@ function compute(state) {
   // The page may be narrower than the paper (a narrow pane, see pageFit): its
   // own column count and margins arrive with the metrics.
   const cols = m.cols || grid.cols;
-  const layout = paginate({ lines, types: lineTypes(parseText(text), lines.length, lines), cols, rows, refCols: m.refCols || grid.cols });
+  const parsed = parseText(text);
+  const layout = paginate({
+    lines,
+    types: lineTypes(parsed, lines.length, lines),
+    display: displayLines(parsed, lines),
+    cols,
+    rows,
+    refCols: m.refCols || grid.cols,
+  });
 
   const lh = m.ppi / LPI;
   const top = MARGINS.top * m.ppi;
@@ -111,6 +125,21 @@ export const pagesField = StateField.define({
   provide: (f) => EditorView.decorations.from(f, (v) => v.decorations),
 });
 
+// The BlockInfo of the TEXT of a line, never a block widget that shares that
+// line. CodeMirror hands back a composite whose `type` is the array of blocks
+// making up the line, in document order, so a page-break widget shows up
+// before its line and the end-of-document page filler shows up after the last
+// one. Taking the last entry (what this used to do) therefore picked the
+// FILLER on the final page, and the sheet was drawn as far below its own text
+// as that page had rows left: the last page's text sat above its sheet, and a
+// page's worth of empty desk opened under it. That is the "text comes out of
+// the page" the writer was looking at.
+export function textBlockAt(view, pos) {
+  const block = view.lineBlockAt(pos);
+  if (!Array.isArray(block.type)) return block;
+  return block.type.find((b) => b.type === BlockType.Text) || block.type[block.type.length - 1];
+}
+
 // Where the sheets go. Coordinates are relative to the scroller's content,
 // the same base CodeMirror's own selection layer uses.
 const pageSheets = layer({
@@ -139,8 +168,7 @@ const pageSheets = layer({
       // same height map as the text, they always are, and correct themselves
       // as the estimates are replaced by measurements.
       const from = doc.line(Math.min(layout.pages[k].start + 1, doc.lines)).from;
-      const block = view.lineBlockAt(from);
-      const text = Array.isArray(block.type) ? block.type[block.type.length - 1] : block;
+      const text = textBlockAt(view, from);
       out.push(new RectangleMarker('cm-page-sheet', left, docTop + text.top - geom.top, geom.pageW, geom.pageH));
     }
     return out;

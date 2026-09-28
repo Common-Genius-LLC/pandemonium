@@ -15,7 +15,7 @@
 'use strict';
 
 import { ViewPlugin, Decoration } from '@codemirror/view';
-import { isCharacterCueText } from '../../fountain/parse.js';
+import { isCharacterCueText, boneyardRanges } from '../../fountain/parse.js';
 import { parseText } from '../../fountain/cache.js';
 import { plainRangeToRaw, inlineDelimRanges } from '../../fountain/doc-map.js';
 import { activeElementField, pinOverridesParser } from './cm-autoformat.js';
@@ -181,6 +181,14 @@ export function buildDecorations(state, parsed, highlights) {
   }
 
   for (const [from, cls] of blankLineClass) decos.push(Decoration.line({ class: cls }).range(from));
+
+  // The boneyard, marked where it stands. The parser blanks it in place
+  // (parse.js maskBoneyard) rather than cutting it out, so it holds exactly
+  // the columns it occupies here and nothing below it moves; showing it a step
+  // back is what tells the writer those words are not in the script.
+  for (const [from, to] of boneyardRanges(doc.toString())) {
+    if (to > from && to <= doc.length) decos.push(Decoration.mark({ class: 'cmf-boneyard' }).range(from, to));
+  }
 
   return Decoration.set(decos, true);
 }

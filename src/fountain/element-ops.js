@@ -148,7 +148,12 @@ export function applyElement(raw, key) {
     return SEEDS[key] != null ? SEEDS[key] : '';
   }
   switch (key) {
-    case 'scene': { const up = c.toUpperCase(); return SCENE_RE.test(up) ? up : '.' + up; }
+    // A forced heading is a '.' followed by something that is NOT another dot
+    // (that rule is what keeps an ellipsis an ellipsis). Text that already
+    // starts with a dot therefore needs a space after the forcing mark, or the
+    // line is not a heading at all and every further press adds one more dot:
+    // "..." became "....", then ".....", and never became a heading.
+    case 'scene': { const up = c.toUpperCase(); if (SCENE_RE.test(up)) return up; return up[0] === '.' ? '. ' + up : '.' + up; }
     case 'character': return c.toUpperCase();
     case 'transition': { const up = c.toUpperCase(); return /TO:$/.test(up) ? up : '> ' + c; }
     case 'action': return (FOUNTAIN_TRIGGER.test(c) || SCENE_RE.test(c) || /TO:$/.test(c.toUpperCase())) ? '!' + c : c;

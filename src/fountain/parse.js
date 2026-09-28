@@ -51,8 +51,34 @@ export function inlineRuns(text) {
   return runs;
 }
 
+// Every boneyard (/* ... */) in the source, as [from, to) offsets in the
+// document. The editor uses these to dim the boneyard where it stands
+// (cm-fountain-plugin.js); the parser uses maskBoneyard, which is the same
+// ranges blanked out.
+export function boneyardRanges(src) {
+  const out = [];
+  const re = /\/\*[\s\S]*?\*\//g;
+  let m;
+  while ((m = re.exec(String(src || '')))) out.push([m.index, m.index + m[0].length]);
+  return out;
+}
+
+// The boneyard is not script, but it is still text sitting at real positions in
+// the file. Blanking it IN PLACE -- every character a space, every newline
+// kept -- takes it out of the parse without moving a single line or column, so
+// block.line and block.textOffset still point at the real document.
+//
+// This used to cut the boneyard out of the string before splitting into lines,
+// which shifted every block after a multi-line boneyard up by its line count:
+// the editor then put the wrong element formatting on every line below it, the
+// page layout counted the wrong rows, and every link anchor after it resolved
+// to the wrong characters. Hard rule 2 calls that a bug, not an edge case.
+export function maskBoneyard(src) {
+  return String(src || '').replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
+}
+
 export function parseFountain(src) {
-  src = String(src || '').replace(/\r\n?/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '');
+  src = maskBoneyard(String(src || '').replace(/\r\n?/g, '\n'));
   const lines = src.split('\n');
   const title = {};
   const blocks = [];
@@ -83,6 +109,15 @@ export function parseFountain(src) {
     const t = lines[i].trim();
     if (t === '') { lastBlank = true; i++; continue; }
     if (/^===+$/.test(t)) { push({ type: 'page', text: '' }); lastBlank = false; i++; continue; }
+    // Fountain's forcing marks beat every automatic reading of a line. `!` is
+    // "this is action whatever it looks like" and `~` is "this is a lyric", so
+    // they have to be tested before the INT./EXT. and "... TO:" rules below,
+    // not after them. Tested after, "!CUT TO:" parsed as a transition and
+    // "!INT. HOUSE" as a scene heading -- which meant the element picker could
+    // not turn a heading or a transition back into action at all, since `!` is
+    // exactly what it writes to do that.
+    if (t[0] === '!') { push({ type: 'action', text: t.slice(1) }); lastBlank = false; i++; continue; }
+    if (t[0] === '~') { push({ type: 'lyric', text: t.slice(1) }); lastBlank = false; i++; continue; }
     const mSec = t.match(/^(#{1,6})\s*(.*)$/);
     if (mSec) { push({ type: 'section', level: mSec[1].length, text: mSec[2] }); lastBlank = false; i++; continue; }
     if (t[0] === '=') { push({ type: 'synopsis', text: t.slice(1).trim() }); lastBlank = false; i++; continue; }
@@ -93,8 +128,6 @@ export function parseFountain(src) {
     if (/^>.*<$/.test(t)) { push({ type: 'centered', text: t.replace(/^>\s*/, '').replace(/\s*<$/, '') }); lastBlank = false; i++; continue; }
     if (t[0] === '>') { push({ type: 'transition', text: t.replace(/^>\s*/, '') }); lastBlank = false; i++; continue; }
     if (/TO:$/.test(t) && t === t.toUpperCase()) { push({ type: 'transition', text: t }); lastBlank = false; i++; continue; }
-    if (t[0] === '~') { push({ type: 'lyric', text: t.slice(1) }); lastBlank = false; i++; continue; }
-    if (t[0] === '!') { push({ type: 'action', text: t.slice(1) }); lastBlank = false; i++; continue; }
     const forcedChar = t[0] === '@';
     const core = (forcedChar ? t.slice(1) : t).replace(/\s*\^\s*$/, '');
     const nextNB = i + 1 < lines.length && lines[i + 1].trim() !== '';
