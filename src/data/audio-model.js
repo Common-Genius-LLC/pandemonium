@@ -110,11 +110,22 @@ export function updateTrack(project, id, patch) {
 }
 
 export function deleteTrack(project, id) {
-  return {
+  return prune({
     ...project,
     tracks: list(project, 'tracks').filter((t) => t.id !== id),
     clips: list(project, 'clips').filter((c) => c.trackId !== id),
-  };
+  });
+}
+
+// Drops any sound no clip points at any more. An audio file is the largest
+// thing in a project by far (it travels as a data URL, and as an asset on the
+// server), so a file left behind by the clip that was deleted is megabytes of
+// silence in every save and every sync from then on. Only ever called after a
+// clip or a track goes, and only for a sound with nothing left referring to it.
+function prune(project) {
+  const used = new Set(list(project, 'clips').map((c) => c.soundId));
+  const sounds = list(project, 'sounds').filter((s) => used.has(s.id));
+  return sounds.length === list(project, 'sounds').length ? project : { ...project, sounds };
 }
 
 // Tracks in the order they are stacked. `seq` is explicit so a reorder is a
@@ -207,7 +218,7 @@ export function updateClip(project, id, patch) {
 }
 
 export function deleteClip(project, id) {
-  return { ...project, clips: list(project, 'clips').filter((c) => c.id !== id) };
+  return prune({ ...project, clips: list(project, 'clips').filter((c) => c.id !== id) });
 }
 
 export function clipById(project, id) {

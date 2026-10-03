@@ -560,6 +560,10 @@ function defaultUI(draftId) {
     highlightMode: null,
     merge: null, // {result: mergeProjects() output, theirUpdatedAt} while a sync conflict awaits resolution
     dirty: false,
+    // Where the sound panel should put its playhead, in seconds, when something
+    // elsewhere has a beat in mind ("link to > Sound" on a script passage).
+    // Transient, and consumed once by the panel.
+    soundSeek: null,
     // Id of a leaf temporarily shown alone (focused writing mode), or null.
     // Transient and per-session like everything else in ui: the saved split
     // tree (project.layout) is never touched by focusing a pane.
@@ -590,7 +594,8 @@ function viewInfo(project, ui) {
   const content = layout.content;
   const title = content === 'boards' ? 'Storyboard'
     : content === 'research' ? 'Research'
-      : content === 'timeline' ? 'Timeline' : 'Script';
+      : content === 'sound' ? 'Sound'
+        : content === 'timeline' ? 'Timeline' : 'Script';
   return { title, path: '/project/' + content };
 }
 

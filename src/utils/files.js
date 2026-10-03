@@ -79,3 +79,16 @@ export function isVideoSrc(src) {
 export function isBoardMediaFile(file) {
   return !!file && (/^image\//.test(file.type || '') || /^video\//.test(file.type || ''));
 }
+
+// Sound. The extension list is there because a file dragged out of a finder or
+// a download folder often arrives with an empty type, and a writer dropping
+// what is plainly a .wav on a track should not be told it is not audio.
+export const AUDIO_ACCEPT = 'audio/*';
+const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.oga', '.opus', '.flac', '.aif', '.aiff', '.weba', '.webm'];
+
+export function isAudioFile(file) {
+  if (!file) return false;
+  if (/^audio\//.test(file.type || '')) return true;
+  const name = (file.name || '').toLowerCase();
+  return AUDIO_EXTENSIONS.some((ext) => name.endsWith(ext));
+}

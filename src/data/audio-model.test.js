@@ -245,6 +245,34 @@ describe('what gets played', () => {
   });
 });
 
+// An audio file is the biggest thing a project carries, so one with no clip
+// left pointing at it is dropped rather than saved and synced forever.
+describe('a sound with no clips left', () => {
+  it('goes when its last clip is deleted', () => {
+    const { p, clip } = build();
+    const next = deleteClip(p, clip.id);
+    expect(next.clips).toHaveLength(0);
+    expect(next.sounds).toHaveLength(0);
+  });
+  it('stays while any clip still points at it', () => {
+    const { p, clip, sound, track } = build();
+    const two = addClip(p, { trackId: track.id, soundId: sound.id, at: 2, dur: 2, spans: SPANS });
+    const next = deleteClip(two.project, clip.id);
+    expect(next.clips).toHaveLength(1);
+    expect(next.sounds).toHaveLength(1);
+  });
+  it('goes with the track that held its only clip', () => {
+    const { p, track } = build();
+    expect(deleteTrack(p, track.id).sounds).toHaveLength(0);
+  });
+  it('survives a cut, which leaves two clips over one file', () => {
+    const { p, clip } = build();
+    const cut = splitClip(p, clip.id, 15, SPANS).project;
+    expect(cut.sounds).toHaveLength(1);
+    expect(deleteClip(cut, clip.id).sounds).toHaveLength(1);
+  });
+});
+
 describe('the arrangement as a whole', () => {
   it('runs as long as its last clip, which may hang off the last beat', () => {
     const { p, sound, track } = build();

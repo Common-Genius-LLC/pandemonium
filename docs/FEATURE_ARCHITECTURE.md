@@ -438,6 +438,94 @@ landing with Phase B.
 
 ---
 
+## 6. Sound
+
+Sound is the fourth thing the app ties together, after the script, the
+storyboard and the references. The question it had to answer first was what
+sound is laid out AGAINST.
+
+**The ruler is the storyboard, not a stopwatch.** A film's sound is cut to
+picture. Here the picture is the storyboard sequence, so the scale across the
+sound panel is the storyboards in order, each as wide as it is long
+(`boardSpans` in `state/selectors.js`), and a clip is stored as "this far into
+that storyboard" (`clip.boardId` + `clip.offset`) rather than as an absolute
+number of seconds. The reason is not elegance. A storyboard's duration changes:
+recording the pacing of a show replaces a word-count estimate with a measured
+figure, and reordering a beat moves everything after it. With absolute starts,
+every clip downstream of such a change would be in the wrong place and the
+writer would have to drag them all back. Anchored, the sound moves with the beat
+it was cut against, which is the whole of what "in sync with the storyboard" can
+honestly mean before there is a renderer.
+
+A clip before the first storyboard, in a project with none, or whose storyboard
+has since been deleted, is absolute (`boardId: null`, the offset counted from
+the top). `clipStart` falls back to the offset rather than dropping the clip, so
+deleting a board never loses audio.
+
+**Where a board's length comes from, and saying which.** `boardSeconds` returns
+`{secs, paced}`: a measured `board.dur` when the show has been played at the
+intended pace, otherwise the words of the passage it is linked to read at the
+same pace the timeline's bars use (`elementSeconds`, which moved into
+`selectors.js` so the two cannot drift). The panel's strip says Measured or
+Estimated, and each span carries it, because a scale made of guesses must not
+look like a scale made of measurements. Hard rule 3 applies to a drawn scale
+exactly as it does to a printed number.
+
+**Three flat collections, not one tree.** `project.sounds` are the files,
+`project.tracks` the lanes, `project.clips` what is heard. Flat and id-keyed
+because `data/merge.js` merges id-keyed collections as sets: three collections
+at the top of the project merge for free, where one nested `audio` object would
+be one field two devices fight over. It also means cutting a clip in two costs
+nothing: both halves point at the same sound and carry their own window into it
+(`in` and `dur`).
+
+**The file lives once, and does not outlive its clips.** A sound travels as a
+data URL in the project and is lifted into the asset store on sync, exactly like
+a storyboard frame (`remote-api-adapter.js`, `sounds[].data` to
+`sounds[].assetId`; `downscaleDataURL` only touches `data:image/`, so audio
+passes through untouched). Audio is the largest thing a project carries, so
+deleting the last clip cut from a sound deletes the sound (`prune` in
+`audio-model.js`): a file left behind by the clip that referenced it would be
+megabytes of silence in every save and every sync from then on. Imports are
+capped at 25MB with a message, because past that the project itself stops being
+saveable.
+
+**Playback is Web Audio, and the schedule is pure.** `playPlan` turns the
+arrangement into plain numbers (when, offset, duration, gain) with no knowledge
+of storyboards, and `components/sound/audio-engine.js` schedules each one as an
+`AudioBufferSourceNode` against the audio clock. That is the only API that can
+say "start this file at this moment, from this point, for this long" in one
+call; an `<audio>` element can only seek and hope, which is audible the moment
+two tracks have to line up. A file's length is measured with an `<audio>`
+element at import (`measureDuration`), because an AudioContext created before
+the first gesture is suspended and some browsers refuse one outright; a file the
+browser will not decode reports 0 and the clip says its length is unknown.
+
+**The drag is not written until the pointer is released.** A clip dragged across
+four seconds would otherwise be forty project updates, each re-rendering every
+other panel and queueing an autosave, so the panel holds a preview
+(`this._drag`) and commits once on pointerup. Snapping is pure (`snapTime`)
+against the storyboard boundaries, the playhead and the other clips' edges, with
+the tolerance converted from pixels so it feels the same at every zoom.
+
+**In the show.** Arriving at a beat plays the arrangement from that beat
+(`#syncSound` in `slideshow.js`). The show is advanced by hand, so a beat held
+longer than its pacing simply keeps playing and one cut short jumps the sound
+forward; script between two boards (an unlinked slide) does not seek at all, so
+the sound runs on under it rather than restarting. Sound is off while pacing is
+being recorded: it would be playing against the very timings being measured.
+
+**"link to > Sound"** on a script passage reveals the panel and puts its
+playhead at the beat that passage is boarded as (`ui.soundSeek`, transient and
+consumed once). A passage with no storyboard has no place on that scale and is
+told so, rather than being given a playhead somewhere arbitrary.
+
+**Not done.** No waveform (it needs a decode per clip and a canvas per lane, and
+the clip's name and length answer "what is this" first); no fades or per-clip
+volume curves; no track solo; no clip copy and paste; the share projection does
+not carry sound; and sound takes no part in the timeline's coverage, which is
+about what is boarded and what is sourced.
+
 ## Build order and status
 
 Not arbitrary. Two dependencies are real, and both were honored.

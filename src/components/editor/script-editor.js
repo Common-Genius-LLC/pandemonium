@@ -14,7 +14,7 @@ import { addPageButtons } from './cm-add-page.js';
 import { scriptMinimap, scriptMinimapTheme, MINIMAP_WIDTH } from './cm-script-minimap.js';
 import { scriptPrefs } from '../../state/script-prefs.js';
 import { pageFit, elementBox, LPI } from '../../fountain/paginate.js';
-import { attachedTo } from '../../state/selectors.js';
+import { attachedTo, boardSpans } from '../../state/selectors.js';
 import { captureFromSelection } from './selection-capture.js';
 import { parseFountain } from '../../fountain/parse.js';
 import { parseText } from '../../fountain/cache.js';
@@ -422,11 +422,11 @@ export class PandemoniumScriptEditor extends LitElement {
   }
 
   // The "link to" pill's menu (Figma node 86-632): Storyboard, Blank
-  // storyboard, Research, Sound.
-  // Storyboard and Research route into the same section actions the rail used to
-  // trigger directly; Sound is a planned link kind with no backing model yet, so
-  // it says so rather than pretending. Colored to the app's link palette
-  // (storyboard green, research pink) so the menu reads as the same three things
+  // storyboard, Reference, Sound.
+  // Storyboard and Reference route into the same section actions the rail used
+  // to trigger directly; Sound opens the sound panel at this passage's beat
+  // (see #soundForSection). Colored to the app's link palette (storyboard
+  // green, reference pink, sound orange) so the menu reads as the same things
   // the script highlights already use.
   #openLinkMenu(sec, rect) {
     this.#pinHoverForMenu();
@@ -437,7 +437,7 @@ export class PandemoniumScriptEditor extends LitElement {
       onStoryboard: final ? () => this.#onSectionAct('board', sec) : null,
       onBlankStoryboard: final ? () => this.#onSectionAct('blank', sec) : null,
       onResearch: () => this.#onSectionAct('source', sec),
-      onSound: final ? () => dispatch(this, 'pandemonium-toast', { message: 'Sound linking is coming soon.' }) : null,
+      onSound: final ? () => this.#soundForSection(sec) : null,
       // A draft that is not final says why it has no storyboard, and how to get one.
       extra: final ? [] : [{ label: 'Make final for storyboards', accent: 'var(--mut)', fn: () => store.makeFinal(script.id) }],
     });
@@ -491,6 +491,29 @@ export class PandemoniumScriptEditor extends LitElement {
   // covers its dialogue run, and boarding a speech also covers the cue above
   // it, so a storyboard frame is always tied to who is speaking. Only for
   // boards -- research and comments anchor to exactly what was chosen.
+  // Sound is not attached to a passage; it is laid out against the
+  // STORYBOARDS, which are what a soundtrack is cut to (see the sound panel and
+  // data/audio-model.js). So "link to > Sound" reveals the sound panel and puts
+  // its playhead at the beat this passage is boarded as, which is the nearest
+  // honest thing to linking sound to a line. A passage with no storyboard yet
+  // has no place on that scale, and is told so rather than being given a
+  // playhead somewhere arbitrary.
+  #soundForSection(sec) {
+    const store = this._store.store;
+    const parts = this.#boardParts(sec);
+    const firstBlock = parts[0] && parts[0].b;
+    const state = store.getFinalState();
+    const mine = new Set(state.R.boards.filter((o) => o.ok && o.firstBi === firstBlock).map((o) => o.bd.id));
+    const span = boardSpans(state.fparsed.blocks, state.R.boards).find((s) => mine.has(s.boardId));
+    if (!span) {
+      dispatch(this, 'pandemonium-toast', { message: 'Sound is laid out against the storyboards. Storyboard this passage first, then lay a sound on its beat.' });
+      return;
+    }
+    store.revealContent('sound');
+    store.setUI({ soundSeek: span.start });
+    dispatch(this, 'pandemonium-toast', { message: 'Sound panel is at this beat. Drop a sound file on a track to lay it there.' });
+  }
+
   #boardParts(sec) {
     const parsed = this.#view?.plugin(this.#plugin)?.parsed;
     if (!parsed || (sec.kind !== 'character' && sec.kind !== 'dialogue')) return sec.parts;

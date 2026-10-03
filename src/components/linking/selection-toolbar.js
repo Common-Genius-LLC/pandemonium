@@ -6,6 +6,7 @@ import { dispatch } from '../../utils/events.js';
 import { readFileAsDataURL, isBoardMediaFile, BOARD_MEDIA_ACCEPT } from '../../utils/files.js';
 import { linkToItems } from './link-actions.js';
 import { clamp } from '../../utils/format.js';
+import { boardSpans } from '../../state/selectors.js';
 
 // One instance at app-root. Opened via `pandemonium-show-selection-toolbar`
 // with {kind: 'script'|'research'|'non-final', parts, anchorRect, scriptId?}.
@@ -127,10 +128,28 @@ export class PandemoniumSelectionToolbar extends LitElement {
       onStoryboard: final ? () => this.#boardFromParts(parts) : null,
       onBlankStoryboard: final ? () => this.#blankFromParts(parts) : null,
       onResearch: () => this.#sourceFromParts(parts, scriptId),
-      onSound: final ? () => dispatch(this, 'pandemonium-toast', { message: 'Sound linking is coming soon.' }) : null,
+      onSound: final ? () => this.#soundForParts(parts) : null,
       extra: final ? [] : [{ label: 'Make final for storyboards', accent: 'var(--mut)', fn: () => this._store.store.makeFinal(scriptId) }],
     });
     dispatch(this, 'pandemonium-open-menu', { x: rect.left, y: rect.bottom + 4, items, variant: 'pills' });
+  }
+
+  // Sound belongs to the storyboard, not to a line (see #soundForSection in
+  // script-editor.js, which this mirrors): the panel opens with its playhead at
+  // the beat this passage is boarded as.
+  #soundForParts(parts) {
+    const store = this._store.store;
+    const firstBlock = parts[0] && parts[0].b;
+    const state = store.getFinalState();
+    const mine = new Set(state.R.boards.filter((o) => o.ok && o.firstBi === firstBlock).map((o) => o.bd.id));
+    const span = boardSpans(state.fparsed.blocks, state.R.boards).find((s) => mine.has(s.boardId));
+    if (!span) {
+      dispatch(this, 'pandemonium-toast', { message: 'Sound is laid out against the storyboards. Storyboard this passage first, then lay a sound on its beat.' });
+      return;
+    }
+    store.revealContent('sound');
+    store.setUI({ soundSeek: span.start });
+    dispatch(this, 'pandemonium-toast', { message: 'Sound panel is at this beat. Drop a sound file on a track to lay it there.' });
   }
 
   // A transient file input rather than one in the template: the menu that

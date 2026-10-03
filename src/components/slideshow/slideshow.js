@@ -4,7 +4,10 @@ import { LitElement, html, css, nothing } from 'lit';
 import '../ui/segmented.js';
 import { crossfade } from '../../utils/motion.js';
 import { StoreController } from '../../state/store-controller.js';
-import { slidePlan, sceneExcerpt } from '../../state/selectors.js';
+import { slidePlan, sceneExcerpt, boardSpans } from '../../state/selectors.js';
+import { playPlan, soundLength } from '../../data/audio-model.js';
+import { soundEngine } from '../sound/audio-engine.js';
+import { icon as soundIcon } from '../sound/icons.js';
 import { DEFAULT_SPLIT, MIN_SPLIT, MAX_SPLIT, clampSplit, splitFromPointer, textScale } from './split.js';
 import { frameImg } from '../../data/project-model.js';
 import { readFileAsDataURL, isVideoSrc } from '../../utils/files.js';
@@ -37,7 +40,7 @@ function lineStartOffset(text, lineIdx) {
 // in the bottom fifth. One instance at app-root, opened via
 // `pandemonium-open-slideshow`.
 export class PandemoniumSlideshow extends LitElement {
-  static properties = { _open: { state: true }, _slides: { state: true }, _ix: { state: true }, _recording: { state: true }, _sbMode: { state: true }, _split: { state: true } };
+  static properties = { _open: { state: true }, _slides: { state: true }, _ix: { state: true }, _recording: { state: true }, _sbMode: { state: true }, _split: { state: true }, _sound: { state: true } };
 
   // Playback is always dark, whatever the app around it is doing: this is a
   // room-lights-down surface, so the colours are literals here rather than the
@@ -99,6 +102,12 @@ export class PandemoniumSlideshow extends LitElement {
     .sbswitch{position:absolute;top:14px;left:50%;transform:translateX(-50%);z-index:5;
       --seg-track:rgba(255,255,255,.12);--seg-thumb:#fff;--seg-ink:rgba(255,255,255,.7);
       --seg-ink-hover:#fff;--seg-ink-on:#111}
+    /* The sound switch, beside Close: present only when the project has sound
+       to play. The show follows the storyboard, so the arrangement is seeked to
+       each beat as it comes up (see #syncSound). */
+    .snd{position:absolute;z-index:5;top:14px;right:52px;width:28px;height:28px;border-radius:50%}
+    .snd svg{width:16px;height:16px;fill:currentColor}
+    .snd.off{color:rgba(255,255,255,.45)}
     .rec{position:absolute;top:14px;left:16px;z-index:5;display:flex;align-items:center;gap:6px;
       font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
       color:#fff;background:rgba(207,21,158,.9);padding:5px 10px;border-radius:20px}
@@ -154,6 +163,8 @@ export class PandemoniumSlideshow extends LitElement {
     // attempting to patch whatever the browser left behind.
     this._editGen = 0;
     this._sbMode = 'final';
+    // Sound on, unless pacing is being recorded (see open()).
+    this._sound = true;
     // The divider between picture and script. A per-viewer convenience like a
     // remembered tab, so it survives a reload and every later preview, and
     // renders at the default when storage is unavailable.
@@ -235,6 +246,49 @@ export class PandemoniumSlideshow extends LitElement {
     });
   }
 
+  // The storyboard's timebase, the same one the sound panel arranges against.
+  #spans() {
+    const state = this._store.store.getFinalState();
+    return state ? boardSpans(state.fparsed.blocks, state.R.boards) : [];
+  }
+
+  #hasSound() {
+    const project = this._store.project;
+    return !!(project && (project.clips || []).length);
+  }
+
+  // Sound follows the storyboard, which is the whole point of anchoring clips
+  // to boards: arriving at a beat plays the arrangement from that beat. The
+  // show is advanced by hand, so a beat held longer than its pacing simply
+  // keeps playing, and one cut short jumps the sound to the next beat; script
+  // between two boards (an unlinked slide) does not seek at all, so the sound
+  // runs on under it rather than restarting.
+  #syncSound(seek = true) {
+    if (!this._open || !this._sound || !this.#hasSound()) { soundEngine.stop(0); return; }
+    const slide = this._slides[this._ix];
+    if (!slide || !slide.boardId) {
+      if (!seek && !soundEngine.isPlaying) this.#playFrom(0);
+      return;
+    }
+    const spans = this.#spans();
+    const span = spans.find((x) => x.boardId === slide.boardId);
+    this.#playFrom(span ? span.start : 0);
+  }
+
+  #playFrom(at) {
+    const project = this._store.project;
+    if (!project) return;
+    const spans = this.#spans();
+    if (at >= soundLength(project, spans)) { soundEngine.stop(at); return; }
+    soundEngine.play(playPlan(project, spans, at), at, project.sounds || []);
+  }
+
+  #toggleSound() {
+    this._sound = !this._sound;
+    if (this._sound) this.#syncSound();
+    else soundEngine.stop(0);
+  }
+
   open(opts = {}) {
     // Which storyboard plays: opening from Reference shows references, from
     // Final shows finals; switchable in-show (top switch / up-down arrows).
@@ -258,12 +312,17 @@ export class PandemoniumSlideshow extends LitElement {
     this._recording = !!opts.record;
     this._slideStart = performance.now();
     this.setAttribute('data-open', '');
+    // Recording pacing means listening to the beats, not to the mix: the sound
+    // would be playing against the very timings being measured.
+    this._sound = !this._recording;
+    this.#syncSound();
   }
 
   close() {
     if (this._recording) this.#recordCurrent(); // bank the final slide's dwell
     this._recording = false;
     this._open = false;
+    soundEngine.stop(0);
     this.removeAttribute('data-open');
   }
 
@@ -282,8 +341,10 @@ export class PandemoniumSlideshow extends LitElement {
     if (this._recording && d > 0) this.#recordCurrent();
     const was = this._ix;
     this._ix = Math.max(0, Math.min(this._slides.length - 1, this._ix + d));
+    if (this._ix === was) return;
     // A cut, softened: the next slide fades up rather than snapping in.
-    if (this._ix !== was) this.updateComplete.then(() => crossfade(this.renderRoot.querySelector('.stage'), { duration: 160 }));
+    this.updateComplete.then(() => crossfade(this.renderRoot.querySelector('.stage'), { duration: 160 }));
+    this.#syncSound();
   }
 
   // Switch between the final and reference frames mid-show. Both builds walk
@@ -460,6 +521,10 @@ export class PandemoniumSlideshow extends LitElement {
         @dragleave=${() => this.#onDragLeave()}
         @drop=${(e) => this.#onDrop(e)}>
         <button class="x" title="Close slideshow (Esc)" aria-label="Close slideshow" @click=${() => this.close()}>×</button>
+        ${this.#hasSound() ? html`<button class="snd ${this._sound ? '' : 'off'}"
+          title=${this._sound ? 'Sound on: the arrangement follows the storyboard' : 'Sound off'}
+          aria-label="Sound on or off"
+          @click=${(e) => { e.stopPropagation(); this.#toggleSound(); }}>${soundIcon(this._sound ? 'sound' : 'soundOff')}</button>` : ''}
         ${this._recording ? html`<div class="rec" title="Recording pacing: click to advance at your intended pace. Each slide's on-screen time is saved.">● REC pacing</div>` : ''}
         <pd-segmented class="sbswitch" title="Switch storyboard (Up/Down)" label="Which frame to show"
           .options=${SB_OPTIONS} .value=${this._sbMode === 'reference' ? 'reference' : 'final'}
