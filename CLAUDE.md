@@ -53,9 +53,13 @@ From the product spec. Confirm against the code before relying on it.
 - **Global timeline**: sits above everything and shows, at a glance, how much of
   the script is storyboarded, how much is backed by references, and the estimated
   video length.
+- **Sound**: audio files laid out on as many tracks as the writer wants, cut
+  into clips, each clip anchored to a storyboard rather than to an absolute
+  time, so the sound follows the beat it was cut against (see
+  `src/data/audio-model.js` and item 32). The preview plays it.
 - **Global search**: across scripts, storyboards, references, and notes.
 - **Panel layout**: a Blender-style binary split tree of panes, each showing any
-  panel type (script, storyboards, references, timeline). It is **per project**,
+  panel type (script, storyboards, references, sound, timeline). It is **per project**,
   not per user: a layout is part of how a given project is being worked on, so
   it lives in the persisted project and syncs with it. Theme is the opposite
   case and stays per user in localStorage.
@@ -960,6 +964,92 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
     off at minimap scale; `buildDecorations` still rebuilds the whole document's
     decorations on every keystroke rather than the viewport's; and the page
     palette has no dark-theme reading of its own.
+
+32. **White paper, folders with a colour and a note, one question in place of
+    every native confirm, Add page, and sound.**
+    **The page.** The sheet is white (`--pg-paper`) and the script is black
+    (`--pg-ink`), with the steps back (`--pg-ui`, `--pg-mut`) read down from the
+    ink as greys; the green sheet and blue ink of item 31 are gone at the
+    author's direction, and the four link colours on the page are unchanged. Its
+    corners are rounded 4.72px (the golden step below the timeline's 7.64px
+    tracks) and it lies on the desk under Material's resting-card shadow, a new
+    `--elev-2` beside the existing `--elev-8`: with a white page on a white desk,
+    the shadow and the corners are what tell the two apart, which is also how a
+    page looks on a desk.
+    **Add page** (`cm-add-page.js`): one control on the desk under the LAST
+    sheet, right-aligned with it, which IS the page it makes. At rest a small
+    white pill wearing the page's own shadow; on hover the label fades and the
+    box grows to the real paper's proportions at the pill's width (`--mini-h`,
+    from `geom.pageH / geom.pageW`, so it is A4 or Letter shaped); on the press
+    that small page grows into the place the next sheet will occupy and the real
+    sheet takes over, with the caret on its first line. Its top sits at the desk
+    gap, which is exactly where the next sheet's top edge lands, so the two
+    share a corner and nothing jumps. What it writes is a Fountain `===`, so the
+    break lives in the document and travels into a file, a PDF and anyone else's
+    copy. The sheet arithmetic moved into `sheetRects()` in `cm-pages.js`, so the
+    sheets layer and this control hang off one measurement.
+    **One question, not the browser's.** Every `confirm()` is now the design's
+    own bubble (item 30's `pd-confirm-bubble`), asked through `askConfirm()`
+    (`components/ui/confirm.js`) and answered by one host at app-root
+    (`confirm-host.js`, which owns Escape, a press elsewhere and a scroll
+    meaning "never mind", and sits above every surface that can ask). It points
+    at the control that asked, or, where that was a menu row that has since
+    closed, at the middle of the card it is about (`centerOf` in
+    `confirm-place.js`, which also lets `anchor` be a rect). Moved over:
+    deleting a draft, a reference, a folder (from the card and from the folder
+    header), a file, removing a link (the linkbar and the reader's rows), and
+    revoking a share link. The bubble holds one line, so the consequence (a
+    folder's contents move up a level, a reference takes its links) is said in
+    the toast afterwards rather than in the question.
+    **Folders** carry a colour and a note, the same six fills and the same kind
+    of note a reference has: the swatch row in the folder menu, the note on the
+    card and written in place in the folder's own header, which takes the
+    folder's colour the way an opened reference does. The glyph is Material's
+    FILLED folder, and a coloured folder's glyph is the deep reading of its own
+    colour (the `--note-*-dot` swatch value, defined for both themes); an
+    uncoloured one keeps the plain ink, since the plain swatch grey would read as
+    a disabled folder. `addFolder` defaults both, so old files load unchanged.
+    **References, two fixes.** A reference the writer asked for and put nothing
+    in is deleted when it is closed, with a toast saying so (`isEmptyResearch`,
+    decided from what is ON SCREEN rather than what has committed, because the
+    title commits as it is typed but the notes commit a frame after they lose
+    focus: deciding from the store alone would throw away the sentence just
+    typed). It is never deleted while anything links to it. And dragging a
+    reference into a folder no longer turns the whole panel pink: a card whose
+    thumbnail is an image hands the browser that image's URL, and the panel took
+    an internal move for something to make a source of (`isRefDrag` now answers
+    `#dragHasContent` first). The **Unlinked** filter is gone from the toolbar.
+    **Sound.** The fourth thing the app ties together, and item 11's "coming
+    soon" is now real. `project.sounds` (the files), `project.tracks` (the lanes)
+    and `project.clips` (what is heard) are three flat id-keyed collections, so
+    the three-way merge handles them as sets and a cut shares one file between
+    both halves. A clip is stored as "this far into THAT storyboard"
+    (`boardId` + `offset`), not as an absolute time: `boardSpans` in
+    `selectors.js` is the ruler, so recording a show's pacing or reordering a
+    beat moves the sound with the beat it was cut against. A board's width is
+    its measured `dur` where the show has been played at the intended pace and
+    the words it is linked to otherwise, and the panel says which (hard rule 3;
+    `elementSeconds` moved into `selectors.js` so the timeline's bars and this
+    ruler cannot drift). The panel
+    (`components/sound/sound-panel.js`, a new `sound` panel type) brings sound in
+    by picker or by dropping files on a track, drags clips along and between
+    tracks, trims either edge, cuts at the playhead (S) or where the pointer is,
+    stacks as many mutable tracks as wanted, and plays from the playhead
+    (space); a drag is a preview until the pointer is released, because a
+    four-second drag would otherwise be forty project updates. Playback is Web
+    Audio (`audio-engine.js`): `start(when, offset, duration)` against the audio
+    clock is the only call that can line two tracks up. A sound travels as a data
+    URL and is lifted into the asset store exactly like a storyboard frame, and
+    deleting the last clip cut from a sound deletes the sound, since audio is the
+    biggest thing a project carries. In the show, arriving at a beat plays the
+    arrangement from that beat, script between two boards does not seek, and
+    sound is off while pacing is recorded. Architecture and the list of what is
+    deliberately left out (no waveform, no fades, no solo, not in the share
+    projection): `docs/FEATURE_ARCHITECTURE.md` section 6.
+    **Not done**: the sound panel has no waveform and no fades; print still uses
+    its own Letter CSS rather than the paper setting; and the page palette still
+    has no dark-theme reading of its own, which matters less now that the paper
+    is white and the ink black.
 
 ---
 
