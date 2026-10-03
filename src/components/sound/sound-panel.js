@@ -58,6 +58,7 @@ export class PandemoniumSoundPanel extends LitElement {
     _sel: { state: true },
     _drag: { state: true },
     _over: { state: true }, // the track a file is being dragged onto
+    _dropping: { state: true }, // a file is over the panel
   };
 
   static styles = [panelStyles, css`
@@ -129,7 +130,7 @@ export class PandemoniumSoundPanel extends LitElement {
     .edge.r{right:0}
     .clip:hover .edge{background:rgba(255,255,255,.35)}
 
-    .playhead{position:absolute;top:0;bottom:0;width:2px;background:var(--danger);z-index:4;pointer-events:none}
+    .playhead{position:absolute;top:0;width:2px;background:var(--danger);z-index:4;pointer-events:none}
     .playhead::before{
       content:"";position:absolute;top:0;left:-4px;width:10px;height:10px;border-radius:2px;background:var(--danger);
     }
@@ -300,7 +301,8 @@ export class PandemoniumSoundPanel extends LitElement {
     }
     const spans = this.#spans();
     let where = at == null ? this._time : at;
-    let lane = trackId || (orderedTracks(store.project)[0] || store.addTrack({})).id;
+    const lane = trackId || (orderedTracks(store.project)[0] || store.addTrack({})).id;
+    let added = 0;
     for (const file of list) {
       if (file.size > MAX_MB * 1024 * 1024) {
         dispatch(this, 'pandemonium-toast', { message: `"${file.name}" is over ${MAX_MB}MB. Shorten it or export it smaller first.` });
@@ -313,8 +315,10 @@ export class PandemoniumSoundPanel extends LitElement {
       const sound = store.addSound({ name: file.name, mime: file.type, data, dur });
       const clip = store.addClip({ trackId: lane, soundId: sound.id, at: where, dur: dur || MIN_CLIP, spans });
       this._sel = clip.id;
+      added++;
       where += dur || 1;
     }
+    if (!added) return;
     const anchor = anchorAt(spans, at == null ? this._time : at);
     dispatch(this, 'pandemonium-toast', {
       message: anchor.boardId
@@ -331,14 +335,13 @@ export class PandemoniumSoundPanel extends LitElement {
     if (!this.#dragHasFiles(e.dataTransfer)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
-    if (!this._dropping) { this._dropping = true; this.requestUpdate(); }
+    if (!this._dropping) this._dropping = true;
   }
 
   #onPanelDragLeave(e) {
     if (e.relatedTarget && e.currentTarget.contains(e.relatedTarget)) return;
     this._dropping = false;
     this._over = null;
-    this.requestUpdate();
   }
 
   async #onPanelDrop(e) {

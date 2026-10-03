@@ -263,13 +263,12 @@ export class PandemoniumSlideshow extends LitElement {
   // keeps playing, and one cut short jumps the sound to the next beat; script
   // between two boards (an unlinked slide) does not seek at all, so the sound
   // runs on under it rather than restarting.
-  #syncSound(seek = true) {
+  #syncSound() {
     if (!this._open || !this._sound || !this.#hasSound()) { soundEngine.stop(0); return; }
     const slide = this._slides[this._ix];
-    if (!slide || !slide.boardId) {
-      if (!seek && !soundEngine.isPlaying) this.#playFrom(0);
-      return;
-    }
+    // An unlinked stretch of script is not a beat: the sound carries on under
+    // it rather than seeking anywhere.
+    if (!slide || !slide.boardId) return;
     const spans = this.#spans();
     const span = spans.find((x) => x.boardId === slide.boardId);
     this.#playFrom(span ? span.start : 0);
