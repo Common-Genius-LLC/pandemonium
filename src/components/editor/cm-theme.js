@@ -154,34 +154,39 @@ export const fountainTheme = EditorView.theme({
     borderRadius: '4.72px',
     boxShadow: 'var(--elev-2)',
   },
-  // The Add page pills (cm-add-page.js), one in each sheet's bottom margin.
-  // The layer spans the whole scroller and is transparent to the pointer; only
-  // the pills take a press. Faint at rest so a long script does not read as a
-  // column of buttons, and fully there as soon as the pointer is on the page.
-  // Shaped exactly like CodeMirror's own .cm-layer (absolute, pinned to the
-  // top left, no size of its own), because the pills are placed with the same
-  // arithmetic the sheets are (sheetRects in cm-pages.js) and so must hang off
-  // the same box.
+  // Add page (cm-add-page.js): one control on the desk under the last sheet.
+  // It is a page, not a button about pages: white paper wearing the page's own
+  // shadow, which grows to a page's proportions on hover (--mini-h, set from
+  // the real paper's ratio) with its label fading out, then to a whole page on
+  // the press. The layer around it spans the scroller and is transparent to the
+  // pointer; it is shaped exactly like CodeMirror's own .cm-layer (absolute,
+  // pinned to the top left, no size of its own), because the control is placed
+  // with the same arithmetic the sheets are (sheetRects in cm-pages.js) and so
+  // must hang off the same box.
   '.cm-addpage-layer': {
     position: 'absolute', left: '0', top: '0',
     pointerEvents: 'none', zIndex: '2', userSelect: 'none',
   },
-  // The pill itself is the row rail's "link to" pill (.cm-sec-acts button
-  // .linkto above): same size, same radius, same lift, same dark fill, because
-  // it is the same kind of control sitting on the same desk. width:max-content
-  // and nowrap are not optional here: the layer it hangs in has no width of its
-  // own, so a shrink-to-fit box would wrap "Add page" onto two lines.
   '.cm-addpage': {
     position: 'absolute', pointerEvents: 'auto', cursor: 'pointer',
-    width: 'max-content', whiteSpace: 'nowrap',
-    fontSize: '12px', fontWeight: '500', lineHeight: '1', padding: '6px 12px', minHeight: '24px',
-    border: '0', borderRadius: '20px', fontFamily: 'var(--sans)',
-    background: 'var(--overlay)', color: 'var(--overlay-ink)',
-    boxShadow: '0 1px 1.25px rgba(0,0,0,.25)',
-    opacity: '0.5', transition: 'opacity var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out)',
+    boxSizing: 'border-box', height: '26px', padding: '0', border: '0', overflow: 'hidden',
+    borderRadius: '20px', background: 'var(--pg-paper)', boxShadow: 'var(--elev-2)',
+    transition: 'height var(--dur-2) var(--ease-out), border-radius var(--dur-2) var(--ease-out)',
   },
-  '.cm-scroller:hover .cm-addpage': { opacity: '1' },
-  '.cm-addpage:hover': { background: 'var(--ui)' },
+  // The label keeps the pill's own height at the top of the box, so the paper
+  // grows downward out of it instead of carrying the words down the page.
+  '.cm-addpage-lbl': {
+    display: 'block', height: '26px', lineHeight: '26px', textAlign: 'center',
+    fontFamily: 'var(--sans)', fontSize: '12px', fontWeight: '500', color: 'var(--pg-mut)',
+    whiteSpace: 'nowrap',
+    transition: 'opacity var(--dur-1) var(--ease-out)',
+  },
+  '.cm-addpage:hover': { height: 'var(--mini-h, 147px)', borderRadius: '4.72px' },
+  '.cm-addpage:hover .cm-addpage-lbl': { opacity: '0' },
+  // While it is growing into the next page the animation owns its geometry, and
+  // a second press must not reach it.
+  '.cm-addpage.growing': { transition: 'none', borderRadius: '4.72px', pointerEvents: 'none' },
+  '.cm-addpage.growing .cm-addpage-lbl': { opacity: '0' },
   // Decorative, and not a place to select from: the caret goes to the nearest
   // line instead (PageGap.ignoreEvent in cm-pages.js).
   '.cm-page-gap': { position: 'relative', userSelect: 'none', cursor: 'text' },

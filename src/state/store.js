@@ -7,6 +7,7 @@
 'use strict';
 
 import * as model from '../data/project-model.js';
+import * as audio from '../data/audio-model.js';
 import { mergeProjects, commitMergedProject } from '../data/merge.js';
 import { getParsed } from '../fountain/cache.js';
 import { scenesOf } from '../fountain/blocks.js';
@@ -375,6 +376,44 @@ export class PandemoniumStore extends EventTarget {
   moveFolder(id, parentId) { this.#applyProject(model.moveFolder(this.#project, id, parentId)); }
   moveResearch(id, folderId) { this.#applyProject(model.moveResearch(this.#project, id, folderId)); }
   deleteFolder(id) { this.#applyProject(model.deleteFolder(this.#project, id)); }
+
+  // ---- sound actions (files, tracks, clips: see data/audio-model.js) ----
+
+  addSound(opts) {
+    const { project, sound } = audio.addSound(this.#project, opts);
+    this.#applyProject(project);
+    return sound;
+  }
+  updateSound(id, patch) { this.#applyProject(audio.updateSound(this.#project, id, patch)); }
+  deleteSound(id) { this.#applyProject(audio.deleteSound(this.#project, id)); }
+
+  addTrack(opts) {
+    const { project, track } = audio.addTrack(this.#project, opts);
+    this.#applyProject(project);
+    return track;
+  }
+  updateTrack(id, patch) { this.#applyProject(audio.updateTrack(this.#project, id, patch)); }
+  moveTrack(id, delta) { this.#applyProject(audio.moveTrack(this.#project, id, delta)); }
+  deleteTrack(id) { this.#applyProject(audio.deleteTrack(this.#project, id)); }
+
+  // A clip is placed at a TIME and anchored to the storyboard it lands on, so
+  // every caller passes the spans it was drawn against (boardSpans in
+  // selectors.js) rather than working the anchor out itself.
+  addClip(opts) {
+    const { project, clip } = audio.addClip(this.#project, opts);
+    this.#applyProject(project);
+    return clip;
+  }
+  updateClip(id, patch) { this.#applyProject(audio.updateClip(this.#project, id, patch)); }
+  moveClip(id, opts) { this.#applyProject(audio.moveClip(this.#project, id, opts)); }
+  trimClip(id, opts) { this.#applyProject(audio.trimClip(this.#project, id, opts)); }
+  deleteClip(id) { this.#applyProject(audio.deleteClip(this.#project, id)); }
+  splitClip(id, at, spans) {
+    const { project, clip } = audio.splitClip(this.#project, id, at, spans);
+    if (!clip) return null;
+    this.#applyProject(project);
+    return clip;
+  }
 
   // ---- link actions ----
 

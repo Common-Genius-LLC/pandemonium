@@ -46,6 +46,12 @@ export const DEFAULT_TRACK_NAMES = ['Dialogue', 'Music', 'Atmos', 'Effects'];
 
 const list = (project, key) => project[key] || [];
 const num = (v, fallback = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
+// Every stored time is rounded to the millisecond. Not for tidiness: clamping a
+// drag against a limit (dur - MIN_CLIP, then back) leaves binary-float dust, and
+// a clip whose length reads 0.04999999999999982 fails its own minimum the next
+// time it is touched. A millisecond is far finer than anything that can be
+// dragged or heard.
+const ms = (v) => Math.round(num(v) * 1000) / 1000;
 
 // ---- sounds (the files) ----
 
@@ -164,8 +170,8 @@ export function anchorAt(spans, time) {
     if (s.start <= t) hit = s;
     else break;
   }
-  if (!hit) return { boardId: null, offset: t };
-  return { boardId: hit.boardId, offset: t - hit.start };
+  if (!hit) return { boardId: null, offset: ms(t) };
+  return { boardId: hit.boardId, offset: ms(t - hit.start) };
 }
 
 // ---- clips ----
@@ -173,7 +179,7 @@ export function anchorAt(spans, time) {
 // `at` is where on the timeline the clip starts, in seconds; it is turned into
 // an anchor here so no caller has to know the anchoring rule. `inPoint` and
 // `dur` are the window into the sound.
-export function addClip(project, { trackId, soundId, at = 0, inPoint = 0, dur = 0, gain = 1, spans = null } = {}) {
+export function addClip(project, { trackId, soundId, at = 0, inPoint = 0, dur = null, gain = 1, spans = null } = {}) {
   const sound = soundById(project, soundId);
   const full = sound ? sound.dur : 0;
   const start = Math.max(0, num(inPoint));
@@ -188,8 +194,8 @@ export function addClip(project, { trackId, soundId, at = 0, inPoint = 0, dur = 
     soundId,
     boardId: anchor.boardId,
     offset: anchor.offset,
-    in: start,
-    dur: length,
+    in: ms(start),
+    dur: ms(length),
     gain: num(gain, 1),
     createdAt: Date.now(),
   };
@@ -239,11 +245,11 @@ export function splitClip(project, id, at, spans = null) {
     id: uid(),
     boardId: anchor.boardId,
     offset: anchor.offset,
-    in: num(clip.in) + into,
-    dur: num(clip.dur) - into,
+    in: ms(num(clip.in) + into),
+    dur: ms(num(clip.dur) - into),
     createdAt: Date.now(),
   };
-  const left = { ...clip, dur: into };
+  const left = { ...clip, dur: ms(into) };
   return {
     project: { ...project, clips: list(project, 'clips').map((c) => (c.id === id ? left : c)).concat([right]) },
     clip: right,
@@ -274,8 +280,10 @@ export function trimClip(project, id, { head = 0, tail = 0, spans = null } = {})
     dur = Math.max(MIN_CLIP, Math.min(dur + num(tail), room));
   }
   if (start < 0) start = 0;
-  const anchor = clip.boardId ? { boardId: clip.boardId, offset: clip.offset + (start - clipStart(clip, spans)) } : { boardId: null, offset: start };
-  return updateClip(project, id, { in: inPoint, dur, boardId: anchor.boardId, offset: anchor.offset });
+  const anchor = clip.boardId
+    ? { boardId: clip.boardId, offset: ms(num(clip.offset) + (start - clipStart(clip, spans))) }
+    : { boardId: null, offset: ms(start) };
+  return updateClip(project, id, { in: ms(inPoint), dur: ms(dur), boardId: anchor.boardId, offset: anchor.offset });
 }
 
 // ---- reading the arrangement ----

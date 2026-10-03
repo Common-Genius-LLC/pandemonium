@@ -20,6 +20,8 @@ function isDataUrl(v) {
   return typeof v === 'string' && v.startsWith('data:');
 }
 
+// downscaleDataURL only touches data:image/*, so an audio file passes through
+// it untouched (see utils/files.js); nothing here has to know the difference.
 async function uploadAsset(dataUrl, originalName = '') {
   const cached = assetIdByDataUrl.get(dataUrl);
   if (cached) return cached;
@@ -68,7 +70,18 @@ async function hydrateProject(project) {
     return next;
   }));
 
-  return { ...project, boards, research };
+  // A sound file travels as an asset, like a storyboard frame and a reference's
+  // attachment: the clips cut from it only ever hold its id, so a cut costs
+  // nothing and the project row stays small however long the audio is.
+  const sounds = await Promise.all((project.sounds || []).map(async (snd) => {
+    if (isDataUrl(snd.data) || !snd.assetId) return snd;
+    const data = await loadAssetDataUrl(snd.assetId);
+    const next = { ...snd, data };
+    delete next.assetId;
+    return next;
+  }));
+
+  return { ...project, boards, research, sounds };
 }
 
 async function prepareProjectForRemote(project) {
@@ -92,7 +105,15 @@ async function prepareProjectForRemote(project) {
     return next;
   }));
 
-  return { ...project, boards, research };
+  const sounds = await Promise.all((project.sounds || []).map(async (snd) => {
+    if (!isDataUrl(snd.data)) return snd;
+    const assetId = await uploadAsset(snd.data, snd.name || `${snd.id || 'sound'}.audio`);
+    const next = { ...snd, assetId };
+    delete next.data;
+    return next;
+  }));
+
+  return { ...project, boards, research, sounds };
 }
 
 export async function listProjectsRemote() {
