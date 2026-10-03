@@ -5,7 +5,8 @@ import { StoreController } from '../../state/store-controller.js';
 import { panelStyles } from '../../styles/shared.js';
 import { readFileAsDataURL, readFileAsText, isTextShaped } from '../../utils/files.js';
 import { dispatch } from '../../utils/events.js';
-import { browse, normalizeUrl, allLabels, normalizeLabel, addLabel, removeLabel, folderPath, folderCount, MAX_LABEL } from '../../data/research-doc.js';
+import { browse, normalizeUrl, allLabels, normalizeLabel, addLabel, removeLabel, folderPath, folderCount, MAX_LABEL, NOTE_COLORS, colorToken } from '../../data/research-doc.js';
+import { askConfirm } from '../ui/confirm.js';
 import { icon } from './icons.js';
 import { leaveRect } from '../../utils/motion.js';
 import '../ui/button.js';
@@ -37,7 +38,6 @@ export class PandemoniumResearchPanel extends LitElement {
   static properties = {
     leafId: {},
     _query: { state: true },
-    _unlinkedOnly: { state: true },
     _labels: { state: true },
     _dragging: { state: true },
     _folder: { state: true }, // the folder being looked at; null is the top level
@@ -73,7 +73,12 @@ export class PandemoniumResearchPanel extends LitElement {
     .crumb.here{color:var(--ink);font-weight:500}
     .crumb.over{background:var(--res);color:#fff}
     .sep{color:var(--mut);opacity:.6}
-    /* The header of the folder you are in. */
+    /* The header of the folder you are in: the folder's own card, opened. It
+       takes the folder's colour, the way an opened reference takes its own
+       (research-reader.js), so standing inside a folder looks like standing
+       inside the thing that was clicked. */
+    .fblock{margin:0 10px 8px;padding:6px 2px 2px;background:var(--fcard,transparent);border-radius:12.36px}
+    .fblock.tinted{padding:8px 4px 4px}
     .fhead{display:flex;align-items:center;gap:6px;padding:0 10px 2px}
     .fname{
       flex:1;min-width:0;height:auto;padding:2px 6px;font-family:var(--sans);font-size:15px;font-weight:500;color:var(--ink);
@@ -85,7 +90,15 @@ export class PandemoniumResearchPanel extends LitElement {
       background:transparent;color:var(--mut);font-family:var(--sans);font-size:14px;line-height:1;
     }
     .fhead .more:hover{background:var(--panel);color:var(--ink)}
-    .flabels{display:flex;flex-wrap:wrap;align-items:center;gap:5px;padding:0 12px 10px}
+    /* The folder's note, written where it is read: no field and no border, the
+       same sticky-note treatment the references have (item 17), just smaller. */
+    .fnote{
+      display:block;width:100%;box-sizing:border-box;padding:2px 12px 6px;
+      font-family:var(--sans);font-size:12px;line-height:1.5;color:var(--ink);
+      background:transparent;border:0;outline:0;resize:none;overflow:hidden;min-height:18px;
+    }
+    .fnote::placeholder{color:var(--mut)}
+    .flabels{display:flex;flex-wrap:wrap;align-items:center;gap:5px;padding:0 12px 4px}
     .tag{
       display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 4px 0 9px;
       font-family:var(--sans);font-size:11px;color:var(--ink);background:var(--panel);border-radius:20px;
@@ -168,7 +181,6 @@ export class PandemoniumResearchPanel extends LitElement {
     super();
     this._store = new StoreController(this);
     this._query = '';
-    this._unlinkedOnly = false;
     this._labels = new Set(); // topics currently being shown, empty means all
     this._folder = null;
     this._newFolder = null;
@@ -305,7 +317,15 @@ export class PandemoniumResearchPanel extends LitElement {
 
   // ---- drops and pastes ----
 
+  // Whether a drag carries something to MAKE A SOURCE OF. A reference or a
+  // folder being filed (isRefDrag) carries none: it is answered by the folder
+  // card or the breadcrumb it is dropped on, which tint themselves. This panel
+  // used to say yes to it, because dragging a card whose thumbnail is an image
+  // hands the browser that image's URL as text/uri-list alongside our own drag
+  // type, so the whole pane went pink while the writer was only filing
+  // something, and the folder they were aiming at was lost under it.
   #dragHasContent(dt) {
+    if (isRefDrag(dt)) return false;
     const types = [...(dt.types || [])];
     return types.includes('Files') || types.includes('text/uri-list') || types.includes('text/plain');
   }
@@ -366,7 +386,6 @@ export class PandemoniumResearchPanel extends LitElement {
 
   #clearFilters() {
     this._query = '';
-    this._unlinkedOnly = false;
     this._labels = new Set();
     if (this._store.ui && this._store.ui.refDraft) this._store.store.setUI({ refDraft: null });
   }
@@ -378,12 +397,10 @@ export class PandemoniumResearchPanel extends LitElement {
     return id && project ? project.scripts.find((x) => x.id === id) || null : null;
   }
 
-  // On: limited to the draft the writer is in. "Linked in a draft" and
-  // "Unlinked" would contradict each other, so turning one on turns the other off.
+  // On: limited to the draft the writer is in.
   #toggleDraft() {
     const store = this._store.store;
     if (this.#draftFilter()) { store.setUI({ refDraft: null }); return; }
-    this._unlinkedOnly = false;
     store.setUI({ refDraft: store.activeScript().id });
   }
 
@@ -435,11 +452,28 @@ export class PandemoniumResearchPanel extends LitElement {
   #pathBar(project) {
     const folders = project.folders || [];
     const here = this._folder && folders.find((f) => f.id === this._folder);
-    const searching = !!(this._query.trim() || this._labels.size || this._unlinkedOnly || this.#draftFilter());
+    const searching = !!(this._query.trim() || this._labels.size || this.#draftFilter());
     return here && !searching ? this.#crumbs(project, here) : nothing;
   }
 
-  // The header of the folder you are in: its name, its labels, its menu.
+  // Deleting the folder you are standing in: the question points at the
+  // header's own menu button, which is still there once the menu has closed,
+  // and the writer is taken up a level afterwards.
+  async #deleteFolder(folder, n, anchor) {
+    const store = this._store.store;
+    if (!await askConfirm(this, { anchor, question: 'Delete this folder?' })) return;
+    const up = folder.parentId || null;
+    store.deleteFolder(folder.id);
+    this._folder = up;
+    dispatch(this, 'pandemonium-toast', {
+      message: n
+        ? 'Folder deleted. Its ' + n + ' item' + (n === 1 ? '' : 's') + ' moved up a level.'
+        : 'Folder deleted.',
+    });
+  }
+
+  // The header of the folder you are in: its name, its note, its labels, its
+  // menu.
   #folderHeader(project, folder) {
     const store = this._store.store;
     const known = allLabels([...(project.folders || []), ...project.research]).map((l) => l.label)
@@ -452,24 +486,33 @@ export class PandemoniumResearchPanel extends LitElement {
     const n = folderCount(project.research, project.folders, folder.id);
     const item = { kind: 'folder', id: folder.id };
     return html`
+      <div class="fblock ${folder.color ? 'tinted' : ''}" style="--fcard:${colorToken(folder.color)}">
       <div class="fhead" data-clarity-mask="true">
         <input class="fname" type="text" maxlength="60" placeholder="Untitled folder" .value=${folder.name || ''}
           @change=${(e) => { const v = e.target.value.trim(); if (v) store.updateFolder(folder.id, { name: v }); else e.target.value = folder.name || ''; }}
           @keydown=${(e) => { if (e.key === 'Enter') e.target.blur(); }}>
         <button class="more" title="Folder options" @click=${(e) => {
           const r = e.currentTarget.getBoundingClientRect();
-          dispatch(this, 'pandemonium-open-menu', { anchor: e.currentTarget, items: [
+          const anchor = e.currentTarget;
+          dispatch(this, 'pandemonium-open-menu', { anchor, items: [
+            {
+              swatches: NOTE_COLORS.map((c) => ({
+                label: c.label,
+                color: c.dot,
+                selected: (folder.color || null) === c.key,
+                fn: () => store.updateFolder(folder.id, { color: c.key }),
+              })),
+            },
             ...(hasMoveTargets(store, item) ? [{ label: 'Move to folder...', fn: () => openMoveMenu(this, store, item, { x: r.left, y: r.bottom + 4 }) }] : []),
-            { label: 'Delete folder', danger: true, fn: () => {
-              if (confirm('Delete the folder "' + (folder.name || 'Untitled') + '"?' + (n ? ' Its ' + n + ' item' + (n === 1 ? '' : 's') + ' move up a level, nothing else is deleted.' : ''))) {
-                const up = folder.parentId || null;
-                store.deleteFolder(folder.id);
-                this._folder = up;
-              }
-            } },
+            { divider: true },
+            { label: 'Delete folder', danger: true, fn: () => this.#deleteFolder(folder, n, anchor) },
           ] });
         }}>&#8943;</button>
       </div>
+      <textarea class="fnote" rows="1" maxlength="600" placeholder="Add a note about this folder"
+        data-clarity-mask="true" .value=${folder.note || ''}
+        @input=${(e) => this.#growNote(e.target)}
+        @change=${(e) => { if (e.target.value !== (folder.note || '')) store.updateFolder(folder.id, { note: e.target.value }); }}></textarea>
       <div class="flabels" data-clarity-mask="true">
         ${(folder.labels || []).map((l) => html`<span class="tag">${l}<button title="Remove this label" @click=${() => store.updateFolder(folder.id, { labels: removeLabel(folder.labels, l) })}>&#10005;</button></span>`)}
         ${this._addingLabel
@@ -482,7 +525,21 @@ export class PandemoniumResearchPanel extends LitElement {
             this.updateComplete.then(() => { const el = this.renderRoot.querySelector('.taginput'); if (el) el.focus(); });
           }}>+ Label</button>`}
       </div>
+      </div>
     `;
+  }
+
+  // The note grows with what is written in it: a folder's note is a line most
+  // of the time and a paragraph when it needs to be, and a scrollbar inside two
+  // visible rows would be the one thing worse than either.
+  #growNote(el) {
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  }
+
+  updated() {
+    const el = this.renderRoot.querySelector('.fnote');
+    if (el) this.#growNote(el);
   }
 
   // ---- rendering ----
@@ -498,9 +555,6 @@ export class PandemoniumResearchPanel extends LitElement {
         <pd-button variant=${this.#draftFilter() ? 'dark' : 'default'}
           title=${this.#draftFilter() ? 'Showing only the references linked in this draft. Click to show all.' : 'Show only the references linked in the draft you are in'}
           @click=${() => this.#toggleDraft()}>This draft</pd-button>
-        <pd-button variant=${this._unlinkedOnly ? 'dark' : 'default'}
-          title="Show only the sources not yet linked to the script"
-          @click=${() => { this._unlinkedOnly = !this._unlinkedOnly; if (this._unlinkedOnly) this._store.store.setUI({ refDraft: null }); }}>Unlinked</pd-button>
       ` : nothing}
       <pd-button icon title="New folder" @click=${() => this.#newFolder()}>${icon('folderAdd')}</pd-button>
       <pd-button icon title="Add files: images, video, audio, PDFs, anything" @click=${() => this.#upload()}>${icon('upload')}</pd-button>
@@ -568,21 +622,20 @@ export class PandemoniumResearchPanel extends LitElement {
   #grid(project) {
     const counts = {};
     for (const l of project.links) counts[l.researchId] = (counts[l.researchId] || 0) + 1;
-    const linked = new Set(Object.keys(counts));
     const folders = project.folders || [];
-    // One folder's contents, or (while searching, or a topic or the unlinked
+    // One folder's contents, or (while searching, or a topic or the draft
     // filter is on) every match across all folders at once. Newest first, so
     // adding something is never below the fold.
     const draft = this.#draftFilter();
     const ids = draft ? researchIdsInDraft(project, draft.id, this._store.store.finalScript().id) : null;
-    const view = browse({ research: project.research, folders, folderId: this._folder, query: this._query, unlinkedOnly: this._unlinkedOnly, labels: this._labels, linked, ids });
+    const view = browse({ research: project.research, folders, folderId: this._folder, query: this._query, labels: this._labels, ids });
     const here = view.here ? folders.find((f) => f.id === view.here) : null;
     const empty = !view.docs.length && !view.folders.length;
     return html`
       ${here && !view.flat ? this.#folderHeader(project, here) : nothing}
       ${view.flat ? html`
         <div class="filterbar">
-          <span>${view.docs.length} of ${project.research.length} sources${view.folders.length ? ', ' + view.folders.length + ' folder' + (view.folders.length === 1 ? '' : 's') : ''}${this._unlinkedOnly ? ', not yet linked' : ''}${draft ? ', linked in ' + draft.name : ''}${this._labels.size ? ', in ' + [...this._labels].join(' or ') : ''}, across every folder</span>
+          <span>${view.docs.length} of ${project.research.length} sources${view.folders.length ? ', ' + view.folders.length + ' folder' + (view.folders.length === 1 ? '' : 's') : ''}${draft ? ', linked in ' + draft.name : ''}${this._labels.size ? ', in ' + [...this._labels].join(' or ') : ''}, across every folder</span>
           <button @click=${() => this.#clearFilters()}>Show all</button>
         </div>` : nothing}
       ${view.flat && empty ? this.#noMatches() : html`

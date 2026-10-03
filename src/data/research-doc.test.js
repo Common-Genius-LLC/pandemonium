@@ -8,7 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   researchKind, mediaKind, normalizeUrl, hostOf, docTitle, docSnippet,
-  filterResearch, colorToken, NOTE_COLORS, docParas,
+  filterResearch, colorToken, NOTE_COLORS, docParas, isEmptyResearch,
   parasToBody, setPara, splitPara, mergePara,
   normalizeLabel, addLabel, removeLabel, allLabels, hasLabel,
 } from './research-doc.js';
@@ -357,5 +357,33 @@ describe('a stored link preview', () => {
     const docs = [{ id: 'a', title: '', url, preview }, { id: 'b', title: 'Other' }];
     expect(filterResearch(docs, { query: 'brightside' }).map((d) => d.id)).toEqual(['a']);
     expect(filterResearch(docs, { query: 'hot fuss' }).map((d) => d.id)).toEqual(['a']);
+  });
+});
+
+// A source the writer asked for and then backed out of. The reader deletes one
+// of these on close (research-reader.js), so what counts as "nothing in it"
+// has to be exact: anything the writer can be said to have chosen keeps it.
+describe('an empty source', () => {
+  it('is one with no title, link, notes, media, topic or colour', () => {
+    expect(isEmptyResearch({ id: 'a', title: '', url: '', body: '', labels: [] })).toBe(true);
+    expect(isEmptyResearch({ id: 'a' })).toBe(true);
+    expect(isEmptyResearch({ id: 'a', title: '   ', body: '\n\n' })).toBe(true);
+  });
+  it('is not one the writer put anything in', () => {
+    expect(isEmptyResearch({ title: 'Costume notes' })).toBe(false);
+    expect(isEmptyResearch({ url: 'https://example.com' })).toBe(false);
+    expect(isEmptyResearch({ body: 'the fire was in March' })).toBe(false);
+    expect(isEmptyResearch({ labels: ['Costume'] })).toBe(false);
+    expect(isEmptyResearch({ attachment: { name: 'a.png', data: 'data:image/png;base64,x' } })).toBe(false);
+    expect(isEmptyResearch({ attachment: { name: 'a.png', assetId: 'x' } })).toBe(false);
+  });
+  it('keeps a colour, which is a choice and the only one such a source can hold', () => {
+    expect(isEmptyResearch({ color: 'pink' })).toBe(false);
+  });
+  it('is not what a folder it happens to sit in makes it', () => {
+    expect(isEmptyResearch({ folderId: 'f1' })).toBe(true);
+  });
+  it('is nothing at all for a missing source', () => {
+    expect(isEmptyResearch(null)).toBe(false);
   });
 });

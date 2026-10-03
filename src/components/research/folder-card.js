@@ -4,9 +4,11 @@ import { LitElement, html, css, nothing } from 'lit';
 import { StoreController } from '../../state/store-controller.js';
 import { dispatch } from '../../utils/events.js';
 import { withGlobalItems } from '../../utils/context-menu.js';
-import { allLabels, addLabel, MAX_LABEL } from '../../data/research-doc.js';
+import { allLabels, addLabel, MAX_LABEL, NOTE_COLORS, colorToken } from '../../data/research-doc.js';
 import { icon } from './icons.js';
 import { startDrag, isRefDrag, applyDrop, openMoveMenu, hasMoveTargets } from './move-menu.js';
+import { askConfirm } from '../ui/confirm.js';
+import { centerOf } from '../ui/confirm-place.js';
 
 // A folder in the grid: the same size and shape as a reference card, so a
 // folder reads as one more thing in the panel and not as a different kind of
@@ -14,7 +16,10 @@ import { startDrag, isRefDrag, applyDrop, openMoveMenu, hasMoveTargets } from '.
 // drag a reference or another folder onto it.
 //
 // The name edits in place (a new folder opens ready to be named, and Rename
-// does the same), and a folder carries labels exactly as a reference does.
+// does the same), and a folder carries labels, a colour and a note exactly as
+// a reference does: the same six fills from the same swatch row, and the same
+// kind of note, because "the Baddeley interviews" is as worth a line of
+// explanation as any single source inside it.
 export class PandemoniumFolderCard extends LitElement {
   static properties = {
     folder: { type: Object },
@@ -28,13 +33,17 @@ export class PandemoniumFolderCard extends LitElement {
     :host{display:block}
     .fcard{
       position:relative;display:flex;flex-direction:column;gap:6px;min-height:112px;padding:12px 12px 10px;box-sizing:border-box;
-      background:var(--note-plain);border-radius:12.36px;cursor:pointer;
-      transition:background var(--dur-1) var(--ease-out),outline-color var(--dur-1) var(--ease-out);
+      background:var(--card,var(--note-plain));border-radius:12.36px;cursor:pointer;
+      transition:outline-color var(--dur-1) var(--ease-out);
       outline:2px solid transparent;outline-offset:-2px;
     }
-    .fcard:hover{background:color-mix(in srgb, var(--note-plain) 88%, var(--ink))}
+    /* Hover is a wash, not a second fill per colour: --row-hover already flips
+       with the theme, so one rule covers all six (the reference card's rule). */
+    .fcard::after{content:"";position:absolute;inset:0;border-radius:inherit;background:transparent;pointer-events:none;transition:background var(--dur-1)}
+    .fcard:hover::after{background:var(--row-hover)}
     /* Where a dragged item will land. */
-    .fcard.over{outline-color:var(--res);background:color-mix(in srgb, var(--note-plain) 82%, var(--res))}
+    .fcard.over{outline-color:var(--res)}
+    .fcard.over::after{background:color-mix(in srgb, var(--res) 18%, transparent)}
     .glyph{line-height:0}
     .glyph svg{width:30px;height:30px;fill:var(--ui)}
     .nm{font-size:12px;font-weight:500;color:var(--ink);line-height:1.35;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
@@ -43,6 +52,8 @@ export class PandemoniumFolderCard extends LitElement {
       background:var(--bg);color:var(--ink);display:block;-webkit-line-clamp:unset;
     }
     .sub{font-size:10px;color:var(--mut)}
+    /* The folder's own note, where a reference card carries its preview line. */
+    .note{font-size:11px;line-height:1.45;color:var(--mut);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
     .tags{display:flex;flex-wrap:wrap;gap:4px}
     .tags button{
       height:17px;padding:0 7px;font-family:var(--sans);font-size:10px;color:var(--ui);
@@ -88,6 +99,24 @@ export class PandemoniumFolderCard extends LitElement {
     dispatch(this, 'pandemonium-open-folder', { id: this.folder.id });
   }
 
+  // A note about the folder, asked for the same way a label is: this card is in
+  // a grid and has no room to write in, and the folder's own header (inside it)
+  // is where a long note is edited in place.
+  #noteDialog() {
+    const store = this._store.store;
+    const f = this.folder;
+    dispatch(this, 'pandemonium-open-dialog', {
+      title: (f.note || '').trim() ? 'Note on this folder' : 'Add a note',
+      okLabel: 'Save',
+      body: html`<div class="field"><label class="lbl">Note</label>
+        <textarea id="f_note" placeholder="What is in here, and why">${f.note || ''}</textarea></div>`,
+      onOk: (root) => {
+        const note = root.querySelector('#f_note').value;
+        if (note !== (f.note || '')) store.updateFolder(f.id, { note });
+      },
+    });
+  }
+
   #labelDialog() {
     const store = this._store.store;
     const f = this.folder;
@@ -105,18 +134,38 @@ export class PandemoniumFolderCard extends LitElement {
     });
   }
 
-  #delete() {
+  // Reached from a menu that has closed, so the question points at the middle
+  // of the card it is about (ui/confirm.js). What happens to the contents is
+  // said afterwards, in the toast: the bubble holds one line, and deleting a
+  // folder never deletes what is in it.
+  async #delete() {
     const f = this.folder;
     const n = this.count || 0;
-    const ok = confirm('Delete the folder "' + (f.name || 'Untitled') + '"?' + (n ? ' Its ' + n + ' item' + (n === 1 ? '' : 's') + ' move up a level, nothing else is deleted.' : ''));
-    if (ok) this._store.store.deleteFolder(f.id);
+    const card = this.renderRoot.querySelector('.fcard');
+    if (!await askConfirm(this, { anchor: centerOf(card), question: 'Delete this folder?' })) return;
+    this._store.store.deleteFolder(f.id);
+    dispatch(this, 'pandemonium-toast', {
+      message: n
+        ? 'Folder deleted. Its ' + n + ' item' + (n === 1 ? '' : 's') + ' moved up a level.'
+        : 'Folder deleted.',
+    });
   }
 
   #menuItems(at) {
     const store = this._store.store;
     const item = { kind: 'folder', id: this.folder.id };
+    const f = this.folder;
     return [
+      {
+        swatches: NOTE_COLORS.map((c) => ({
+          label: c.label,
+          color: c.dot,
+          selected: (f.color || null) === c.key,
+          fn: () => store.updateFolder(f.id, { color: c.key }),
+        })),
+      },
       { label: 'Rename', fn: () => this.#edit() },
+      { label: (f.note || '').trim() ? 'Edit the note...' : 'Add a note...', fn: () => this.#noteDialog() },
       { label: 'Add a label...', fn: () => this.#labelDialog() },
       ...(hasMoveTargets(store, item) ? [{ label: 'Move to folder...', fn: () => openMoveMenu(this, store, item, at) }] : []),
       { divider: true },
@@ -162,12 +211,12 @@ export class PandemoniumFolderCard extends LitElement {
     const f = this.folder;
     const n = this.count || 0;
     return html`
-      <div class="fcard ${this._over ? 'over' : ''}" draggable="true"
+      <div class="fcard ${this._over ? 'over' : ''}" style="--card:${colorToken(f.color)}" draggable="true"
         @click=${() => { if (!this._editing) this.#open(); }} @contextmenu=${(e) => this.#contextMenu(e)}
         @dragstart=${(e) => this.#dragStart(e)} @dragover=${(e) => this.#dragOver(e)}
         @dragleave=${() => { this._over = false; }} @drop=${(e) => this.#drop(e)}>
         <button class="more" title="Folder options" @click=${(e) => this.#menu(e)}>&#8943;</button>
-        <span class="glyph">${icon('folder')}</span>
+        <span class="glyph">${icon('folderFilled')}</span>
         ${this._editing
           ? html`<input class="nm" type="text" .value=${f.name || ''} maxlength="60"
               @click=${(e) => e.stopPropagation()}
@@ -175,6 +224,7 @@ export class PandemoniumFolderCard extends LitElement {
               @blur=${(e) => this.#commit(e)}>`
           : html`<span class="nm">${f.name || 'Untitled'}</span>`}
         <span class="sub">${n ? n + ' item' + (n === 1 ? '' : 's') : 'Empty'}</span>
+        ${(f.note || '').trim() ? html`<span class="note">${f.note}</span>` : nothing}
         ${(f.labels || []).length ? html`<div class="tags">
           ${f.labels.map((l) => html`<button title=${'Show only ' + l} @click=${(e) => this.#pickLabel(e, l)}>${l}</button>`)}
         </div>` : nothing}

@@ -3,6 +3,7 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { StoreController } from '../../state/store-controller.js';
 import { docTitle } from '../../data/research-doc.js';
+import { askConfirm } from '../ui/confirm.js';
 
 // Purely reactive: visibility and message are entirely derived from
 // ui.pendingRelink / ui.linking / ui.pair, so nothing needs to imperatively
@@ -31,9 +32,10 @@ export class PandemoniumLinkbar extends LitElement {
     this._store.store.setUI({ linking: null, pendingRelink: null });
   }
 
-  #unlink() {
-    if (!confirm('Remove this link between script and source?')) return;
+  async #unlink(e) {
+    const anchor = e && e.currentTarget;
     const id = this._store.ui.pair;
+    if (!await askConfirm(this, { anchor, question: 'Remove this link?', confirmLabel: 'Remove' })) return;
     this._store.store.deleteLink(id);
     this._store.store.setUI({ pair: null });
   }
@@ -67,7 +69,7 @@ export class PandemoniumLinkbar extends LitElement {
       return html`
         <div class="bar">
           <span>Linked to "${doc ? docTitle(doc) : 'source'}"</span>
-          <button @click=${() => this.#unlink()}>Unlink</button>
+          <button @click=${(e) => this.#unlink(e)}>Unlink</button>
           <button @click=${() => this.#close()}>Close</button>
         </div>
       `;

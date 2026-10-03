@@ -81,21 +81,29 @@
   --note-orange-dot:#e0702c;
   /* Chrome, from the Figma "Button-Standard-Component" (21:69),
      "panel-dropdown" (31:188) and "Title bar" (39:72) components. */
-  /* The script page. The writing surface has its own small palette, set by
-     the author: a green sheet, blue ink, and the two link colours a writer
-     reads while writing. It is deliberately NOT the app palette: --board and
-     --res still mean storyboard and reference everywhere else (the timeline,
-     the cards, the link pills), so changing them here would have repainted
-     half the app. These four are declared once and not re-declared for the
-     dark theme, because they are literal choices rather than a reading of the
-     surface they sit on; the same page shows after dark.
+  /* The script page. The writing surface has its own small palette: white
+     paper, black ink, and the link colours a writer reads while writing. It is
+     deliberately NOT the app palette: --board and --res still mean storyboard
+     and reference everywhere else (the timeline, the cards, the link pills), so
+     changing them here would have repainted half the app. These are declared
+     once and not re-declared for the dark theme, because they are literal
+     choices rather than a reading of the surface they sit on; the same page
+     shows after dark.
 
-     The three derived values are plain hex, not color-mix, because the
-     minimap paints them into a canvas and reads them off the computed style. */
-  --pg-paper:#B7DFBB;      /* the sheet */
-  --pg-ink:#03049E;        /* script text */
-  --pg-ui:#3946A7;         /* a step back from the ink: parenthetical, transition, lyric */
-  --pg-mut:#667CAE;        /* two steps back: summary, page numbers, placeholder */
+     The values are plain hex, not color-mix, because the minimap paints them
+     into a canvas and reads them off the computed style.
+
+     The sheet was a green one with blue ink at first, at the author's
+     direction, and is now the page a screenplay is actually printed on. What
+     carries meaning here is the ink's three steps back and the link colours;
+     a tinted sheet and coloured body text were reading as signals when they
+     were only a surface and a default. The sheet is told apart from the desk
+     by Material's resting-card shadow (--elev-2) and its corners, not by a
+     fill, which is what lets it be white on a white desk. */
+  --pg-paper:#ffffff;      /* the sheet */
+  --pg-ink:#111111;        /* script text */
+  --pg-ui:#555555;         /* a step back from the ink: parenthetical, transition, lyric */
+  --pg-mut:#8a8a8a;        /* two steps back: summary, page numbers, placeholder */
   --pg-board:#EF4024;      /* words linked to a storyboard */
   --pg-board-ref:#DA7C5D;  /* ... where only its reference frame has an image */
   --pg-res:#09A74B;        /* words linked to a reference */
@@ -131,8 +139,10 @@
   /* Elevation, copied from Material Design's shadow ramp as published: three
      stacked layers per level (key light, penumbra, ambient) whose negative
      spread and small offsets are what make it read as one soft shadow instead
-     of a grey smudge. 8dp is Material's "raised card" (a card under the
-     pointer). Add other levels from the same table, do not tune these. */
+     of a grey smudge. 2dp is Material's resting card (the script page lying on
+     the desk); 8dp is its "raised card" (a card under the pointer). Add other
+     levels from the same table, do not tune these. */
+  --elev-2:0px 3px 1px -2px rgba(0,0,0,.2),0px 2px 2px 0px rgba(0,0,0,.14),0px 1px 5px 0px rgba(0,0,0,.12);
   --elev-8:0px 5px 5px -3px rgba(0,0,0,.2),0px 8px 10px 1px rgba(0,0,0,.14),0px 3px 14px 2px rgba(0,0,0,.12);
   --sans:'Untitled Sans','Neue Haas Grotesk Text','Helvetica Neue',Helvetica,Arial,sans-serif;
   --mono:'Courier Prime','Courier New',Courier,monospace;

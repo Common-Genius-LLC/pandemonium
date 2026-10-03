@@ -4,6 +4,7 @@ import { LitElement, html, css } from 'lit';
 import { StoreController } from '../state/store-controller.js';
 import { dispatch } from '../utils/events.js';
 import { tabStyles } from '../styles/shared.js';
+import { askConfirm } from '../components/ui/confirm.js';
 
 // One chip per script. Clicking a chip that isn't active switches to it;
 // clicking the already-active chip opens its context menu (rename,
@@ -62,10 +63,16 @@ export class PandemoniumDraftChip extends LitElement {
     });
   }
 
-  #delete() {
+  // Asked with the bubble pointing at this very tab (ui/confirm.js), not in a
+  // system window. A draft takes its boards' and references' links with it, so
+  // the toast afterwards says what went rather than the question carrying a
+  // second sentence the bubble has no room for.
+  async #delete() {
     const s = this.script;
-    if (!confirm('Delete draft "' + s.name + '"?')) return;
+    const chip = this.renderRoot.querySelector('button');
+    if (!await askConfirm(this, { anchor: chip, question: 'Delete this draft?' })) return;
     this._store.store.deleteScript(s.id);
+    dispatch(this, 'pandemonium-toast', { message: 'Draft "' + s.name + '" deleted.' });
   }
 
   #dragStart(e) {

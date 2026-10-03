@@ -14,6 +14,27 @@
 // (the box proper starts that far below the top of the shape).
 export const BUBBLE = { w: 213.237, h: 102.707, tip: 105.475, point: 13.773 };
 
+// The rect a bubble should point at, from whatever the caller had to hand: an
+// element (point at the control itself) or a rect already measured. A zero-size
+// rect is a perfectly good anchor, which is what centerOf below makes.
+export function anchorRect(anchor) {
+  if (!anchor) return null;
+  return typeof anchor.getBoundingClientRect === 'function' ? anchor.getBoundingClientRect() : anchor;
+}
+
+// The middle of an element, as a rect with no size. For an action taken from a
+// menu row that has already closed, or from a right-click with nothing left on
+// screen to point at: the question then points at the middle of the thing it is
+// about (the card, or the panel the action was taken in) rather than at a
+// control that is no longer there.
+export function centerOf(el) {
+  const r = anchorRect(el);
+  if (!r) return null;
+  const x = (r.left + r.right) / 2;
+  const y = (r.top + r.bottom) / 2;
+  return { left: x, right: x, top: y, bottom: y };
+}
+
 // `anchor` is the control's viewport rect ({left, right, top, bottom}) and
 // `view` the viewport ({width, height}). Below the control by default, above it
 // (the shape flipped, pointer at the bottom) when there is no room below and

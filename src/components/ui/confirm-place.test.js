@@ -2,7 +2,7 @@
 'use strict';
 
 import { describe, it, expect } from 'vitest';
-import { BUBBLE, placeBubble } from './confirm-place.js';
+import { BUBBLE, placeBubble, anchorRect, centerOf } from './confirm-place.js';
 
 const VIEW = { width: 1200, height: 800 };
 const rect = (left, top, w = 56, h = 24) => ({ left, top, right: left + w, bottom: top + h });
@@ -43,5 +43,29 @@ describe('placeBubble', () => {
     const nearBottom = placeBubble(rect(500, 110), short);
     expect(nearBottom.side).toBe('above');
     expect(nearBottom.top).toBeGreaterThanOrEqual(8);
+  });
+});
+
+// What a question points at, when the control that asked has gone (a menu row
+// that closed) and the thing it is about is all there is left.
+describe('anchors', () => {
+  it('takes a rect as it stands', () => {
+    const r = rect(10, 20);
+    expect(anchorRect(r)).toBe(r);
+    expect(anchorRect(null)).toBe(null);
+  });
+  it('measures an element', () => {
+    const el = { getBoundingClientRect: () => rect(10, 20) };
+    expect(anchorRect(el)).toEqual(rect(10, 20));
+  });
+  it('turns an element into its own middle, with no size', () => {
+    const el = { getBoundingClientRect: () => rect(100, 200, 60, 40) };
+    expect(centerOf(el)).toEqual({ left: 130, right: 130, top: 220, bottom: 220 });
+  });
+  it('points the tip at that middle', () => {
+    const el = { getBoundingClientRect: () => rect(100, 200, 60, 40) };
+    const p = placeBubble(centerOf(el), VIEW);
+    expect(p.left + BUBBLE.tip).toBeCloseTo(130);
+    expect(p.top).toBeCloseTo(228);
   });
 });

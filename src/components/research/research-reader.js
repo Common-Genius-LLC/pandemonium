@@ -8,9 +8,9 @@ import { dispatch } from '../../utils/events.js';
 import { blockHTML } from '../../fountain/blocks.js';
 import { resolvePart } from '../../fountain/resolve.js';
 import {
-  docParas, paraAsBlock, docTitle, normalizeUrl, NOTE_COLORS,
+  docParas, paraAsBlock, normalizeUrl, NOTE_COLORS,
   parasToBody, setPara, splitPara, mergePara, colorToken,
-  addLabel, removeLabel, allLabels, MAX_LABEL,
+  addLabel, removeLabel, allLabels, MAX_LABEL, isEmptyResearch,
 } from '../../data/research-doc.js';
 import { captureParts, getRootSelection } from '../../utils/selection.js';
 import { readFileAsDataURL } from '../../utils/files.js';
@@ -19,6 +19,7 @@ import { openPair } from '../../state/actions.js';
 import { formStyles } from '../../styles/shared.js';
 import { leaveRect, takeRect, growFrom } from '../../utils/motion.js';
 import { openMoveMenu, hasMoveTargets } from './move-menu.js';
+import { askConfirm } from '../ui/confirm.js';
 import './attachment-viewer.js';
 import '../ui/link-preview.js';
 import { storablePreview, previewPatch, urlsIn } from '../../data/link-preview.js';
@@ -217,10 +218,51 @@ export class PandemoniumResearchReader extends LitElement {
     super.disconnectedCallback();
   }
 
+  // Closing a source the writer put nothing in deletes it. A source is
+  // created the moment they ask for one, with the caret already in its notes,
+  // so Escape (or the x) on an untouched one has to leave the grid as it was:
+  // otherwise asking for a source and thinking better of it leaves a blank
+  // card behind, which the writer then has to notice and clear up. Said out
+  // loud in a toast, because a deletion nobody asked for in words must at
+  // least be reported.
+  //
+  // A source something already points at is never deleted, however empty it
+  // looks: linking a brand-new source to a passage (the pick-a-source flow)
+  // makes one with nothing in it yet, and taking it away would quietly take
+  // the link with it.
   #close() {
+    const store = this._store.store;
+    const doc = this.#liveDoc();
+    const linked = doc ? store.project.links.some((l) => l.researchId === doc.id) : false;
+    const empty = !!doc && !linked && isEmptyResearch(doc);
     const card = this.renderRoot.querySelector('.card');
-    if (card && this.doc) leaveRect('research-close:' + this.doc.id, card.getBoundingClientRect());
-    this._store.store.setUI({ openDoc: null, openDocFocus: false, pair: null });
+    // No origin is handed back for a source that is going away: there will be
+    // no card in the grid to shrink into.
+    if (card && doc && !empty) leaveRect('research-close:' + doc.id, card.getBoundingClientRect());
+    store.setUI({ openDoc: null, openDocFocus: false, pair: null });
+    if (!empty) return;
+    store.deleteResearch(doc.id);
+    dispatch(this, 'pandemonium-toast', { message: 'Empty reference deleted.' });
+  }
+
+  // The source as it stands ON SCREEN, which is not always what the store
+  // holds: the title field commits as it is typed, but the notes commit a
+  // frame after they lose focus and the link field commits on change, so a
+  // click straight on the close button reaches this handler before either has
+  // landed. Deciding "is this empty" from the stored record alone would throw
+  // away the sentence the writer had just typed.
+  #liveDoc() {
+    const doc = this.doc;
+    if (!doc) return null;
+    const paras = [...this.renderRoot.querySelectorAll('.para')].map((el) => this.#textOf(el));
+    const url = this.renderRoot.querySelector('.linkbox input');
+    const title = this.renderRoot.querySelector('.rtitle');
+    return {
+      ...doc,
+      body: paras.length ? parasToBody(paras) : doc.body,
+      url: url ? url.value : doc.url,
+      title: title ? title.value : doc.title,
+    };
   }
 
   // Opening grows the source out of the card (or the New source tile) that
@@ -395,14 +437,21 @@ export class PandemoniumResearchReader extends LitElement {
 
   // ---- the source's own actions ----
 
-  #delete() {
+  // Both of these are reached from the header's own menu, so the question
+  // points back at the button that opened it, which is still there.
+  async #delete() {
     const d = this.doc;
     const n = this._store.store.project.links.filter((l) => l.researchId === d.id).length;
-    const warn = n ? ' and its ' + n + ' link' + (n === 1 ? '' : 's') + ' to the script' : '';
-    if (!confirm('Delete "' + docTitle(d) + '"' + warn + '?')) return;
+    if (!await askConfirm(this, { anchor: this.#menuButton(), question: 'Delete this reference?' })) return;
     this._store.store.deleteResearch(d.id);
-    dispatch(this, 'pandemonium-toast', { message: 'Source deleted.' });
+    dispatch(this, 'pandemonium-toast', {
+      message: n
+        ? 'Reference deleted, with its ' + n + ' link' + (n === 1 ? '' : 's') + ' to the script.'
+        : 'Reference deleted.',
+    });
   }
+
+  #menuButton() { return this.renderRoot.querySelector('.more'); }
 
   #pickFile() {
     const input = this.renderRoot.getElementById('fileAtt');
@@ -422,9 +471,10 @@ export class PandemoniumResearchReader extends LitElement {
     });
   }
 
-  #removeFile() {
-    if (!confirm('Remove the file from this source? Its notes and links stay.')) return;
+  async #removeFile() {
+    if (!await askConfirm(this, { anchor: this.#menuButton(), question: 'Remove this file?', confirmLabel: 'Remove' })) return;
     this._store.store.updateResearch(this.doc.id, { attachment: null });
+    dispatch(this, 'pandemonium-toast', { message: 'File removed. The notes and links stay.' });
   }
 
   #menu(e) {
@@ -512,8 +562,9 @@ export class PandemoniumResearchReader extends LitElement {
     store.setUI({ pendingRelink: { type: 'link', id: linkId }, draftId: owner });
   }
 
-  #unlink(linkId) {
-    if (!confirm('Remove this link between the script and this source?')) return;
+  async #unlink(linkId, e) {
+    const anchor = e && e.currentTarget;
+    if (!await askConfirm(this, { anchor, question: 'Remove this link?', confirmLabel: 'Remove' })) return;
     const store = this._store.store;
     store.deleteLink(linkId);
     if (store.ui.pair === linkId) store.setUI({ pair: null });
@@ -651,7 +702,7 @@ export class PandemoniumResearchReader extends LitElement {
                 @click=${() => { if (o.ok) openPair(this._store.store, o.lk.id); }}>${q || 'Untitled passage'}</span>
               ${whole ? html`<span class="whole" title="This link points at the source as a whole, not at a passage inside it">whole source</span>` : nothing}
               ${o.ok ? nothing : html`<button @click=${() => this.#reattach(o.lk.id)}>Reattach</button>`}
-              <button @click=${() => this.#unlink(o.lk.id)}>Unlink</button>
+              <button @click=${(e) => this.#unlink(o.lk.id, e)}>Unlink</button>
             </div>
           `;
         })}

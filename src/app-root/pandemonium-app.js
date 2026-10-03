@@ -27,6 +27,7 @@ import './panel-layout.js';
 import '../components/ui/toast.js';
 import '../components/ui/dialog.js';
 import '../components/ui/menu.js';
+import '../components/ui/confirm-host.js';
 import '../components/ui/logo.js';
 import '../components/ui/project-card.js';
 import '../components/linking/selection-toolbar.js';
@@ -142,6 +143,8 @@ export class PandemoniumApp extends LitElement {
     this.addEventListener('pandemonium-toast', (e) => this.renderRoot.getElementById('toast').show(e.detail.message));
     this.addEventListener('pandemonium-open-dialog', (e) => this.renderRoot.getElementById('dialog').open(e.detail));
     this.addEventListener('pandemonium-open-menu', (e) => this.renderRoot.getElementById('menu').open(e.detail));
+    // "Delete this?" from anywhere in the app (see ui/confirm.js).
+    this.addEventListener('pandemonium-confirm', (e) => this.renderRoot.getElementById('confirmHost').ask(e.detail));
     this.addEventListener('pandemonium-show-selection-toolbar', (e) => this.renderRoot.getElementById('selToolbar').open(e.detail));
     this.addEventListener('pandemonium-show-link-popover', (e) => this.renderRoot.getElementById('linkPopover').open(e.detail));
     this.addEventListener('pandemonium-show-comment', (e) => this.renderRoot.getElementById('commentPopover').open(e.detail));
@@ -460,6 +463,7 @@ export class PandemoniumApp extends LitElement {
       <pd-toast id="toast"></pd-toast>
       <pd-dialog id="dialog" data-clarity-mask="true"></pd-dialog>
       <pd-menu id="menu"></pd-menu>
+      <pd-confirm-host id="confirmHost"></pd-confirm-host>
       <pandemonium-selection-toolbar id="selToolbar"></pandemonium-selection-toolbar>
       <pandemonium-linkbar data-clarity-mask="true"></pandemonium-linkbar>
       <pandemonium-link-popover id="linkPopover" data-clarity-mask="true"></pandemonium-link-popover>

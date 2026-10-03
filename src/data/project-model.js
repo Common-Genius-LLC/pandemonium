@@ -454,13 +454,19 @@ export function deleteResearch(project, id) {
 
 // ---- folders (organising references) ----
 
-export function addFolder(project, { name, parentId = null, labels = [] } = {}) {
+export function addFolder(project, { name, parentId = null, labels = [], color = null, note = '' } = {}) {
   const folders = project.folders || [];
   const folder = {
     id: uid(),
     name: (name || '').trim() || 'New folder',
     parentId: parentId && folders.some((f) => f.id === parentId) ? parentId : null,
     labels: labels.slice(),
+    // A folder carries the same colour and the same kind of note a reference
+    // does (the six fills in NOTE_COLORS), so a topic can be a folder, a
+    // colour, a label, or any of them at once. Both are optional and default
+    // empty, so a project file written before they existed loads unchanged.
+    color: color || null,
+    note: note || '',
     createdAt: Date.now(),
   };
   return { project: { ...project, folders: [...folders, folder] }, folder };

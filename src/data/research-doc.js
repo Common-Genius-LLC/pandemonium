@@ -76,6 +76,26 @@ export function researchKind(doc) {
   return 'note';
 }
 
+// A source nobody has put anything in. One is created the moment the writer
+// asks for a new source (there is no dialog to fill in first, see
+// research-panel.js), so backing out of that has to leave nothing behind: the
+// reader deletes an empty source when it is closed rather than leaving a blank
+// card in the grid for the writer to find and tidy up later.
+//
+// A colour counts as content, deliberately. It is the one thing a writer can
+// have chosen on a source that holds nothing else, and picking it is an act;
+// throwing it away would be the opposite of what this function is for. What
+// the card is filed under (folderId) does not count: nobody chose it, it is
+// just where the writer was standing.
+export function isEmptyResearch(doc) {
+  if (!doc) return false;
+  const att = doc.attachment;
+  if (att && (att.data || att.assetId)) return false;
+  if (doc.color) return false;
+  if ((doc.labels || []).length) return false;
+  return !(doc.title || '').trim() && !(doc.url || '').trim() && !(doc.body || '').trim();
+}
+
 // Which viewer an attachment needs. Everything that is not one of the four we
 // can show inline is 'file': offered as a download rather than rendered badly.
 export function mediaKind(attachment) {

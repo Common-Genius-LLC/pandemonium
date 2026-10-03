@@ -7,6 +7,7 @@ import { listShares, addShare, removeShare, getReadLink, createReadLink, revokeR
 import { dispatch } from '../../utils/events.js';
 import { formStyles } from '../../styles/shared.js';
 import '../ui/button.js';
+import { askConfirm } from '../ui/confirm.js';
 
 // Sharing for the currently open cloud project. One instance at app-root,
 // opened via `pandemonium-open-share`. Follows the account dialog's shape:
@@ -160,11 +161,16 @@ export class PdShareDialog extends LitElement {
     }
   }
 
-  async #revokeLink() {
-    if (!confirm('Revoke this link? Anyone holding it loses access immediately.')) return;
+  // The question points at the Revoke button itself. Everyone holding the link
+  // loses access the moment it is answered, which the toast afterwards says:
+  // the bubble holds one line, and that line has to be the question.
+  async #revokeLink(e) {
+    const anchor = e && e.currentTarget;
+    if (!await askConfirm(this, { anchor, question: 'Revoke this link?', confirmLabel: 'Revoke' })) return;
     try {
       await revokeReadLink(this.#projectId());
       this._linkToken = null;
+      dispatch(this, 'pandemonium-toast', { message: 'Link revoked. Anyone holding it has lost access.' });
     } catch (err) {
       this._error = err.message || 'Could not revoke the link.';
     }
@@ -223,7 +229,7 @@ export class PdShareDialog extends LitElement {
               <div class="linkrow">
                 <input readonly .value=${readLinkUrl(this._linkToken)} @focus=${(e) => e.target.select()}>
                 <pd-button @click=${() => this.#copyLink()}>${this._copied ? 'Copied' : 'Copy'}</pd-button>
-                <pd-button variant="ghost" @click=${() => this.#revokeLink()}>Revoke</pd-button>
+                <pd-button variant="ghost" @click=${(e) => this.#revokeLink(e)}>Revoke</pd-button>
               </div>`
             : html`<div class="linkrow">
                 <pd-button ?disabled=${this._busy} @click=${() => this.#mintLink()}>Create link</pd-button>

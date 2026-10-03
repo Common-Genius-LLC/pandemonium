@@ -133,6 +133,32 @@ describe('browse', () => {
   });
 });
 
+// A folder carries a colour and a note exactly as a reference does, and both
+// are optional so a project written before them loads unchanged.
+describe('folder colour and note', () => {
+  it('starts with neither', () => {
+    const { folder } = addFolder(empty(), { name: 'Costume' });
+    expect(folder.color).toBe(null);
+    expect(folder.note).toBe('');
+  });
+  it('takes one of the reference colours and a note', () => {
+    const made = addFolder(empty(), { name: 'Costume' });
+    let p = updateFolder(made.project, made.folder.id, { color: 'pink', note: 'everything the tailor sent' });
+    const f = p.folders[0];
+    expect(f.color).toBe('pink');
+    expect(f.note).toBe('everything the tailor sent');
+    // And clears again, without losing the folder.
+    p = updateFolder(p, f.id, { color: null, note: '' });
+    expect(p.folders[0].color).toBe(null);
+    expect(p.folders[0].name).toBe('Costume');
+  });
+  it('leaves a folder from an older file alone', () => {
+    const p = { research: [], folders: [{ id: 'f1', name: 'Old', parentId: null }], links: [], scripts: [] };
+    const next = updateFolder(p, 'f1', { note: 'added later' });
+    expect(next.folders[0]).toEqual({ id: 'f1', name: 'Old', parentId: null, note: 'added later' });
+  });
+});
+
 describe('folder labels', () => {
   it('label a folder like a reference, and the topic list covers both', () => {
     let { p, A, r1 } = build();

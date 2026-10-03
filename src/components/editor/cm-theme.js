@@ -144,11 +144,15 @@ export const fountainTheme = EditorView.theme({
     overflow: 'hidden',
     isolation: 'isolate',
   },
-  // A sheet: the typing surface's own fill, set off from the white desk by a
-  // hairline in the theme's placeholder grey and the faintest lift.
+  // A sheet: the typing surface's own fill, lying on the desk under Material's
+  // resting-card shadow (--elev-2, three stacked layers, see tokens.css) with
+  // its corners taken off. The radius is the next golden step below the
+  // timeline's tracks (7.64 / 1.618), which is as much rounding as a page can
+  // take before it stops reading as paper.
   '.cm-page-sheet': {
     backgroundColor: 'var(--pg-paper)',
-    boxShadow: '0 0 0 1px var(--ph), 0 2px 6px rgba(0,0,0,.05)',
+    borderRadius: '4.72px',
+    boxShadow: 'var(--elev-2)',
   },
   // Decorative, and not a place to select from: the caret goes to the nearest
   // line instead (PageGap.ignoreEvent in cm-pages.js).

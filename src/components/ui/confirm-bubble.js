@@ -2,7 +2,7 @@
 
 import { LitElement, html, css } from 'lit';
 import { dispatch } from '../../utils/events.js';
-import { placeBubble } from './confirm-place.js';
+import { placeBubble, anchorRect } from './confirm-place.js';
 
 // Figma "Delete Dialogue box" (node 144-423): a small black bubble whose pointer
 // touches the control that asked, holding a question and Cancel / Delete. It
@@ -10,16 +10,22 @@ import { placeBubble } from './confirm-place.js';
 // cannot style, cannot anchor to what was clicked, and blocks the page.
 //
 // The parent renders it only while a question is open and hands it the control
-// (`anchor`); it says nothing about what is being confirmed. It answers with
-// `pd-confirm` or `pd-dismiss` and leaves closing to the parent. Dismissing on a
-// press elsewhere and on Escape is the parent's job too, since it already
-// decides what those keys and presses mean for the surface underneath.
+// (`anchor`, an element or a rect); it says nothing about what is being
+// confirmed. It answers with `pd-confirm` or `pd-dismiss` and leaves closing to
+// the parent. Dismissing on a press elsewhere and on Escape is the parent's job
+// too, since it already decides what those keys and presses mean for the
+// surface underneath.
+//
+// Most callers do not render it themselves: they ask through askConfirm()
+// (confirm.js) and the app's one host (confirm-host.js) puts it up. The account
+// dialog keeps its own copy, because it has to decide what a press elsewhere
+// means for the dialog underneath as well.
 //
 // The shape is the Figma vector as a mask, so its fill is a token and follows the
 // theme (the same way panel-layout.js draws the corner handles).
 export class PdConfirmBubble extends LitElement {
   static properties = {
-    anchor: { attribute: false }, // the element the pointer touches
+    anchor: { attribute: false }, // the element (or rect) the pointer touches
     question: { type: String },
     confirmLabel: { type: String, attribute: 'confirm-label' },
     busy: { type: Boolean, reflect: true }, // the answer is on its way: no second click
@@ -95,9 +101,8 @@ export class PdConfirmBubble extends LitElement {
 
   willUpdate(changed) {
     if (changed.has('anchor')) {
-      this._place = this.anchor
-        ? placeBubble(this.anchor.getBoundingClientRect(), { width: innerWidth, height: innerHeight })
-        : null;
+      const r = anchorRect(this.anchor);
+      this._place = r ? placeBubble(r, { width: innerWidth, height: innerHeight }) : null;
     }
   }
 

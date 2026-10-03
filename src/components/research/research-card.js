@@ -10,6 +10,8 @@ import { mediaIcon } from './icons.js';
 import { withGlobalItems } from '../../utils/context-menu.js';
 import { leaveRect, takeRect, shrinkFrom } from '../../utils/motion.js';
 import { startDrag, openMoveMenu, hasMoveTargets } from './move-menu.js';
+import { askConfirm } from '../ui/confirm.js';
+import { centerOf } from '../ui/confirm-place.js';
 
 // One research source in the grid. A source is one record that may carry a
 // piece of media, a URL and notes in any combination, so the card shows
@@ -193,13 +195,22 @@ export class PandemoniumResearchCard extends LitElement {
     dispatch(this, 'pandemonium-open-menu', { ...at, items: withGlobalItems(this, this.#menuItems(at)) });
   }
 
-  #delete() {
+  // Delete is reached from a menu, and that menu has closed by the time this
+  // runs, so there is no control left to point at: the question points at the
+  // middle of the card it is about. What goes with it (the links to the script)
+  // is said in the toast afterwards, since the bubble holds one line and that
+  // line is the question.
+  async #delete() {
     const d = this.doc;
     const n = this.linkCount || 0;
-    const warn = n ? ' and its ' + n + ' link' + (n === 1 ? '' : 's') + ' to the script' : '';
-    if (!confirm('Delete "' + docTitle(d) + '"' + warn + '?')) return;
+    const card = this.renderRoot.querySelector('.rcard');
+    if (!await askConfirm(this, { anchor: centerOf(card), question: 'Delete this reference?' })) return;
     this._store.store.deleteResearch(d.id);
-    dispatch(this, 'pandemonium-toast', { message: 'Source deleted.' });
+    dispatch(this, 'pandemonium-toast', {
+      message: n
+        ? 'Reference deleted, with its ' + n + ' link' + (n === 1 ? '' : 's') + ' to the script.'
+        : 'Reference deleted.',
+    });
   }
 
   // An image gets a real thumbnail; other media get their glyph on a plain
