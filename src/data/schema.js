@@ -22,6 +22,14 @@ export function emptyProject(overrides) {
     research: [],
     // Folders the references are filed in (see data/research-doc.js).
     folders: [],
+    // Sound: the audio files, the tracks they are laid out on, and the clips
+    // cut from them (see data/audio-model.js). Three flat id-keyed collections
+    // rather than one nested object, so the three-way merge handles them as
+    // sets like every other record collection. All optional: a project file
+    // written before sound existed has no keys and reads as silent.
+    sounds: [],
+    tracks: [],
+    clips: [],
     links: [],
     // The panel arrangement (see data/layout-tree.js). Persisted because a
     // layout is part of how this project is being worked on. Null means "use

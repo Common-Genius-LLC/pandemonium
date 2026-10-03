@@ -166,15 +166,22 @@ export const fountainTheme = EditorView.theme({
     position: 'absolute', left: '0', top: '0',
     pointerEvents: 'none', zIndex: '2', userSelect: 'none',
   },
+  // The pill itself is the row rail's "link to" pill (.cm-sec-acts button
+  // .linkto above): same size, same radius, same lift, same dark fill, because
+  // it is the same kind of control sitting on the same desk. width:max-content
+  // and nowrap are not optional here: the layer it hangs in has no width of its
+  // own, so a shrink-to-fit box would wrap "Add page" onto two lines.
   '.cm-addpage': {
     position: 'absolute', pointerEvents: 'auto', cursor: 'pointer',
-    height: '22px', padding: '0 11px', border: '0', borderRadius: '20px',
-    background: 'var(--ph)', color: 'var(--mut)',
-    fontFamily: 'var(--sans)', fontSize: '11px', fontWeight: '500', lineHeight: '22px',
-    opacity: '0.45', transition: 'opacity var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out)',
+    width: 'max-content', whiteSpace: 'nowrap',
+    fontSize: '12px', fontWeight: '500', lineHeight: '1', padding: '6px 12px', minHeight: '24px',
+    border: '0', borderRadius: '20px', fontFamily: 'var(--sans)',
+    background: 'var(--overlay)', color: 'var(--overlay-ink)',
+    boxShadow: '0 1px 1.25px rgba(0,0,0,.25)',
+    opacity: '0.5', transition: 'opacity var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out)',
   },
   '.cm-scroller:hover .cm-addpage': { opacity: '1' },
-  '.cm-addpage:hover': { background: 'var(--overlay)', color: 'var(--overlay-ink)' },
+  '.cm-addpage:hover': { background: 'var(--ui)' },
   // Decorative, and not a place to select from: the caret goes to the nearest
   // line instead (PageGap.ignoreEvent in cm-pages.js).
   '.cm-page-gap': { position: 'relative', userSelect: 'none', cursor: 'text' },

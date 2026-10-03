@@ -304,6 +304,61 @@ export function slidePlan(blocks, scenes, resolvedBoards) {
   return plan;
 }
 
+// ---- the storyboard's own timebase (the sound panel, and the show) ----
+
+// Spoken lines read slower than action description. The same split and the same
+// paces the timeline panel draws its bar widths from; it lives here because the
+// sound arrangement has to measure the storyboard with exactly the same ruler
+// the timeline does, or a clip would sit under the wrong beat.
+const SPOKEN = new Set(['dialogue', 'paren', 'lyric']);
+
+// One element's screen time from its word count. A floor keeps a near-wordless
+// element (a scene heading, a cue) from being zero-length.
+export function elementSeconds(b) {
+  const w = (b && b.words) || 0;
+  return Math.max(0.4, SPOKEN.has(b && b.type) ? w / 2.4 : w / 4.5);
+}
+
+// How long a storyboard is on screen, and whether that is known or guessed.
+// `dur` is a MEASURED figure, recorded by playing the show at the intended pace
+// (slideshow.js); without one, the words of the passage it is linked to are
+// read at the same pace the timeline uses. Hard rule 3: the two are never
+// mixed up, which is what `paced` is for. Every surface that shows one of these
+// says which it is.
+const BOARD_FLOOR = 1;
+
+export function boardSeconds(o, blocks) {
+  if (o.bd && o.bd.dur) return { secs: o.bd.dur, paced: true };
+  const seen = new Set();
+  let secs = 0;
+  for (const r of o.res || []) {
+    if (!r || seen.has(r.bi)) continue;
+    seen.add(r.bi);
+    secs += elementSeconds(blocks[r.bi]);
+  }
+  return { secs: Math.max(BOARD_FLOOR, secs), paced: false };
+}
+
+// The storyboards laid end to end: where each one starts and how long it runs.
+// This is the ruler the sound panel arranges clips against, and what makes a
+// clip anchored to a storyboard (data/audio-model.js) land in the right place
+// when a board's pacing is recorded or the order changes.
+export function boardSpans(blocks, resolvedBoards) {
+  let t = 0;
+  return linkedBoards(resolvedBoards).map((o) => {
+    const { secs, paced } = boardSeconds(o, blocks);
+    const span = { boardId: o.bd.id, start: t, dur: secs, paced, o };
+    t += secs;
+    return span;
+  });
+}
+
+// Whether the whole arrangement is laid against measured pacing or against
+// estimates, which is the one thing a sound panel must not be vague about.
+export function spansPaced(spans) {
+  return !!(spans || []).length && spans.every((s) => s.paced);
+}
+
 export function labelScenes(scenes) {
   let num = 0;
   scenes.forEach((s) => { s.label = s.pre ? 'OP' : String(++num); });

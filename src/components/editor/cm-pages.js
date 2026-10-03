@@ -27,7 +27,10 @@ import { pageGrid, lineTypes, paginate, displayLines, MARGINS, LPI } from '../..
 
 export const setPageMetrics = StateEffect.define();
 
-const DEFAULT_METRICS = { paper: 'a4', ppi: 96, gap: 12 };
+// The desk between two sheets. It was 12px, the gap of a stack of pages; it is
+// 40px because the Add page pill (cm-add-page.js) sits in that gap, below the
+// page it belongs to, and 12px is not room for a control.
+const DEFAULT_METRICS = { paper: 'a4', ppi: 96, gap: 40 };
 
 const metricsField = StateField.define({
   create: () => DEFAULT_METRICS,

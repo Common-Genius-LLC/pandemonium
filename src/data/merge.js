@@ -14,9 +14,10 @@
 //   - scripts are line-oriented text, so a line-level diff3 gives real git
 //     semantics: regions only one side touched merge silently, regions both
 //     sides touched differently become conflicts a human resolves
-//   - boards, research, links and comments are id-keyed records, so they
-//     merge as sets: adds union, an untouched record deleted on one side is
-//     deleted, and a record edited differently on both sides is a conflict
+//   - boards, research, folders, the sound collections (sounds, tracks, clips),
+//     links and comments are id-keyed records, so they merge as sets: adds
+//     union, an untouched record deleted on one side is deleted, and a record
+//     edited differently on both sides is a conflict
 //   - anchors are deliberately not merged at all. resolve.js re-searches
 //     quoted text rather than trusting offsets, so a link finds its passage
 //     again after a merged edit for the same reason it survives a local one
@@ -32,7 +33,7 @@
 // everything that genuinely differs becomes a conflict rather than a guess.
 'use strict';
 
-const RECORD_COLLECTIONS = ['boards', 'research', 'folders', 'links', 'comments'];
+const RECORD_COLLECTIONS = ['boards', 'research', 'folders', 'sounds', 'tracks', 'clips', 'links', 'comments'];
 const META_FIELDS = ['name', 'workspace', 'type', 'description', 'targetMins', 'layout', 'contributors'];
 
 function jsonEqual(a, b) {

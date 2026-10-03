@@ -5,7 +5,7 @@ import { StoreController } from '../state/store-controller.js';
 import { sectionsOf } from '../fountain/blocks.js';
 import { fmtT } from '../utils/format.js';
 import { dispatch } from '../utils/events.js';
-import { describeSlideshowGap } from '../state/selectors.js';
+import { describeSlideshowGap, elementSeconds } from '../state/selectors.js';
 import { panelStyles } from '../styles/shared.js';
 import { readFileAsDataURL, isBoardMediaFile } from '../utils/files.js';
 import '../components/ui/panel-picker.js';
@@ -27,15 +27,10 @@ import '../components/ui/button.js';
 // guess -- when pacing is recorded (slideshow) it can replace this estimate
 // per element.
 const BAR_TYPES = new Set(['scene', 'action', 'character', 'dialogue', 'paren', 'transition', 'centered', 'lyric']);
-const SPOKEN = new Set(['dialogue', 'paren', 'lyric']);
 
-// One element's estimated screen time from its word count: spoken lines read
-// slower than action description. A floor keeps a near-wordless element (a scene
-// heading, a cue) a visible sliver rather than a zero-width bar.
-function elementSeconds(b) {
-  const w = b.words || 0;
-  return Math.max(0.4, SPOKEN.has(b.type) ? w / 2.4 : w / 4.5);
-}
+// A bar's width is elementSeconds(b), the reading-pace estimate, which now
+// lives in state/selectors.js: the sound panel measures the storyboard with the
+// same ruler, and two copies of a pace would drift.
 
 export class PandemoniumTimeline extends LitElement {
   static properties = { leafId: {}, _dragBi: { state: true } };

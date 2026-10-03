@@ -10,19 +10,22 @@
 // After the break goes in, the caret lands on the blank line that starts the
 // new page, because the only reason to ask for a page is to write on it.
 //
-// The pill sits INSIDE the sheet's bottom margin rather than on the desk below
-// it: the gap between two sheets is 12px (item 20), which is not room for a
-// control, and the bottom margin of a screenplay page is an inch of blank
-// paper the text never reaches. It is faint until the pointer is near it, so
-// twelve pages do not read as twelve buttons.
+// The pill sits on the desk BELOW its sheet, right-aligned to the page, which
+// is why the gap between two sheets is 40px rather than the 12px of a stack of
+// paper (DEFAULT_METRICS in cm-pages.js): a control that belongs to the page
+// but is not part of it does not go on the paper. It is half-faded until the
+// pointer is over the editor, so a twelve-page script does not read as twelve
+// buttons, and it is the row rail's "link to" pill in every other respect
+// (cm-theme.js), being the same kind of control on the same desk.
 'use strict';
 
 import { ViewPlugin } from '@codemirror/view';
 import { sheetRects, setPageMetrics } from './cm-pages.js';
 
-// How far above the sheet's bottom edge the pill sits, and how far in from the
-// right. The pill is 22px tall, so this leaves it clear of the paper's edge.
-const UP = 30;
+// How far below the sheet's bottom edge the pill sits: enough to clear the
+// paper's edge and its shadow, and to stay clear of the next sheet's top (the
+// desk between two pages is 40px and the pill is 24px tall).
+const BELOW = 9;
 
 function insertAt(view, page) {
   const { layout } = sheetRects(view);
@@ -99,7 +102,7 @@ class AddPageButtons {
       const b = this.dom.children[i];
       b.dataset.page = String(i);
       b.style.left = (r.left + r.width - right) + 'px';
-      b.style.top = (r.top + r.height - UP) + 'px';
+      b.style.top = (r.top + r.height + BELOW) + 'px';
       b.style.transform = 'translateX(-100%)';
     });
   }
