@@ -10,6 +10,7 @@ import { fountainDecorations } from './cm-fountain-plugin.js';
 import { sectionAffordances, hoverSectionField, pinnedSectionField, setPinnedSection } from './cm-sections.js';
 import { fountainTheme } from './cm-theme.js';
 import { scriptPages, setPageMetrics } from './cm-pages.js';
+import { addPageButtons } from './cm-add-page.js';
 import { scriptMinimap, scriptMinimapTheme, MINIMAP_WIDTH } from './cm-script-minimap.js';
 import { scriptPrefs } from '../../state/script-prefs.js';
 import { pageFit, elementBox, LPI } from '../../fountain/paginate.js';
@@ -126,6 +127,9 @@ export class PandemoniumScriptEditor extends LitElement {
       // Real pages (cm-pages.js), and the minimap that draws the same pages
       // small with every linked passage painted in (cm-script-minimap.js).
       scriptPages,
+      // One "Add page" pill in each sheet's bottom margin, which writes a
+      // Fountain page break (===) and puts the caret on the new page.
+      addPageButtons(),
       scriptMinimap({ getHighlights: (v) => v.plugin(this.#plugin)?.decorations }),
       scriptMinimapTheme,
       activeElementField,

@@ -4,7 +4,7 @@ import { LitElement, html, css, nothing } from 'lit';
 import { StoreController } from '../../state/store-controller.js';
 import { dispatch } from '../../utils/events.js';
 import { withGlobalItems } from '../../utils/context-menu.js';
-import { allLabels, addLabel, MAX_LABEL, NOTE_COLORS, colorToken } from '../../data/research-doc.js';
+import { allLabels, addLabel, MAX_LABEL, NOTE_COLORS, colorToken, colorDot } from '../../data/research-doc.js';
 import { icon } from './icons.js';
 import { startDrag, isRefDrag, applyDrop, openMoveMenu, hasMoveTargets } from './move-menu.js';
 import { askConfirm } from '../ui/confirm.js';
@@ -45,7 +45,12 @@ export class PandemoniumFolderCard extends LitElement {
     .fcard.over{outline-color:var(--res)}
     .fcard.over::after{background:color-mix(in srgb, var(--res) 18%, transparent)}
     .glyph{line-height:0}
-    .glyph svg{width:30px;height:30px;fill:var(--ui)}
+    /* The glyph takes the deep reading of the folder's own colour (the swatch
+       value, --note-*-dot: the same hue as the fill, saturated enough to hold
+       at a glyph's size, and defined for both themes). A folder with no colour
+       keeps the plain ink, because the uncoloured default is black here and the
+       plain swatch grey would read as a disabled folder. */
+    .glyph svg{width:30px;height:30px;fill:var(--glyph,var(--ui))}
     .nm{font-size:12px;font-weight:500;color:var(--ink);line-height:1.35;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
     input.nm{
       width:100%;box-sizing:border-box;font-family:var(--sans);border:0;outline:0;border-radius:6px;padding:1px 4px;margin:-1px -4px;
@@ -211,7 +216,8 @@ export class PandemoniumFolderCard extends LitElement {
     const f = this.folder;
     const n = this.count || 0;
     return html`
-      <div class="fcard ${this._over ? 'over' : ''}" style="--card:${colorToken(f.color)}" draggable="true"
+      <div class="fcard ${this._over ? 'over' : ''}" draggable="true"
+        style=${'--card:' + colorToken(f.color) + (f.color ? ';--glyph:' + colorDot(f.color) : '')}
         @click=${() => { if (!this._editing) this.#open(); }} @contextmenu=${(e) => this.#contextMenu(e)}
         @dragstart=${(e) => this.#dragStart(e)} @dragover=${(e) => this.#dragOver(e)}
         @dragleave=${() => { this._over = false; }} @drop=${(e) => this.#drop(e)}>

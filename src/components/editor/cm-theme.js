@@ -154,6 +154,27 @@ export const fountainTheme = EditorView.theme({
     borderRadius: '4.72px',
     boxShadow: 'var(--elev-2)',
   },
+  // The Add page pills (cm-add-page.js), one in each sheet's bottom margin.
+  // The layer spans the whole scroller and is transparent to the pointer; only
+  // the pills take a press. Faint at rest so a long script does not read as a
+  // column of buttons, and fully there as soon as the pointer is on the page.
+  // Shaped exactly like CodeMirror's own .cm-layer (absolute, pinned to the
+  // top left, no size of its own), because the pills are placed with the same
+  // arithmetic the sheets are (sheetRects in cm-pages.js) and so must hang off
+  // the same box.
+  '.cm-addpage-layer': {
+    position: 'absolute', left: '0', top: '0',
+    pointerEvents: 'none', zIndex: '2', userSelect: 'none',
+  },
+  '.cm-addpage': {
+    position: 'absolute', pointerEvents: 'auto', cursor: 'pointer',
+    height: '22px', padding: '0 11px', border: '0', borderRadius: '20px',
+    background: 'var(--ph)', color: 'var(--mut)',
+    fontFamily: 'var(--sans)', fontSize: '11px', fontWeight: '500', lineHeight: '22px',
+    opacity: '0.45', transition: 'opacity var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out)',
+  },
+  '.cm-scroller:hover .cm-addpage': { opacity: '1' },
+  '.cm-addpage:hover': { background: 'var(--overlay)', color: 'var(--overlay-ink)' },
   // Decorative, and not a place to select from: the caret goes to the nearest
   // line instead (PageGap.ignoreEvent in cm-pages.js).
   '.cm-page-gap': { position: 'relative', userSelect: 'none', cursor: 'text' },

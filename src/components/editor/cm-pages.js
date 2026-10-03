@@ -97,7 +97,7 @@ function compute(state) {
   // The bottom margin takes up the part of a row the grid cannot use, so a
   // sheet is exactly the paper's height.
   const bottom = pageH - top - rows * lh;
-  const geom = { ppi: m.ppi, lh, top, bottom, pageH, pageW: m.pageW || paper.width * m.ppi, left: m.left != null ? m.left : MARGINS.left * m.ppi, gap: m.gap, count: layout.pages.length };
+  const geom = { ppi: m.ppi, lh, top, bottom, pageH, pageW: m.pageW || paper.width * m.ppi, left: m.left != null ? m.left : MARGINS.left * m.ppi, cols, gap: m.gap, count: layout.pages.length };
 
   const b = new RangeSetBuilder();
   for (let p = 1; p < layout.pages.length; p++) {
@@ -140,8 +140,37 @@ export function textBlockAt(view, pos) {
   return block.type.find((b) => b.type === BlockType.Text) || block.type[block.type.length - 1];
 }
 
-// Where the sheets go. Coordinates are relative to the scroller's content,
-// the same base CodeMirror's own selection layer uses.
+// Where every sheet is, in the scroller's own content coordinates (the same
+// base CodeMirror's selection layer uses, and stable across scrolling because
+// the layer scrolls with the content). The sheets layer below and the Add page
+// buttons (cm-add-page.js) both draw from this, so the two cannot disagree
+// about where a page is.
+//
+// Each sheet hangs off where CodeMirror ITSELF says the page's first line is,
+// not off an ideal grid. A line CodeMirror has not rendered yet has only an
+// estimated height (it ignores word wrap and our narrower dialogue columns), so
+// its text sits a few rows off where the grid says by the time you are several
+// pages down; sheets drawn from the grid then no longer lined up with the text
+// they hold. Taken from the same height map as the text, they always are, and
+// correct themselves as the estimates are replaced by measurements.
+export function sheetRects(view) {
+  const { geom, layout } = view.state.field(pagesField);
+  const doc = view.state.doc;
+  const sc = view.scrollDOM.getBoundingClientRect();
+  const content = view.contentDOM.getBoundingClientRect();
+  const left = content.left - (sc.left - view.scrollDOM.scrollLeft);
+  // Where the document starts, in the scroller's own content coordinates.
+  const docTop = view.documentTop - (sc.top - view.scrollDOM.scrollTop);
+  const rects = [];
+  for (let k = 0; k < geom.count; k++) {
+    const from = doc.line(Math.min(layout.pages[k].start + 1, doc.lines)).from;
+    const text = textBlockAt(view, from);
+    rects.push({ left, top: docTop + text.top - geom.top, width: geom.pageW, height: geom.pageH });
+  }
+  return { rects, geom, layout };
+}
+
+// Where the sheets go.
 const pageSheets = layer({
   above: false,
   class: 'cm-page-layer',
@@ -150,28 +179,8 @@ const pageSheets = layer({
       || update.transactions.some((tr) => tr.effects.some((e) => e.is(setPageMetrics)));
   },
   markers(view) {
-    const { geom, layout } = view.state.field(pagesField);
-    const doc = view.state.doc;
-    const sc = view.scrollDOM.getBoundingClientRect();
-    const content = view.contentDOM.getBoundingClientRect();
-    const left = content.left - (sc.left - view.scrollDOM.scrollLeft);
-    // Where the document starts, in the scroller's own content coordinates.
-    const docTop = view.documentTop - (sc.top - view.scrollDOM.scrollTop);
-    const out = [];
-    for (let k = 0; k < geom.count; k++) {
-      // Each sheet hangs off where CodeMirror ITSELF says the page's first line
-      // is, not off an ideal grid. A line CodeMirror has not rendered yet has
-      // only an estimated height (it ignores word wrap and our narrower
-      // dialogue columns), so its text sits a few rows off where the grid says
-      // by the time you are several pages down; the sheets, drawn from the
-      // grid, then no longer lined up with the text they hold. Taken from the
-      // same height map as the text, they always are, and correct themselves
-      // as the estimates are replaced by measurements.
-      const from = doc.line(Math.min(layout.pages[k].start + 1, doc.lines)).from;
-      const text = textBlockAt(view, from);
-      out.push(new RectangleMarker('cm-page-sheet', left, docTop + text.top - geom.top, geom.pageW, geom.pageH));
-    }
-    return out;
+    return sheetRects(view).rects
+      .map((r) => new RectangleMarker('cm-page-sheet', r.left, r.top, r.width, r.height));
   },
 });
 
