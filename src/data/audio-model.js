@@ -99,6 +99,15 @@ export function addTrack(project, { name } = {}) {
     name: (name || DEFAULT_TRACK_NAMES[Math.min(seq, DEFAULT_TRACK_NAMES.length - 1)] || 'Track').trim(),
     seq,
     mute: false,
+    // Solo is about what is HEARD, like mute: with anything soloed, only the
+    // soloed tracks play (see audible). It is never stored on a clip, because
+    // soloing half a track is not a thing anyone means by it.
+    solo: false,
+    // The colour this track's clips take unless a clip says otherwise. One of
+    // the six project colours (NOTE_COLORS), or null for the plain sound
+    // orange: the writer's own sorting, so effects can read one way and music
+    // another wherever sound is drawn, here and in the timeline.
+    color: null,
     gain: 1,
     createdAt: Date.now(),
   };
@@ -207,6 +216,9 @@ export function addClip(project, { trackId, soundId, at = 0, inPoint = 0, dur = 
     offset: anchor.offset,
     in: ms(start),
     dur: ms(length),
+    // null means "whatever this track is", which is what a writer who colours
+    // a whole track means; a clip that sets its own overrules it.
+    color: null,
     gain: num(gain, 1),
     createdAt: Date.now(),
   };
@@ -314,16 +326,39 @@ export function soundLength(project, spans) {
   return list(project, 'clips').reduce((m, c) => Math.max(m, clipEnd(c, spans)), 0);
 }
 
+// Which tracks are heard: everything that is not muted, or, as soon as
+// anything is soloed, only what is soloed and not also muted. The conventional
+// rule, and the reason both buttons exist: mute is "not this one", solo is
+// "only this one", and a writer checking one line against picture reaches for
+// the second without having to mute the other five.
+export function audibleTracks(project) {
+  const tracks = list(project, 'tracks');
+  const anySolo = tracks.some((t) => t.solo);
+  return new Set(tracks.filter((t) => !t.mute && (!anySolo || t.solo)).map((t) => t.id));
+}
+
+// The colour a clip is drawn in: its own, or the track's, or none (which every
+// surface draws as the plain sound orange). This is the one definition of it,
+// because the sound panel and the timeline must not disagree about what colour
+// a piece of sound is.
+export function clipColor(project, clip) {
+  if (!clip) return null;
+  if (clip.color) return clip.color;
+  const track = list(project, 'tracks').find((t) => t.id === clip.trackId);
+  return (track && track.color) || null;
+}
+
 // What is heard from `from` onwards, as plain numbers the engine can schedule
 // without knowing anything about storyboards: when each clip starts relative to
-// `from`, how far into its sound to begin, and for how long. A muted track is
-// left out, and a clip already finished by `from` never appears.
+// `from`, how far into its sound to begin, and for how long. A track that is not
+// audible (muted, or not soloed while something else is) is left out, and a clip
+// already finished by `from` never appears.
 export function playPlan(project, spans, from = 0) {
   const t0 = Math.max(0, num(from));
-  const muted = new Set(list(project, 'tracks').filter((t) => t.mute).map((t) => t.id));
+  const audible = audibleTracks(project);
   const out = [];
   for (const c of list(project, 'clips')) {
-    if (muted.has(c.trackId)) continue;
+    if (!audible.has(c.trackId)) continue;
     const sound = soundById(project, c.soundId);
     if (!sound) continue;
     const start = clipStart(c, spans);
@@ -341,6 +376,47 @@ export function playPlan(project, spans, from = 0) {
     });
   }
   return out.sort((a, b) => a.when - b.when);
+}
+
+// Which storyboards have sound on them, and in what colour: the mixdown of
+// every track, which is what the timeline's Sound row draws.
+//
+// ALL tracks count, muted and un-soloed ones included. Mute and solo are
+// monitoring states, things a writer flips a dozen times while working; what
+// the timeline reports is what has been MADE, and a row that emptied itself
+// every time someone auditioned a track would be reporting the wrong thing.
+//
+// A board's colour is the colour of whichever clip covers the most of it, so a
+// beat with music under it and a door slam on top reads as music. `secs` is how
+// much of the board's span is covered, which is what tells "there is sound
+// here" from "there is a frame of sound here".
+export function soundOnBoards(project, spans) {
+  const out = new Map();
+  const clips = list(project, 'clips');
+  if (!clips.length) return out;
+  for (const span of spans || []) {
+    const from = span.start;
+    const to = span.start + span.dur;
+    let covered = 0;
+    const byColor = new Map();
+    for (const c of clips) {
+      const s = clipStart(c, spans);
+      const e = s + Math.max(0, num(c.dur));
+      const overlap = Math.min(e, to) - Math.max(s, from);
+      if (overlap <= 0) continue;
+      covered += overlap;
+      const key = clipColor(project, c) || '';
+      byColor.set(key, (byColor.get(key) || 0) + overlap);
+    }
+    if (covered <= 0) continue;
+    let color = null;
+    let best = 0;
+    for (const [key, secs] of byColor) {
+      if (secs > best) { best = secs; color = key || null; }
+    }
+    out.set(span.boardId, { secs: ms(Math.min(covered, span.dur)), color, full: covered >= span.dur - 0.01 });
+  }
+  return out;
 }
 
 // Snapping, while a clip is dragged or trimmed. `marks` are the times worth

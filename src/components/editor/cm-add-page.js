@@ -1,4 +1,4 @@
-// "Add page": one control on the desk under the last sheet, right-aligned with
+// "Add page": one control on the desk under the last sheet, left-aligned with
 // it, that IS the page it makes.
 //
 // At rest it is a small white pill wearing the page's own shadow. Hover it and
@@ -28,10 +28,10 @@ import { DUR, EASE_OUT, reducedMotion } from '../../utils/motion.js';
 // The pill's width, which is also the mini page's. Wide enough for the label
 // and narrow enough that the page it turns into reads as a thumbnail.
 //
-// Its TOP is the desk gap below the last sheet, which is exactly where the next
-// sheet's top edge will be: the mini page and the page it becomes share that
-// corner, so the growth is only ever downwards and to the left and the thing
-// never jumps.
+// Its TOP LEFT is the desk gap below the last sheet at the sheet's own left
+// edge, which is exactly where the next sheet's top left corner will be: the
+// mini page and the page it becomes share that corner, so the growth is only
+// ever downwards and to the right and the thing never jumps.
 const W = 104;
 
 // Appends a page break at the end of the document, with a blank line before it
@@ -94,7 +94,7 @@ class AddPageButton {
     const mini = Math.round(W * (geom.pageH / geom.pageW));
     this.btn.style.setProperty('--mini-h', mini + 'px');
     this.at = {
-      left: last.left + last.width - W,
+      left: last.left,
       top: last.top + last.height + geom.gap,
       mini,
       // Where the next sheet will be: the same place cm-pages.js will draw it,

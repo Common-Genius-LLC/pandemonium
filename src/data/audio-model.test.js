@@ -9,6 +9,7 @@ import {
   addSound, updateSound, deleteSound, addTrack, updateTrack, deleteTrack, orderedTracks, moveTrack,
   addClip, updateClip, deleteClip, moveClip, splitClip, trimClip,
   clipStart, clipEnd, anchorAt, trackClips, soundLength, playPlan, snapTime, fmtClock, MIN_CLIP,
+  audibleTracks, clipColor, soundOnBoards,
 } from './audio-model.js';
 
 const empty = () => ({ sounds: [], tracks: [], clips: [] });
@@ -270,6 +271,91 @@ describe('a sound with no clips left', () => {
     const cut = splitClip(p, clip.id, 15, SPANS).project;
     expect(cut.sounds).toHaveLength(1);
     expect(deleteClip(cut, clip.id).sounds).toHaveLength(1);
+  });
+});
+
+// Mute is "not this one", solo is "only this one". Both are about what is
+// heard, never about what exists.
+describe('mute and solo', () => {
+  it('hears everything that is not muted', () => {
+    const { p, track } = build();
+    expect(audibleTracks(p).has(track.id)).toBe(true);
+    expect(audibleTracks(updateTrack(p, track.id, { mute: true })).has(track.id)).toBe(false);
+  });
+  it('hears only what is soloed, as soon as anything is', () => {
+    const { p, track } = build();
+    const other = addTrack(p, {});
+    const soloed = updateTrack(other.project, other.track.id, { solo: true });
+    const heard = audibleTracks(soloed);
+    expect(heard.has(other.track.id)).toBe(true);
+    expect(heard.has(track.id)).toBe(false);
+  });
+  it('does not hear a soloed track that is also muted', () => {
+    const { p, track } = build();
+    const both = updateTrack(p, track.id, { solo: true, mute: true });
+    expect(audibleTracks(both).size).toBe(0);
+  });
+  it('takes an un-soloed track out of what is played', () => {
+    const { p, track, sound } = build();
+    const other = addTrack(p, {});
+    const c2 = addClip(other.project, { trackId: other.track.id, soundId: sound.id, at: 1, dur: 2, spans: SPANS });
+    const soloed = updateTrack(c2.project, other.track.id, { solo: true });
+    expect(playPlan(soloed, SPANS, 0)).toHaveLength(1);
+    expect(playPlan(soloed, SPANS, 0)[0].when).toBe(1);
+    expect(trackClips(soloed, track.id, SPANS)).toHaveLength(1); // still there, just not heard
+  });
+});
+
+// A colour is the writer's own sorting (effects one way, music another). It is
+// defined once, so the panel and the timeline cannot disagree.
+describe('colour tags', () => {
+  it('comes from the clip, then the track, then nothing', () => {
+    const { p, clip, track } = build();
+    expect(clipColor(p, clip)).toBe(null);
+    const tinted = updateTrack(p, track.id, { color: 'blue' });
+    expect(clipColor(tinted, tinted.clips[0])).toBe('blue');
+    const own = updateClip(tinted, clip.id, { color: 'pink' });
+    expect(clipColor(own, own.clips[0])).toBe('pink');
+  });
+  it('is nothing for a clip that is not there', () => {
+    expect(clipColor(empty(), null)).toBe(null);
+  });
+});
+
+// The timeline's Sound row: the mixdown of every track, per storyboard.
+describe('sound on the storyboards', () => {
+  it('reports the boards a clip covers, and how much of each', () => {
+    const { p } = build(); // one clip, 12s to 20s, over b2 (10-20)
+    const on = soundOnBoards(p, SPANS);
+    expect([...on.keys()]).toEqual(['b2']);
+    expect(on.get('b2').secs).toBe(8);
+    expect(on.get('b2').full).toBe(false);
+  });
+  it('spans several boards, and says when one is covered end to end', () => {
+    const { p, sound, track } = build();
+    const wide = addClip(p, { trackId: track.id, soundId: sound.id, at: 0, dur: 25, spans: SPANS });
+    const on = soundOnBoards(wide.project, SPANS);
+    expect([...on.keys()].sort()).toEqual(['b1', 'b2', 'b3']);
+    expect(on.get('b1').full).toBe(true);
+    expect(on.get('b3').secs).toBe(5);
+  });
+  it('takes the colour of whatever covers the most of the board', () => {
+    const { p, sound, track } = build();
+    let next = updateTrack(p, track.id, { color: 'blue' }); // the 8s clip over b2
+    const stab = addTrack(next, {});
+    next = addClip(stab.project, { trackId: stab.track.id, soundId: sound.id, at: 13, dur: 1, spans: SPANS }).project;
+    next = updateClip(next, next.clips[next.clips.length - 1].id, { color: 'pink' });
+    expect(soundOnBoards(next, SPANS).get('b2').color).toBe('blue');
+  });
+  it('counts a muted or un-soloed track: this is what has been made, not what is being heard', () => {
+    const { p, track } = build();
+    const muted = updateTrack(p, track.id, { mute: true });
+    expect(soundOnBoards(muted, SPANS).get('b2').secs).toBe(8);
+  });
+  it('is empty with no clips, and never invents a board', () => {
+    expect(soundOnBoards(empty(), SPANS).size).toBe(0);
+    const { p } = build();
+    expect(soundOnBoards(p, []).size).toBe(0);
   });
 });
 

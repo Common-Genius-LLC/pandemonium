@@ -177,7 +177,7 @@ export const fountainTheme = EditorView.theme({
   // grows downward out of it instead of carrying the words down the page.
   '.cm-addpage-lbl': {
     display: 'block', height: '26px', lineHeight: '26px', textAlign: 'center',
-    fontFamily: 'var(--sans)', fontSize: '12px', fontWeight: '500', color: 'var(--pg-mut)',
+    fontFamily: 'var(--sans)', fontSize: '12px', fontWeight: '500', color: 'var(--pg-ink)',
     whiteSpace: 'nowrap',
     transition: 'opacity var(--dur-1) var(--ease-out)',
   },
