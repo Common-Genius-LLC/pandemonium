@@ -28,8 +28,9 @@ place, with a timeline that shows how done you actually are.
 
 From the product spec. Confirm against the code before relying on it.
 
-- **Script**: a Fountain document. Multiple scripts are allowed per project, but
-  only one is the **final draft**. Storyboards and comments attach to the final
+- **Script**: a document in one of three formats, chosen per draft (plain text,
+  Markdown or Fountain; a new draft is plain text, see `src/data/formats.js`).
+  Multiple scripts are allowed per project, but only one is the **final draft**. Storyboards and comments attach to the final
   draft only; a reference link may be made in any draft (see hard rule 4).
 - **Storyboard link**: a script section connected to a **storyboard**. A
   storyboard is one record with two image frames, a final one (`img`) and a
@@ -50,9 +51,9 @@ From the product spec. Confirm against the code before relying on it.
 - **Reference link**: a script section connected to a URL, a reference document, or
   a note. A highlighted span inside a reference doc links to a specific script
   span. Clicking either end reveals the link between the two.
-- **Global timeline**: sits above everything and shows, at a glance, how much of
-  the script is storyboarded, how much is backed by references, and the estimated
-  video length.
+- **Global timeline**: shows, at a glance, how much of the script is
+  storyboarded (each beat in its own frame's key colour), how much is backed by
+  references, how much has sound on it, and the estimated video length.
 - **Sound**: audio files laid out on as many tracks as the writer wants, cut
   into clips, each clip anchored to a storyboard rather than to an absolute
   time, so the sound follows the beat it was cut against (see
@@ -1050,6 +1051,79 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
     its own Letter CSS rather than the paper setting; and the page palette still
     has no dark-theme reading of its own, which matters less now that the paper
     is white and the ink black.
+
+33. **Sound in the timeline, solo and colour tags, per-panel undo, a format per
+    draft, and the Add page page.**
+    **Sound.** Tracks gained **solo** (S beside M, and in the track menu):
+    `audibleTracks` in `audio-model.js` is the conventional rule, only the
+    soloed tracks heard as soon as anything is soloed, with mute still winning
+    on the same track. **Colour tags**: a track carries one of the six project
+    colours (`NOTE_COLORS`) and its clips take it unless a clip sets its own
+    (`clipColor`, the one definition of it), set from a swatch row at the top of
+    either menu; the no-colour swatch is drawn in the plain sound orange because
+    that is what it renders as. **Zoom** all goes through one path that holds the
+    time under a fixed point: the pointer for a trackpad pinch or Ctrl-wheel, the
+    midpoint for a two-finger pinch, the middle of the pane for the buttons. The
+    floor is 0.25 px/s (two hours in 1800px), since the point of zooming out is
+    to see the whole thing, and a **Fit** button goes straight there. The
+    **playhead scrubs**: press the ruler, empty track, or its own handle and
+    drag, with playback paused for the drag and resumed from where it was let
+    go. Track names have a 196px column, two words wide.
+    **The timeline has a third row, Sound**, and the rows are now Storyboard,
+    Reference and Sound. The Sound row is the mixdown of every track
+    (`soundOnBoards`), drawn per script element through the storyboard that
+    element is boarded as, in the colour of whichever clip covers most of that
+    beat. It counts muted and un-soloed tracks, because it reports what has been
+    MADE, not what is being monitored. The **Storyboard row draws each boarded
+    beat in its own frame's key colour** (`utils/key-color.js`), so the row reads
+    as the film's palette down its length; a thumbnail at two pixels wide would
+    be a smear, and hovering a bar shows the frame itself, floating free. The key
+    colour is an average of real pixels taken twice, the second pass over only
+    the pixels whose chroma beats the first pass's mean, which pulls it towards
+    the colour the frame is about instead of the mud a flat average gives; read
+    asynchronously, cached by image, never stored (it is derived and can be
+    derived again). A video keeps the storyboard green, having no still to read.
+    **Undo and redo are per panel** (`state/history.js`). One stack for the app
+    would mean Cmd+Z in the sound panel undoing the sentence typed two minutes
+    ago in the script, so each panel steps through its own work: storyboards (and
+    the timeline, which edits them), references (with folders and links), and
+    sound. A change goes on the thread of the DATA it touched, not of the panel
+    it was made from, since most of these actions are reachable from three
+    places. An entry is the branch references as they stood, which is free
+    because every reducer in `data/` is pure; the module says so and says what
+    would break it. Threads clear on a project load and on a merge (an entry from
+    before a merge would put this device's collections back over the other
+    writer's work). The keystroke goes to the pane last pressed in
+    (`state/active-panel.js`, kept out of the store so a click does not
+    re-render every panel), never to a text field or contenteditable, and never
+    to an event CodeMirror already answered. The script keeps its own per-draft
+    history. Each pane's right-click menu offers Undo and Redo by name.
+    **A format per draft** (`data/formats.js`): plain text, Markdown or
+    Fountain, chosen from a dropdown left of Focus. **A new draft is plain
+    text.** A first draft is usually prose, an outline or a list of beats, and
+    read as Fountain that prose is rewritten in front of the writer (a line in
+    capitals becomes a character cue, `CUT TO:` a transition, a leading dot a
+    forced heading, `/* */` a boneyard); hard rule 2 is about never corrupting a
+    Fountain document, and a plain-text document has the same claim on being
+    left alone. `fountain/plain.js` is the other parser: one block per non-blank
+    line, every one a paragraph, nothing read in. Everything downstream works on
+    `parsed.blocks`, so the pages, minimap, word count, links and timeline work
+    unchanged. The editor holds its format in a facet (`cm-format.js`) because
+    the three extensions that parse the document themselves must parse it the
+    same way. Fountain alone gets the element flow and the rail's element pill;
+    Markdown gets `cm-markdown.js` and keeps emphasis; plain text gets neither.
+    Markdown is coloured by WEIGHT AND COLOUR ONLY with its markers left in
+    place, because the page is a character grid and a resized heading would walk
+    off its sheet. Switching never touches the text, so it is reversible and
+    every anchor survives it; a draft from an older file reads as Fountain,
+    which is what it is.
+    **Add page** is at the page's left edge with black text, so its top left
+    corner is the next sheet's top left corner and the growth runs down and to
+    the right out of a corner the two share.
+    **Not done**: no waveform, fades or clip gain in the sound panel; comments
+    have no undo thread (they would have to share the script's, whose Cmd+Z
+    belongs to the caret); sound takes no part in the share projection; and a
+    Markdown draft's headings are coloured rather than re-typeset.
 
 ---
 

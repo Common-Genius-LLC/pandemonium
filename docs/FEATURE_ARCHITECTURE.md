@@ -526,6 +526,148 @@ volume curves; no track solo; no clip copy and paste; the share projection does
 not carry sound; and sound takes no part in the timeline's coverage, which is
 about what is boarded and what is sourced.
 
+### 6.1 What landed after the first pass
+
+**Solo** (`audibleTracks`) is the conventional rule and not a second kind of
+mute: with anything soloed only the soloed tracks are heard, and mute still
+wins on the same track. Both exist because they answer different questions,
+"not this one" and "only this one", and a writer checking one line against
+picture reaches for the second without having to mute the other five.
+
+**Colour tags** are the writer's own sorting: effects one way, music another. A
+track carries one of the six project colours and its clips take it unless a
+clip sets its own, which is what someone who colours a whole track means.
+`clipColor` is the single definition, because the sound panel and the timeline
+must not disagree about what colour a piece of sound is.
+
+**Zoom** goes through one path (`#zoomTo`) that holds the time under a fixed
+point on screen: the pointer for a trackpad pinch (which arrives as a wheel
+event with ctrlKey) or Ctrl-wheel, the midpoint for a two-finger pinch, the
+middle of the pane for the buttons. Without that, zooming out walks the
+arrangement off the left edge and the writer scrolls back to find what they
+were looking at. The floor is 0.25 px/s, set by what zooming out is FOR (two
+hours in 1800px) rather than by what looks tidy, and Fit goes straight to the
+zoom that fits the pane.
+
+**The timeline's Sound row** is the mixdown of every track. It reaches a script
+element through the storyboard that element is boarded as, because that is how
+sound is anchored (section 6): an element with no board can carry no sound,
+which is the model being honest rather than the row being incomplete. It counts
+muted and un-soloed tracks, since mute and solo are monitoring states a writer
+flips a dozen times an hour, and a row that emptied itself every time someone
+auditioned a track would be reporting the wrong thing.
+
+**The Storyboard row's key colours** (`utils/key-color.js`) make the row read as
+the film's palette. A bar is often two or three pixels wide, so a thumbnail
+would be a smear; the colour of the thumbnail is the part that survives at that
+size, and the frame itself is one hover away. The colour is an average of real
+pixels, taken twice: the second pass over only the pixels whose chroma beats the
+first pass's mean, which pulls the answer towards the colour the frame is ABOUT
+instead of the mud a flat average of a mostly-background frame gives. A frame
+with no chroma keeps its plain average, which is the honest answer for a
+black-and-white one. Read asynchronously, cached by the image's own data, and
+never stored in the project: it is derived from the frame and can always be
+derived again.
+
+## 7. Undo and redo, per panel
+
+One stack for the whole app would be wrong here, and not as a matter of taste.
+These panels are worked in side by side: a writer lays sound against the
+storyboard with the script open beside it, so a single stack means Cmd+Z in the
+sound panel undoing the sentence they typed two minutes ago in the script, or
+the other way round. "What does undo mean" only has an answer relative to what
+you are working on.
+
+**A thread is a set of project branches**, not a panel: `boards` for the
+storyboards (and the timeline, which edits them), `research` + `folders` +
+`links` for the references, `sounds` + `tracks` + `clips` for sound. A change
+is recorded on a thread if and only if it touched that thread's branches, so
+where the change was MADE does not matter: a storyboard created by dropping an
+image on a script line is undone from the storyboard thread, because a
+storyboard is what it is. That is the only rule that stays true no matter which
+panel an action is reachable from, and several are reachable from three.
+
+**The script is deliberately absent.** It has CodeMirror's own history, per
+draft, which also restores the link anchors an edit moved (item 31). Routing
+Cmd+Z here while the caret is in the script would undo a board or a comment
+while the writer was looking at a sentence.
+
+**An entry is the branch references as they stood**, not a copy and not a diff.
+Every reducer in `data/` is pure and returns new arrays rather than mutating
+them, so the old array is still intact and still correct, and holding it costs
+one pointer. `state/history.js` says this out loud because it is a dependency on
+a property of other modules: a reducer that mutated an array in place would
+quietly make every entry on its thread a lie. The depth is capped at 60 per
+thread, since an entry holds whole collections and those hold data URLs.
+
+**Clearing.** Threads are forgotten when another project opens and when a merge
+replaces the collections wholesale. An entry recorded before a merge holds the
+collections as THIS device had them, and applying one afterwards would put them
+back over what was merged in, which is the one outcome a three-way merge exists
+to prevent.
+
+**Routing** is "the pane you last pressed in" (`state/active-panel.js`), not
+"the pane under the pointer": moving the mouse to reach for Cmd+Z must not
+change what Cmd+Z means. It is kept out of the store's ui branch on purpose,
+because it changes on every press inside any pane and in the store that would
+re-render every panel in the layout on every click, the script editor included.
+Nothing renders from it; the keyboard router reads it when a key is pressed and
+the pane menus read it when they open. A text field, a contenteditable, and an
+event CodeMirror already answered (`defaultPrevented`) are all left alone.
+
+## 8. A format per draft
+
+Pandemonium is built around Fountain, and the final draft of a screenplay is a
+Fountain document. But a draft is not always a screenplay yet: the first one is
+usually prose, a treatment, an outline, a list of beats. Read as Fountain, that
+prose is rewritten in front of the writer, because Fountain reads meaning into
+shapes ordinary prose has by accident: a line in capitals is a character cue, a
+line ending in "TO:" is a transition, a leading dot forces a scene heading,
+`/* */` disappears into a boneyard, `[[ ]]` becomes a note. Hard rule 2 is about
+never corrupting a Fountain document; a plain-text document has the same claim
+on being left alone.
+
+So each draft carries a format (`data/formats.js`): `text`, `markdown` or
+`fountain`. **A new draft is plain text**, and the dropdown left of Focus
+switches it.
+
+**One other parser** (`fountain/plain.js`): one block per non-blank line, every
+one a paragraph, nothing read in. Everything downstream of the parser works on
+`parsed.blocks`, so the page layout, the minimap, the word count, the estimate,
+the links and the timeline work unchanged; Markdown shares the parse and adds
+only `**bold**` and `*italic*`, which mean the same thing in both formats.
+
+**The format is a facet** (`components/editor/cm-format.js`), not a prop. The
+live-preview plugin, the page layout and the minimap each parse the document
+themselves on every keystroke, and all three must parse it the same way, or the
+sheets would be laid out from one reading of the text while the words were drawn
+from another. Changing a draft's format rebuilds the EditorState, the way a
+draft switch does, because the extension set itself differs: Fountain has the
+element flow (the Enter picker, Tab transforms, auto-uppercase, the case
+journal, the summary default, the live preview that hides its own markers) and
+the row rail's element pill; Markdown has its own colouring; plain text has
+neither.
+
+**Markdown is coloured, not re-typeset.** Weight and colour only, with the
+markers left where they stand and dimmed. That is the page's constraint, not a
+shortcut: the script page is a real character grid (`paginate.js` lays the
+document out in rows and columns of a monospace cell and `cm-pages.js` draws
+sheets against it), so a heading set two sizes larger would be taller and wider
+than the row it was laid out on and the text would walk off its sheet. Hiding
+the markers would mean teaching the page layout a second syntax to keep the row
+counts right, for a format where the marker is part of how people read their own
+notes. The highlighter is hand-rolled for the same reason the Fountain parser is:
+a Markdown grammar package and its lezer dependencies would be a large addition
+to colour six line shapes and four inline ones.
+
+**Switching is lossless.** The text is never touched, only how it is read, so a
+switch is reversible and every storyboard, reference and comment stays attached:
+anchors are found by searching for their own quoted words (`fountain/resolve.js`),
+not by block index. A draft from a file written before the setting existed has no
+`format` key and reads as Fountain, which is what it is; defaulting those to
+plain text would silently restyle every screenplay already saved. An import is
+Fountain for the same reason.
+
 ## Build order and status
 
 Not arbitrary. Two dependencies are real, and both were honored.
