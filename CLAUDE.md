@@ -1119,7 +1119,13 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
     which is what it is.
     **Add page** is at the page's left edge with black text, so its top left
     corner is the next sheet's top left corner and the growth runs down and to
-    the right out of a corner the two share.
+    the right out of a corner the two share. It works in every format: a page
+    break is the one thing `plain.js` reads in a plain-text or Markdown draft
+    (`===` on its own line with a blank line before it, which is both what Add
+    page writes and what keeps it clear of Markdown's setext heading), since it
+    is the document's own structure rather than a reading of the prose. Before
+    that it wrote a line of equals signs into prose that nothing read: junk in
+    the document and no page break.
     **Not done**: no waveform, fades or clip gain in the sound panel; comments
     have no undo thread (they would have to share the script's, whose Cmd+Z
     belongs to the caret); sound takes no part in the share projection; and a

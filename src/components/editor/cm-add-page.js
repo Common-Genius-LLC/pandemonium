@@ -8,11 +8,18 @@
 // the next sheet will occupy, and the real sheet takes over from it: the object
 // the writer pressed is the object they get.
 //
-// What it writes is a Fountain forced page break, `===` (parse.js), so the
-// break lives in the document and travels with it: into the file, into a PDF
-// export, and into anyone else's copy. Nothing about the page layout is stored
-// anywhere else, and nothing here knows how to paginate; it only writes the one
-// line that makes the layout break where the writer asked. The caret lands on
+// What it writes is a page break, `===` on its own line with a blank line
+// before it, so the break lives in the document and travels with it: into the
+// file, into a PDF export, and into anyone else's copy. Nothing about the page
+// layout is stored anywhere else, and nothing here knows how to paginate; it
+// only writes the one line that makes the layout break where the writer asked.
+//
+// The same line in every format. Fountain has always read `===` as a forced
+// break (parse.js); a plain-text or Markdown draft reads it as one too, and
+// only with a blank line in front of it, which is both what keeps it clear of
+// Markdown's setext heading and exactly what this writes (see
+// fountain/plain.js). Before that, Add page wrote a line of equals signs into
+// prose that nothing read, so it put junk in the document and broke no page. The caret lands on
 // the blank line that starts the new page, because the only reason to ask for a
 // page is to write on it.
 //
@@ -34,13 +41,19 @@ import { DUR, EASE_OUT, reducedMotion } from '../../utils/motion.js';
 // ever downwards and to the right and the thing never jumps.
 const W = 104;
 
-// Appends a page break at the end of the document, with a blank line before it
-// unless the writer has already left one, and puts the caret on the blank line
-// that starts the new page.
+// Appends a page break at the end of the document and puts the caret on the
+// blank line that starts the new page.
+//
+// Whatever the document ends with, the marker ends up with a blank line in
+// front of it: that is what makes it a break in every format, and it is tidier
+// Fountain besides. An empty document needs nothing in front.
 function addPage(view) {
   const doc = view.state.doc;
   const pos = doc.length;
-  const lead = doc.line(doc.lines).text.trim() ? '\n\n' : '';
+  const tail = doc.sliceString(Math.max(0, doc.length - 2));
+  const lead = doc.length === 0 ? ''
+    : tail.endsWith('\n\n') ? ''
+      : tail.endsWith('\n') ? '\n' : '\n\n';
   view.dispatch({
     changes: { from: pos, insert: lead + '===\n\n' },
     selection: { anchor: pos + lead.length + 4 },
@@ -59,7 +72,7 @@ class AddPageButton {
     this.btn = document.createElement('button');
     this.btn.className = 'cm-addpage';
     this.btn.type = 'button';
-    this.btn.title = 'Add a page (writes a Fountain page break)';
+    this.btn.title = 'Add a page (writes a page break into the document)';
     const label = document.createElement('span');
     label.className = 'cm-addpage-lbl';
     label.textContent = 'Add page';

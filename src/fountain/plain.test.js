@@ -111,6 +111,55 @@ describe('a plain draft on the page', () => {
   });
 });
 
+// The one thing read in every format: the document's own page break, which is
+// what Add page writes (components/editor/cm-add-page.js).
+describe('a page break in a plain draft', () => {
+  it('is a line of equals signs with a blank line before it', () => {
+    const p = parsePlain('One.\n\n===\n\nTwo.\n');
+    expect(p.blocks.map((b) => b.type)).toEqual(['action', 'page', 'action']);
+    expect(p.blocks[1].line).toBe(2);
+  });
+  it('counts at the very start of the document', () => {
+    expect(parsePlain('===\n\nOne.').blocks.map((b) => b.type)).toEqual(['page', 'action']);
+  });
+  it('is not a Markdown setext underline, which has text right above it', () => {
+    const p = parsePlain('My heading\n===\n\nBody.', { emphasis: true });
+    expect(p.blocks.map((b) => b.type)).toEqual(['action', 'action', 'action']);
+    expect(p.blocks[1].plain).toBe('===');
+  });
+  it('is drawn where it stands, and takes one row', () => {
+    const text = 'One.\n\n===\n\nTwo.';
+    const lines = text.split('\n');
+    const parsed = parsePlain(text);
+    expect(displayLines(parsed, lines)[2]).toBe('===');
+    const grid = pageGrid('a4');
+    const out = paginate({
+      lines,
+      types: lineTypes(parsed, lines.length, lines),
+      display: displayLines(parsed, lines),
+      cols: grid.cols,
+      rows: grid.rows,
+    });
+    // Two pages, and the second starts after the break.
+    expect(out.pages).toHaveLength(2);
+    expect(out.pages[1].start).toBe(3);
+  });
+  it('breaks the page in a Markdown draft too', () => {
+    const text = '# Notes\n\n===\n\nMore.';
+    const lines = text.split('\n');
+    const parsed = parsePlain(text, { emphasis: true });
+    const grid = pageGrid('a4');
+    const out = paginate({
+      lines,
+      types: lineTypes(parsed, lines.length, lines),
+      display: displayLines(parsed, lines),
+      cols: grid.cols,
+      rows: grid.rows,
+    });
+    expect(out.pages).toHaveLength(2);
+  });
+});
+
 describe('the format on a script record', () => {
   it('defaults an older file to Fountain, which is what it was written as', () => {
     expect(formatOf({ id: 'a', text: 'INT. X - DAY' })).toBe('fountain');
