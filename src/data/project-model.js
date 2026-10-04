@@ -11,6 +11,7 @@
 import { uid, CHIPCOLORS } from '../utils/format.js';
 import { defaultFountain } from './schema.js';
 import { researchKind, canMoveFolder } from './research-doc.js';
+import { DEFAULT_FORMAT, isFormat, formatOf } from './formats.js';
 
 // ---- scripts ----
 
@@ -66,13 +67,18 @@ export function normalizeDraftNames(project) {
   };
 }
 
-export function createScript(project, { name, text, final } = {}) {
+export function createScript(project, { name, text, final, format } = {}) {
   const isFinal = final != null ? final : project.scripts.length === 0;
   const script = {
     id: uid(),
     name: name || (isFinal ? FINAL_DRAFT_NAME : nextDraftName(project)),
     text: text != null ? text : defaultFountain(project),
     final: isFinal,
+    // A new draft is plain text: it is usually prose, an outline or a list of
+    // beats before it is ever a screenplay, and reading those as Fountain
+    // rewrites them in front of the writer (see data/formats.js). Switching it
+    // to Fountain is one choice in the panel's own dropdown.
+    format: isFormat(format) ? format : DEFAULT_FORMAT,
   };
   if (isFinal) return { project: { ...project, scripts: [...project.scripts, script] }, script };
   return { project: insertDraft(project, script), script };
@@ -90,7 +96,8 @@ export function duplicateScript(project, id) {
   const s = project.scripts.find((x) => x.id === id);
   if (!s) return { project, script: null };
   // A copy is never the final draft, so it cannot carry the final name.
-  const copy = { id: uid(), name: s.final ? nextDraftName(project) : s.name + ' copy', text: s.text, final: false };
+  // The copy is the same document, so it is read the same way.
+  const copy = { id: uid(), name: s.final ? nextDraftName(project) : s.name + ' copy', text: s.text, final: false, format: formatOf(s) };
   return { project: insertDraft(project, copy), script: copy };
 }
 
@@ -155,8 +162,21 @@ export function updateScriptText(project, id, text) {
 }
 
 export function importFountain(project, name, text) {
-  const script = { id: uid(), name, text, final: false };
+  // Imported as Fountain whatever a new draft would default to: the file said
+  // it was a screenplay, and reading it as anything else would strip its
+  // formatting on sight.
+  const script = { id: uid(), name, text, final: false, format: 'fountain' };
   return { project: insertDraft(project, script), script };
+}
+
+// What a draft is written in (data/formats.js). The TEXT is never touched: the
+// same characters are simply read differently, which is why switching back and
+// forth is lossless, and why a storyboard, reference or comment anchored to a
+// passage survives it (anchors are found by searching for their quoted words,
+// see fountain/resolve.js, not by block index).
+export function setScriptFormat(project, id, format) {
+  if (!isFormat(format)) return project;
+  return { ...project, scripts: project.scripts.map((s) => (s.id === id ? { ...s, format } : s)) };
 }
 
 // ---- boards ----

@@ -12,7 +12,7 @@ import { DEFAULT_SPLIT, MIN_SPLIT, MAX_SPLIT, clampSplit, splitFromPointer, text
 import { frameImg } from '../../data/project-model.js';
 import { readFileAsDataURL, isVideoSrc } from '../../utils/files.js';
 import { keyed } from 'lit/directives/keyed.js';
-import { parseFountain } from '../../fountain/parse.js';
+import { getParsed } from '../../fountain/cache.js';
 import { plainRangeToRaw } from '../../fountain/doc-map.js';
 import { snapToWords } from '../../fountain/resolve.js';
 
@@ -395,7 +395,10 @@ export class PandemoniumSlideshow extends LitElement {
     if (!line || line.bi == null || newText === line.text) return;
     const store = this._store.store;
     const sc = store.finalScript();
-    const parsed = parseFountain(sc.text);
+    // Through the cache, so the final draft is read in ITS OWN format: a plain
+    // text draft spliced as if it were Fountain would land the edit at the
+    // wrong characters (data/formats.js).
+    const parsed = getParsed(sc);
     const block = parsed.blocks[line.bi];
     if (!block) return;
     const lineFrom = lineStartOffset(sc.text, block.line);

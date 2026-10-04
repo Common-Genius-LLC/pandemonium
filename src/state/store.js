@@ -268,6 +268,11 @@ export class PandemoniumStore extends EventTarget {
 
   renameScript(id, name) { this.#applyProject(model.renameScript(this.#project, id, name)); }
 
+  // What this draft is read as: plain text, Markdown or Fountain. The text is
+  // untouched (see model.setScriptFormat), so this is reversible and keeps
+  // every link anchored to the passage it was anchored to.
+  setScriptFormat(id, format) { this.#applyProject(model.setScriptFormat(this.#project, id, format)); }
+
   reorderScript(id, beforeId) { this.#applyProject(model.reorderScript(this.#project, id, beforeId)); }
 
   // Used by the live textarea/editor: the underlying text is always written

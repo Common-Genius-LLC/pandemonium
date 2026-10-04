@@ -19,6 +19,8 @@ import { isCharacterCueText, boneyardRanges } from '../../fountain/parse.js';
 import { parseText } from '../../fountain/cache.js';
 import { plainRangeToRaw, inlineDelimRanges } from '../../fountain/doc-map.js';
 import { activeElementField, pinOverridesParser } from './cm-autoformat.js';
+import { formatIn } from './cm-format.js';
+import { isFountain } from '../../data/formats.js';
 
 const LINE_CLASS = {
   scene: 'cmf-scene', action: 'cmf-action', character: 'cmf-character', paren: 'cmf-paren',
@@ -100,8 +102,15 @@ export function disjointBoardClass(cls) {
   return /\bhb\b/.test(c) ? c.replace(/\bhbr\b/g, '').replace(/\s+/g, ' ').trim() : c;
 }
 
+// `parsed` is the document read in the editor's own format (see cm-format.js).
+// For a draft that is NOT Fountain, everything here that is about Fountain is
+// skipped: no element classes, no concealed markers, no boneyard. What stays is
+// the part that is about the PROJECT rather than the format, the board,
+// reference and comment highlights, so a passage of prose can be linked and
+// read as linked exactly like a passage of screenplay.
 export function buildDecorations(state, parsed, highlights) {
   const doc = state.doc;
+  const fountain = isFountain(formatIn(state));
   highlights = highlights || {};
   const activeLines = activeLineSet(state);
   const active = state.field(activeElementField, false);
@@ -125,7 +134,7 @@ export function buildDecorations(state, parsed, highlights) {
   // per blank line: a real pin (an explicit, current user action) always
   // wins over the inferred cue preview.
   const blankLineClass = new Map();
-  if (active && pinLine >= 0 && activeLines.has(pinLine) && LINE_CLASS[active.el]) {
+  if (fountain && active && pinLine >= 0 && activeLines.has(pinLine) && LINE_CLASS[active.el]) {
     const l = doc.line(pinLine + 1);
     if (l.length === 0) blankLineClass.set(l.from, LINE_CLASS[active.el]);
   }
@@ -141,9 +150,9 @@ export function buildDecorations(state, parsed, highlights) {
     // alone (pinOverridesParser); otherwise the parser wins on a line that has
     // text, so nothing is styled as an element the file does not contain and
     // then silently reflows the moment the caret leaves.
-    const pinned = active && isActive && b.line === pinLine && pinOverridesParser(active.el) && LINE_CLASS[active.el];
-    const pendingCue = !pinned && isPendingCharacterCue(doc, b, activeLines);
-    const cls = pinned || (pendingCue ? LINE_CLASS.character : LINE_CLASS[b.type]);
+    const pinned = fountain && active && isActive && b.line === pinLine && pinOverridesParser(active.el) && LINE_CLASS[active.el];
+    const pendingCue = fountain && !pinned && isPendingCharacterCue(doc, b, activeLines);
+    const cls = fountain ? (pinned || (pendingCue ? LINE_CLASS.character : LINE_CLASS[b.type])) : null;
     if (cls) decos.push(Decoration.line({ class: cls }).range(line.from));
     if (pendingCue) {
       const nextLine = doc.line(b.line + 2);
@@ -151,20 +160,24 @@ export function buildDecorations(state, parsed, highlights) {
     }
 
     // Element markers: leading (`.`/`@`/`#`/`= `/`> ` ...) and, for a centered
-    // line, the trailing ` <`.
-    if (b.textOffset > 0) conceal(line.from, line.from + b.textOffset, isActive);
-    if (b.type === 'centered') conceal(line.from + b.textOffset + b.text.length, line.to, isActive);
-
-    // Inline emphasis: style the plain runs, hide/dim their delimiters.
+    // line, the trailing ` <`. Fountain's own syntax, so only Fountain hides it;
+    // a Markdown marker stays where it is and is coloured instead
+    // (cm-markdown.js, and the note there on why).
     const base = line.from + b.textOffset;
-    for (const r of b.runs) {
-      const sc = runStyle(r);
-      if (sc && r.map.length) {
-        const from = base + r.map[0], to = base + r.map[r.map.length - 1] + 1;
-        if (to > from) decos.push(Decoration.mark({ class: sc }).range(from, to));
+    if (fountain) {
+      if (b.textOffset > 0) conceal(line.from, line.from + b.textOffset, isActive);
+      if (b.type === 'centered') conceal(line.from + b.textOffset + b.text.length, line.to, isActive);
+
+      // Inline emphasis: style the plain runs, hide/dim their delimiters.
+      for (const r of b.runs) {
+        const sc = runStyle(r);
+        if (sc && r.map.length) {
+          const from = base + r.map[0], to = base + r.map[r.map.length - 1] + 1;
+          if (to > from) decos.push(Decoration.mark({ class: sc }).range(from, to));
+        }
       }
+      for (const [ds, de] of inlineDelimRanges(b)) conceal(base + ds, base + de, isActive);
     }
-    for (const [ds, de] of inlineDelimRanges(b)) conceal(base + ds, base + de, isActive);
 
     // Board / reference / comment highlights: the words themselves are coloured
     // (cm-theme.js), per word, so two portions of one sentence linked to two
@@ -186,8 +199,10 @@ export function buildDecorations(state, parsed, highlights) {
   // (parse.js maskBoneyard) rather than cutting it out, so it holds exactly
   // the columns it occupies here and nothing below it moves; showing it a step
   // back is what tells the writer those words are not in the script.
-  for (const [from, to] of boneyardRanges(doc.toString())) {
-    if (to > from && to <= doc.length) decos.push(Decoration.mark({ class: 'cmf-boneyard' }).range(from, to));
+  if (fountain) {
+    for (const [from, to] of boneyardRanges(doc.toString())) {
+      if (to > from && to <= doc.length) decos.push(Decoration.mark({ class: 'cmf-boneyard' }).range(from, to));
+    }
   }
 
   return Decoration.set(decos, true);
@@ -196,12 +211,12 @@ export function buildDecorations(state, parsed, highlights) {
 export function fountainDecorations(getHighlights) {
   return ViewPlugin.fromClass(class {
     constructor(view) {
-      this.parsed = parseText(view.state.doc.toString());
+      this.parsed = parseText(view.state.doc.toString(), formatIn(view.state));
       this.decorations = buildDecorations(view.state, this.parsed, getHighlights(this.parsed));
     }
 
     update(update) {
-      if (update.docChanged) this.parsed = parseText(update.state.doc.toString());
+      if (update.docChanged) this.parsed = parseText(update.state.doc.toString(), formatIn(update.state));
       // Rebuild on selection changes too: the conceal/reveal depends on which
       // line the caret is on, not just on the text.
       this.decorations = buildDecorations(update.view.state, this.parsed, getHighlights(this.parsed));

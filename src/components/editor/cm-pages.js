@@ -23,6 +23,7 @@
 import { StateField, StateEffect, RangeSetBuilder } from '@codemirror/state';
 import { EditorView, Decoration, WidgetType, layer, RectangleMarker, BlockType } from '@codemirror/view';
 import { parseText } from '../../fountain/cache.js';
+import { formatIn } from './cm-format.js';
 import { pageGrid, lineTypes, paginate, displayLines, MARGINS, LPI } from '../../fountain/paginate.js';
 
 export const setPageMetrics = StateEffect.define();
@@ -81,7 +82,9 @@ function compute(state) {
   // The page may be narrower than the paper (a narrow pane, see pageFit): its
   // own column count and margins arrive with the metrics.
   const cols = m.cols || grid.cols;
-  const parsed = parseText(text);
+  // In the draft's own format: the sheets have to be laid out from the same
+  // reading of the text the words are drawn from (see cm-format.js).
+  const parsed = parseText(text, formatIn(state));
   const layout = paginate({
     lines,
     types: lineTypes(parsed, lines.length, lines),

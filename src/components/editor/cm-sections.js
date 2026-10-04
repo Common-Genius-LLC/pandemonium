@@ -131,7 +131,7 @@ export function sectionAffordances({ getParsed, onAct, onLink, onElement, onDrop
         const sec = this.sections[view.state.field(hoverSectionField)];
         if (!sec) return;
         if (btn.dataset.act === 'link') onLink(sec, btn.getBoundingClientRect());
-        else if (btn.dataset.act === 'element') onElement(sec, btn.getBoundingClientRect());
+        else if (btn.dataset.act === 'element') { if (onElement) onElement(sec, btn.getBoundingClientRect()); }
         else onAct(btn.dataset.act, sec, btn.getBoundingClientRect());
       });
       view.scrollDOM.appendChild(this.acts);
@@ -312,7 +312,13 @@ export function sectionAffordances({ getParsed, onAct, onLink, onElement, onDrop
           this.acts.style.display = 'flex';
           this.acts.style.top = data.top + 'px';
           this.acts.style.right = data.right + 'px';
-          if (this.eltBtn) this.eltBtn.textContent = data.label || 'Element';
+          // The element pill belongs to Fountain: a plain-text or Markdown
+          // draft has no screenplay elements to change a line into, and the
+          // caller leaves onElement off for them.
+          if (this.eltBtn) {
+            this.eltBtn.style.display = onElement ? '' : 'none';
+            this.eltBtn.textContent = data.label || 'Element';
+          }
           // Every draft can link a reference, so the link pill always shows;
           // a comment (like a storyboard) belongs to the final draft only.
           if (this.linkBtn) this.linkBtn.style.display = '';

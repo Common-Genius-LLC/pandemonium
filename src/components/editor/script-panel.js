@@ -7,6 +7,8 @@ import { getParsed } from '../../fountain/cache.js';
 import { CONTENT_TYPES, scenesOf } from '../../fountain/blocks.js';
 import { fmtT } from '../../utils/format.js';
 import { panelStyles } from '../../styles/shared.js';
+import { dropdownStyles, dropdownCaret } from '../ui/dropdown.js';
+import { FORMATS, formatOf, formatLabel } from '../../data/formats.js';
 import '../ui/button.js';
 import '../ui/panel-picker.js';
 import '../../app-root/draft-chip.js';
@@ -24,7 +26,7 @@ const EDITOR_TAG = 'pandemonium-script-editor';
 export class PandemoniumScriptPanel extends LitElement {
   static properties = { leafId: {}, _editorReady: { state: true } };
 
-  static styles = [panelStyles, css`
+  static styles = [panelStyles, dropdownStyles, css`
     /* The working area is the final draft's blue only while the final draft is
        the one open, matching the design's two variants: the draft that owns
        the storyboard and reference links is the one that looks different. */
@@ -55,7 +57,7 @@ export class PandemoniumScriptPanel extends LitElement {
     /* Space between the drafts (and the + after them) and the buttons on the
        right, held even when the pane is so narrow the two would touch: the
        track gives way first (it scrolls), and this never shrinks. */
-    .chrome .tools{margin-left:auto;padding-left:14px;flex:none}
+    .chrome .tools{margin-left:auto;padding-left:14px;flex:none;display:flex;align-items:center;gap:4px}
     .addtab{
       flex:none;align-self:center;width:28px;height:28px;margin-left:4px;padding:0;border:0;border-radius:50%;
       font-size:16px;line-height:28px;color:var(--ui);background:var(--panel);cursor:pointer;font-family:var(--sans);
@@ -131,7 +133,30 @@ export class PandemoniumScriptPanel extends LitElement {
     const script = store.createScript({});
     // Show the new draft in this pane only (per-pane draft, see scriptForLeaf).
     store.setPaneDraft(this.leafId, script.id);
-    dispatch(this, 'pandemonium-toast', { message: 'New draft created. Start writing in Fountain.' });
+    dispatch(this, 'pandemonium-toast', { message: 'New draft created, in plain text. Switch it to Fountain when it becomes a screenplay.' });
+  }
+
+  // What this draft is read as (data/formats.js). A new draft is plain text,
+  // because that is what a first draft usually is: prose, an outline, a list of
+  // beats. Read as Fountain, that prose is rewritten in front of the writer (a
+  // line in capitals becomes a character cue), which is the thing this control
+  // exists to stop. The text itself never changes, so switching is reversible
+  // and every storyboard, reference and comment stays where it was.
+  #openFormatMenu(e, sc) {
+    const store = this._store.store;
+    const current = formatOf(sc);
+    dispatch(this, 'pandemonium-open-menu', {
+      anchor: e.currentTarget,
+      items: FORMATS.map((f) => ({
+        label: f.label,
+        selected: f.key === current,
+        fn: () => {
+          if (f.key === current) return;
+          store.setScriptFormat(sc.id, f.key);
+          dispatch(this, 'pandemonium-toast', { message: `"${sc.name}" is read as ${f.label} now. ${f.hint}` });
+        },
+      })),
+    });
   }
 
   // Focused writing: show only this pane, full width, without touching the
@@ -166,6 +191,8 @@ export class PandemoniumScriptPanel extends LitElement {
           </div>
           <button class="addtab" title="Add a new draft" aria-label="Add a new draft" @click=${() => this.#addScript()}>+</button>
           <div class="tools">
+            <button class="pd-dropdown" title=${'This draft is read as ' + formatLabel(formatOf(sc)) + '. Click to change.'}
+              @click=${(e) => this.#openFormatMenu(e, sc)}>${formatLabel(formatOf(sc))}${dropdownCaret}</button>
             <pd-button title=${focused ? 'Exit focused writing' : 'Focused writing: hide every other pane'} @click=${() => this.#toggleFocus()}>${focused ? 'Exit focus' : 'Focus'}</pd-button>
           </div>
         </div>

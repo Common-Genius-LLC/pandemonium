@@ -308,6 +308,23 @@ export const fountainTheme = EditorView.theme({
     fontFamily: 'var(--script)', fontSize: 'inherit', padding: '0',
   },
 
+  // Markdown (cm-markdown.js), for a draft read as Markdown. WEIGHT AND COLOUR
+  // ONLY, and no concealed markers: the page is a real character grid, so a
+  // heading set larger would be taller and wider than the row it was laid out
+  // on and the text would walk off its sheet. Bold, italic and a colour cost no
+  // cell. The marker at the head of a line is dimmed rather than hidden, which
+  // is also how most people read their own notes.
+  '.cm-line.cmd-head': { fontWeight: '700', color: 'var(--pg-ink)' },
+  '.cm-line.cmd-quote': { fontStyle: 'italic', color: 'var(--pg-ui)' },
+  '.cm-line.cmd-list': { color: 'var(--pg-ink)' },
+  '.cm-line.cmd-rule': { color: 'var(--pg-mut)' },
+  '.cm-line.cmd-code': { color: 'var(--pg-ui)' },
+  '.cmd-mark': { color: 'var(--pg-mut)' },
+  '.cmd-b': { fontWeight: '700' },
+  '.cmd-i': { fontStyle: 'italic' },
+  '.cmd-code-inline': { color: 'var(--pg-ui)', background: 'color-mix(in srgb, var(--pg-ink) 7%, transparent)' },
+  '.cmd-link': { color: 'var(--pg-res)' },
+
   // Inline emphasis + Obsidian-style concealed syntax. Markers are hidden
   // (Decoration.replace) on lines the caret isn't on, and dimmed (.cmf-syntax)
   // on the line being edited, so a line reads as formatted until you enter it.

@@ -10,6 +10,9 @@ import { fountainDecorations } from './cm-fountain-plugin.js';
 import { sectionAffordances, hoverSectionField, pinnedSectionField, setPinnedSection } from './cm-sections.js';
 import { fountainTheme } from './cm-theme.js';
 import { scriptPages, setPageMetrics } from './cm-pages.js';
+import { scriptFormat } from './cm-format.js';
+import { markdownDecorations } from './cm-markdown.js';
+import { formatOf, isFountain, isMarkdown, hasEmphasis } from '../../data/formats.js';
 import { addPageButtons } from './cm-add-page.js';
 import { scriptMinimap, scriptMinimapTheme, MINIMAP_WIDTH } from './cm-script-minimap.js';
 import { scriptPrefs } from '../../state/script-prefs.js';
@@ -73,6 +76,9 @@ export class PandemoniumScriptEditor extends LitElement {
   #view = null;
   #plugin = null;
   #loadedScriptId = null;
+  // The format the current EditorState was built for. A change to it rebuilds
+  // the state, the same way a draft switch does: the extension set differs.
+  #loadedFormat = null;
   #connRAF = 0;
   #selRAF = 0;
   #lastPulsed = null;
@@ -89,8 +95,19 @@ export class PandemoniumScriptEditor extends LitElement {
   // draft switch) can be given the same set. It has to be rebuilt rather than
   // reused because a switch starts a new undo history: sharing one would let
   // Cmd+Z pull the other draft's text into this one.
-  #extensions() {
+  //
+  // WHAT A FORMAT CHANGES (see data/formats.js). Everything about the PROJECT
+  // is the same in all three: the pages, the minimap, the link highlights, the
+  // row rail, the selection and the history. What differs is the reading of the
+  // text. Fountain gets the element flow (the Enter picker, Tab transforms,
+  // auto-uppercase, the case journal, the summary default, and the live preview
+  // that hides its own markers). Markdown gets its own colouring and keeps
+  // emphasis, because `**bold**` means the same thing in both. Plain text gets
+  // neither, which is the whole point of it: nothing is read into the words.
+  #extensions(format = 'fountain') {
+    const fountain = isFountain(format);
     return [
+      scriptFormat.of(format),
       history(),
       // Undo and redo have to put the LINKS back too. Board, reference and
       // comment anchors live in the store, not in the document, and every
@@ -111,16 +128,23 @@ export class PandemoniumScriptEditor extends LitElement {
       dropCursor(),
       // Before the element keymap: while the element menu is open it owns
       // Enter and the letter keys (element-menu.js sets its own precedence).
-      elementMenu({ onPick: (view, key) => applyElementAtCaret(view, key) }),
-      elementKeymap({ getParsed: (v) => v.plugin(this.#plugin)?.parsed || parseText(v.state.doc.toString()) }),
-      emphasisKeymap({ getParsed: (v) => v.plugin(this.#plugin)?.parsed || parseText(v.state.doc.toString()) }),
+      ...(fountain ? [
+        elementMenu({ onPick: (view, key) => applyElementAtCaret(view, key) }),
+        elementKeymap({ getParsed: (v) => v.plugin(this.#plugin)?.parsed || parseText(v.state.doc.toString(), format) }),
+      ] : []),
+      ...(hasEmphasis(format)
+        ? [emphasisKeymap({ getParsed: (v) => v.plugin(this.#plugin)?.parsed || parseText(v.state.doc.toString(), format) })]
+        : []),
       keymap.of([...defaultKeymap, ...historyKeymap]),
       // Shown only while the document is empty, so it appears on a new
       // draft, goes on the first keystroke, and comes back if the writer
       // clears everything out again. CodeMirror owns that toggle. Styled as
       // a synopsis (cm-theme.js .cm-placeholder) because that is genuinely
       // what the first keystroke becomes -- see cm-summary-default.js.
-      placeholder('Start with a summary of the script'),
+      // What the empty document invites. The Fountain one names the element the
+      // first keystroke actually becomes (a synopsis, see cm-summary-default);
+      // the others would be lying about that, so they say the plain thing.
+      placeholder(fountain ? 'Start with a summary of the script' : 'Start writing'),
       EditorView.lineWrapping,
       fountainTheme,
       this.#plugin,
@@ -132,24 +156,32 @@ export class PandemoniumScriptEditor extends LitElement {
       addPageButtons(),
       scriptMinimap({ getHighlights: (v) => v.plugin(this.#plugin)?.decorations }),
       scriptMinimapTheme,
+      ...(isMarkdown(format) ? [markdownDecorations()] : []),
+      // activeElementField is read by the Fountain plugin (the pinned element
+      // under the caret) and must exist whenever that plugin runs; the rest of
+      // the element flow is Fountain's alone.
       activeElementField,
-      // Both fields belong to the element flow: the journal records what a
-      // transform overwrote so Shift+Tab can give it back, and the exemption
-      // is what stops autoUppercase from immediately undoing that.
-      caseJournal,
-      caseExempt,
-      // Before autoUppercase: a blank script's first keystroke becomes a
-      // Summary (Fountain synopsis) instead of Action (see cm-summary-default).
-      summaryDefault,
-      autoUppercase,
+      ...(fountain ? [
+        // Both fields belong to the element flow: the journal records what a
+        // transform overwrote so Shift+Tab can give it back, and the exemption
+        // is what stops autoUppercase from immediately undoing that.
+        caseJournal,
+        caseExempt,
+        // Before autoUppercase: a blank script's first keystroke becomes a
+        // Summary (Fountain synopsis) instead of Action (see cm-summary-default).
+        summaryDefault,
+        autoUppercase,
+      ] : []),
       hoverSectionField,
       pinnedSectionField,
       sectionAffordances({
-        getParsed: (v) => v.plugin(this.#plugin)?.parsed || parseText(v.state.doc.toString()),
+        getParsed: (v) => v.plugin(this.#plugin)?.parsed || parseText(v.state.doc.toString(), format),
         canLink: () => { const s = this._store.store.scriptForLeaf(this.leafId); return !!(s && s.final); },
         onAct: (act, sec, rect) => this.#onSectionAct(act, sec, rect),
         onLink: (sec, rect) => this.#openLinkMenu(sec, rect),
-        onElement: (sec, rect) => this.#openElementMenu(sec, rect),
+        // The element pill is Fountain's: there are no screenplay elements to
+        // change a line into in prose or in Markdown.
+        onElement: fountain ? (sec, rect) => this.#openElementMenu(sec, rect) : null,
         onDropImage: (sec, file) => this.#dropImageOnSection(sec, file),
         elementLabelForSection: (sec) => this.#sectionElementLabel(sec),
       }),
@@ -196,7 +228,8 @@ export class PandemoniumScriptEditor extends LitElement {
     this.#plugin = fountainDecorations((parsed) => this.#getHighlights(parsed));
     const script = this._store.store.scriptForLeaf(this.leafId);
     this.#loadedScriptId = script.id;
-    const state = EditorState.create({ doc: script.text, extensions: this.#extensions() });
+    this.#loadedFormat = formatOf(script);
+    const state = EditorState.create({ doc: script.text, extensions: this.#extensions(this.#loadedFormat) });
     this.#view = new EditorView({ state, parent: host, root: this.renderRoot });
 
     // Pressing the desk around the page puts the caret at the nearest place in
@@ -817,7 +850,7 @@ export class PandemoniumScriptEditor extends LitElement {
     this.#reconciling = true;
     try {
       if (fresh) {
-        this.#view.setState(EditorState.create({ doc: text, extensions: this.#extensions() }));
+        this.#view.setState(EditorState.create({ doc: text, extensions: this.#extensions(this.#loadedFormat) }));
         // A new state starts on the default page metrics, so they have to be
         // sent again; the cache key would otherwise say nothing had changed.
         this.#lastMetrics = '';
@@ -842,6 +875,13 @@ export class PandemoniumScriptEditor extends LitElement {
 
     if (script.id !== this.#loadedScriptId) {
       this.#loadedScriptId = script.id;
+      this.#loadedFormat = formatOf(script);
+      this.#applyDocFromStore(script.text, true);
+    } else if (formatOf(script) !== this.#loadedFormat) {
+      // The same draft, read differently. A fresh state, because the extension
+      // set itself changes; the text is untouched, so every anchor finds its
+      // passage again by searching for its own words (fountain/resolve.js).
+      this.#loadedFormat = formatOf(script);
       this.#applyDocFromStore(script.text, true);
     } else if (script.text.length !== this.#view.state.doc.length || script.text !== this.#view.state.doc.toString()) {
       // Same draft, but the store's text moved out from under us: another
