@@ -39,7 +39,10 @@ import '../ui/panel-picker.js';
 // The drag is NOT written to the store until the pointer is released: a clip
 // dragged across four seconds would otherwise be forty project updates, each
 // one re-rendering every other panel and queueing an autosave.
-const HEAD = 132; // the track-name column
+// The track-name column. Wide enough for two words of a name ("Room atmos",
+// "Dialogue 2") beside the colour dot and the three buttons, which is what it
+// takes for the names to be worth having.
+const HEAD = 196;
 const ROW = 56;
 const RULER = 34;
 // How far the zoom goes. The floor is a quarter of a pixel per second, which
@@ -81,12 +84,12 @@ export class PandemoniumSoundPanel extends LitElement {
     .row{display:flex;align-items:stretch}
     /* The names stay put while the arrangement scrolls sideways. */
     .head{
-      position:sticky;left:0;z-index:3;flex:none;width:132px;box-sizing:border-box;
+      position:sticky;left:0;z-index:3;flex:none;width:196px;box-sizing:border-box;
       display:flex;align-items:center;gap:4px;padding:0 6px;
       background:var(--pane-bg,var(--bg));
     }
     .head input{
-      flex:1;min-width:0;height:22px;padding:0 6px;font-family:var(--sans);font-size:11px;color:var(--ink);
+      flex:1;min-width:64px;height:22px;padding:0 6px;font-family:var(--sans);font-size:11px;color:var(--ink);
       background:transparent;border:0;border-radius:var(--r);outline:0;text-overflow:ellipsis;
     }
     .head input:hover,.head input:focus{background:var(--panel)}
@@ -148,11 +151,19 @@ export class PandemoniumSoundPanel extends LitElement {
     .clip:hover .edge{background:rgba(255,255,255,.35)}
 
     .playhead{position:absolute;top:0;width:2px;background:var(--danger);z-index:4;pointer-events:none}
-    .playhead::before{
-      content:"";position:absolute;top:0;left:-4px;width:10px;height:10px;border-radius:2px;background:var(--danger);
+    /* The head is a handle: the line is thin and nobody should have to hit two
+       pixels to scrub. Dragging it anywhere on the arrangement moves the
+       playhead, and so does dragging on the ruler or on empty track. */
+    .playhead .grip{
+      position:absolute;top:0;left:-7px;width:16px;height:14px;border-radius:2px;
+      background:var(--danger);pointer-events:auto;cursor:ew-resize;
+    }
+    .playhead .grip::after{
+      content:"";position:absolute;left:5px;top:3px;width:6px;height:8px;
+      border-left:1px solid rgba(255,255,255,.5);border-right:1px solid rgba(255,255,255,.5);
     }
 
-    .addtrack{margin:8px 0 18px 138px}
+    .addtrack{margin:8px 0 18px 202px}
 
     .nosound{
       height:100%;min-height:180px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
@@ -364,6 +375,31 @@ export class PandemoniumSoundPanel extends LitElement {
     this._playing = false;
     this._time = 0;
     cancelAnimationFrame(this._raf);
+  }
+
+  // Scrubbing: press anywhere on the ruler, on empty track, or on the
+  // playhead's own handle, and drag. Playback is paused for the duration and
+  // picked up again from where the playhead was let go, rather than being
+  // restarted on every pointer move.
+  #startScrub(e, laneEl) {
+    if (e.button) return;
+    e.preventDefault();
+    const lane = laneEl || this.renderRoot.querySelector('.ruler .lane');
+    if (!lane) return;
+    const wasPlaying = this._playing;
+    if (wasPlaying) this.#pause();
+    const to = (ev) => { this._time = this.#secsAt(ev.clientX, lane); };
+    to(e);
+    const move = (ev) => to(ev);
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      if (wasPlaying) this.#play();
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   }
 
   #seek(secs) {
@@ -669,7 +705,7 @@ export class PandemoniumSoundPanel extends LitElement {
         <div class="head">
           <span class="scale ${paced ? '' : 'est'}">${spans.length ? (paced ? 'Measured' : 'Estimated') : 'No storyboards'}</span>
         </div>
-        <div class="lane" style="width:${width}px" @pointerdown=${(e) => this.#seek(this.#secsAt(e.clientX, e.currentTarget))}>
+        <div class="lane" style="width:${width}px" @pointerdown=${(e) => this.#startScrub(e, e.currentTarget)}>
           ${spans.length ? spans.map((s, i) => html`
             <div class="span ${s.paced ? 'paced' : ''}"
               style="left:${this.#x(s.start)}px;width:${Math.max(2, this.#x(s.dur) - 2)}px"
@@ -726,7 +762,7 @@ export class PandemoniumSoundPanel extends LitElement {
           <button title="Track options" @click=${(e) => this.#trackMenu(e, track)}>&#8943;</button>
         </div>
         <div class="lane ${this._over === track.id ? 'over' : ''}" data-track=${track.id} style="width:${width}px"
-          @pointerdown=${(e) => { if (e.target.classList.contains('lane')) this.#seek(this.#secsAt(e.clientX, e.currentTarget)); }}
+          @pointerdown=${(e) => { if (e.target.classList.contains('lane')) this.#startScrub(e, e.currentTarget); }}
           @dragover=${(e) => { if (this.#dragHasFiles(e.dataTransfer)) { e.preventDefault(); if (this._over !== track.id) this._over = track.id; } }}>
           ${spans.map((s) => html`<div class="guide" style="left:${this.#x(s.start)}px"></div>`)}
           ${here.map((o) => this.#clipBox(o, spans))}
@@ -797,7 +833,8 @@ export class PandemoniumSoundPanel extends LitElement {
             <div class="grid" style="width:${HEAD + width}px">
               ${this.#ruler(spans, width)}
               ${tracks.map((t) => this.#track(t, spans, width))}
-              <div class="playhead" style="left:${HEAD + this.#x(this._time)}px;height:${RULER + tracks.length * ROW}px"></div>
+              <div class="playhead" style="left:${HEAD + this.#x(this._time)}px;height:${RULER + tracks.length * ROW}px"
+                ><span class="grip" title="Drag to scrub" @pointerdown=${(e) => this.#startScrub(e, null)}></span></div>
             </div>
             <div class="addtrack">
               <pd-button @click=${() => this._store.store.addTrack({})}>Add a track</pd-button>

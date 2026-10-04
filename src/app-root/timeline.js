@@ -8,6 +8,9 @@ import { dispatch } from '../utils/events.js';
 import { describeSlideshowGap, elementSeconds, boardSpans } from '../state/selectors.js';
 import { soundOnBoards } from '../data/audio-model.js';
 import { colorDot } from '../data/research-doc.js';
+import { keyColor, knownKeyColor } from '../utils/key-color.js';
+import { frameImg } from '../data/project-model.js';
+import { isVideoSrc } from '../utils/files.js';
 import { panelStyles } from '../styles/shared.js';
 import { readFileAsDataURL, isBoardMediaFile } from '../utils/files.js';
 import '../components/ui/panel-picker.js';
@@ -35,7 +38,7 @@ const BAR_TYPES = new Set(['scene', 'action', 'character', 'dialogue', 'paren', 
 // same ruler, and two copies of a pace would drift.
 
 export class PandemoniumTimeline extends LitElement {
-  static properties = { leafId: {}, _dragBi: { state: true } };
+  static properties = { leafId: {}, _dragBi: { state: true }, _peek: { state: true } };
 
   static styles = [panelStyles, css`
     .chrome .est{align-self:center;margin-left:auto;padding-right:10px;font-size:11px;color:var(--mut);white-space:nowrap}
@@ -69,12 +72,9 @@ export class PandemoniumTimeline extends LitElement {
        lets the first and last segment take the track's corners. */
     .track{position:relative;height:20px;display:flex;gap:1px;background:var(--ph);overflow:hidden;border-radius:7.64px}
     .seg{position:relative;min-width:2px;cursor:pointer;background:transparent}
-    /* Final storyboard is solid green, reference-only is solid orange (the
-       same green/orange split the editor highlight, minimap and script view
-       use). This replaced a green hatch for reference: a plain color reads
-       faster than a diagonal at this bar height, and needs no shared
-       pattern origin to stay seamless across adjacent bars. */
-    .track.b .seg.on{background:var(--board-strong)}
+    /* Reference-only is solid orange (the same green/orange split the editor
+       highlight, minimap and script view use). A beat with a final frame takes
+       that frame's own key colour instead, a few rules down. */
     .track.b .seg.ref{background:var(--board-ref)}
     .track.r .seg.on{background:var(--res)}
     /* Sound: the mixdown of every track. A bar takes the colour of whichever
@@ -99,7 +99,24 @@ export class PandemoniumTimeline extends LitElement {
        This marks the specific bars that are measured. --ui (dark) so the
        tick reads on both the green and the yellow bar. */
     .track.b .seg.paced::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--ui)}
+    /* A boarded beat is drawn in its own frame's key colour (--seg, see
+       utils/key-color.js), so the row reads as the film's palette down its
+       length. The storyboard green is what a beat shows while its colour is
+       still being read, and what it keeps if the frame cannot be read at all
+       (a video, which has no still to read without decoding it). */
+    .track.b .seg.on{background:var(--seg,var(--board-strong))}
     .none{flex:1;background:var(--ph);opacity:.45;border-radius:7.64px}
+
+    /* Hovering a boarded beat shows the frame itself, floating free: no border,
+       no caption, no arrow. The bar is often two pixels wide, so the picture is
+       the only way to know which beat you are on. */
+    .peek{
+      position:fixed;z-index:80;pointer-events:none;transform:translate(-50%,-100%);
+      border-radius:7.64px;overflow:hidden;box-shadow:var(--elev-8);
+      animation:peek-in var(--dur-1) var(--ease-out);
+    }
+    @keyframes peek-in{from{opacity:0}}
+    .peek img{display:block;width:200px;height:auto;max-height:50vh;object-fit:cover}
 
     /* Act markers span both bars, label hanging under the lower one. */
     .markers{position:absolute;left:0;right:0;top:0;bottom:0;pointer-events:none}
@@ -119,6 +136,31 @@ export class PandemoniumTimeline extends LitElement {
     super();
     this._store = new StoreController(this);
     this._dragBi = null;
+    this._peek = null;
+  }
+
+  // The frame floating over the row while the pointer is on its bar. Only the
+  // Storyboard row, and only where there is a frame to show.
+  #peek(kind, el, barEl) {
+    const want = kind === 'b' && el && el.frame && barEl
+      ? { img: el.frame, rect: barEl.getBoundingClientRect() }
+      : null;
+    if (!want && !this._peek) return;
+    if (want && this._peek && this._peek.img === want.img) return;
+    this._peek = want;
+  }
+
+  // Key colours are read from the frames themselves, asynchronously and once
+  // per image (utils/key-color.js). Kicked off for whatever is on screen after
+  // each render; each answer that was not already known brings the row back to
+  // paint that bar in it.
+  #readKeyColors(els) {
+    const want = [...new Set(els.filter((el) => el.boarded && el.frame).map((el) => el.frame))]
+      .filter((src) => knownKeyColor(src) == null);
+    if (!want.length) return;
+    Promise.all(want.map((src) => keyColor(src))).then((out) => {
+      if (out.some(Boolean)) this.requestUpdate();
+    });
   }
 
   #jump(bi, el) {
@@ -157,6 +199,16 @@ export class PandemoniumTimeline extends LitElement {
     // reaches a script element through the board that element is boarded as.
     // An element with no board can carry no sound, which is the model being
     // honest rather than this row being incomplete.
+    // The frame each beat is boarded with, for its key colour and for the
+    // picture shown on hover. The first final frame on an element wins, the
+    // same way durByBi takes one duration per element.
+    const frameByBi = new Map();
+    for (const it of state.R.boards) {
+      if (!it.ok) continue;
+      const img = frameImg(it.bd, 'final');
+      if (!img || isVideoSrc(img)) continue;
+      (it.res || []).forEach((r) => { if (r && !frameByBi.has(r.bi)) frameByBi.set(r.bi, img); });
+    }
     const soundByBi = new Map();
     const project = this._store.project;
     if ((project.clips || []).length) {
@@ -185,6 +237,7 @@ export class PandemoniumTimeline extends LitElement {
         refOnly: !finalSet.has(b.i) && refSet.has(b.i),
         sourced: sourced.has(b.i),
         sound: soundByBi.get(b.i) || null,
+        frame: frameByBi.get(b.i) || null,
       }));
   }
 
@@ -240,6 +293,18 @@ export class PandemoniumTimeline extends LitElement {
     return html`<div class="dragcard" style="left:${r.left + r.width / 2}px;top:${r.top - 8}px">Link to: ${excerpt || b.type}</div>`;
   }
 
+  // The frame itself, floating over the bar the pointer is on. Positioned from
+  // the rect measured when the hover started: the strip does not scroll, so
+  // the bar is still exactly there.
+  #peekCard() {
+    const p = this._peek;
+    if (!p) return html``;
+    const x = Math.max(110, Math.min(p.rect.left + p.rect.width / 2, innerWidth - 110));
+    return html`<div class="peek" style="left:${x}px;top:${p.rect.top - 8}px">
+      <img alt="" src=${p.img}>
+    </div>`;
+  }
+
   #recordPacing() {
     // Opens the slideshow in record mode: stepping through it times each beat
     // and saves the pacing, which then drives these bars and the duration.
@@ -288,7 +353,8 @@ export class PandemoniumTimeline extends LitElement {
     return html`<div class="track ${kind}">
       ${els.map((el) => {
         const on = kind === 'b' ? el.boarded : kind === 's' ? !!el.sound : el.sourced;
-        const tint = kind === 's' && el.sound && el.sound.color ? colorDot(el.sound.color) : '';
+        const tint = kind === 's' && el.sound && el.sound.color ? colorDot(el.sound.color)
+          : kind === 'b' && el.boarded && el.frame ? (knownKeyColor(el.frame) || '') : '';
         const refOnly = kind === 'b' && el.refOnly;
         const dragover = kind === 'b' && this._dragBi === el.bi;
         const paced = kind === 'b' && el.paced;
@@ -298,6 +364,8 @@ export class PandemoniumTimeline extends LitElement {
           style=${`flex-grow:${el.secs}` + (tint ? ';--seg:' + tint : '')}
           title=${this.#barTitle(el, kind)}
           @click=${(e) => this.#jump(el.bi, e.currentTarget)}
+          @mouseenter=${(e) => this.#peek(kind, el, e.currentTarget)}
+          @mouseleave=${() => this.#peek(null, null, null)}
           @dragover=${(e) => this.#onSegDragOver(e, kind, el)}
           @dragleave=${(e) => this.#onSegDragLeave(e, kind)}
           @drop=${(e) => this.#onSegDrop(e, kind, el, state)}></div>`;
@@ -315,6 +383,9 @@ export class PandemoniumTimeline extends LitElement {
     const paced = els.some((e) => e.paced);
     const estimate = hasContent ? fmtT(total) : 'unknown';
     const markers = total ? this.#markers(els, state.fparsed, total) : [];
+    // Reading a frame's key colour is asynchronous; ask for whatever is on
+    // screen and paint it when it comes back.
+    this.#readKeyColors(els);
 
     return html`
       <div class="shell" style="--pane-bg:var(--bg)">
@@ -330,8 +401,8 @@ export class PandemoniumTimeline extends LitElement {
         <div class="pbody">
           <div class="tlbody">
             <div class="labels">
-              <div class="lab b">Storyboarded</div>
-              <div class="lab r">Sourced</div>
+              <div class="lab b">Storyboard</div>
+              <div class="lab r">Reference</div>
               <div class="lab s">Sound</div>
             </div>
             <div class="strip" data-clarity-mask="true">
@@ -348,6 +419,7 @@ export class PandemoniumTimeline extends LitElement {
           </div>
         </div>
         ${this.#dragCard(state)}
+        ${this.#peekCard()}
       </div>
     `;
   }
