@@ -8,6 +8,7 @@
 
 import * as model from '../data/project-model.js';
 import * as audio from '../data/audio-model.js';
+import { PanelHistory, scopeLabel } from './history.js';
 import { mergeProjects, commitMergedProject } from '../data/merge.js';
 import { getParsed } from '../fountain/cache.js';
 import { scenesOf } from '../fountain/blocks.js';
@@ -20,6 +21,12 @@ export class PandemoniumStore extends EventTarget {
   #ui = null;
   #finalStateCache = null;
   #textEmitTimer = 0;
+  // Undo and redo, one thread per panel (see state/history.js). Only
+  // #applyProject records, which is also why typing in the script never lands
+  // here: the live edit paths write #project directly, and the editor has its
+  // own history for text.
+  #history = new PanelHistory();
+  #restoring = false;
 
   get project() { return this.#project; }
   get ui() { return this.#ui; }
@@ -52,6 +59,7 @@ export class PandemoniumStore extends EventTarget {
       this.#project = { ...this.#project, scripts: this.#project.scripts.map((s, ix) => (ix === 0 ? { ...s, final: true } : s)) };
     }
     this.#project = model.normalizeDraftNames(this.#project);
+    this.#history.clear();
     this.#ui = defaultUI(this.#project.scripts.find((s) => s.final).id);
     this.#trackScriptParse(this.finalScript(), 'project_open');
     this.#trackViewChange();
@@ -61,6 +69,7 @@ export class PandemoniumStore extends EventTarget {
   closeProject() {
     this.#project = null;
     this.#ui = null;
+    this.#history.clear();
     this.#trackViewChange();
     this.#emit();
   }
@@ -211,9 +220,30 @@ export class PandemoniumStore extends EventTarget {
   }
 
   #applyProject(next) {
+    if (!this.#restoring) this.#history.record(this.#project, next);
     this.#project = next;
     this.#ui = { ...this.#ui, dirty: true };
     this.#emit('project');
+  }
+
+  // ---- undo and redo, per panel ----
+
+  canUndoPanel(scope) { return this.#history.canUndo(scope); }
+  canRedoPanel(scope) { return this.#history.canRedo(scope); }
+
+  // Returns the label of what was stepped back ('Storyboards'), or null when
+  // that thread had nothing on it, so the caller can say which thread answered.
+  undoPanel(scope) { return this.#step('undo', scope); }
+  redoPanel(scope) { return this.#step('redo', scope); }
+
+  #step(dir, scope) {
+    if (!this.#project || !scope) return null;
+    const next = this.#history[dir](scope, this.#project);
+    if (!next) return null;
+    // Applied without recording: stepping back is not itself a step.
+    this.#restoring = true;
+    try { this.#applyProject(next); } finally { this.#restoring = false; }
+    return scopeLabel(scope);
   }
 
   #applyUI(next) {
@@ -493,6 +523,10 @@ export class PandemoniumStore extends EventTarget {
     );
     if (result.clean) {
       this.#project = model.normalizeDraftNames(result.project);
+      // Every undo thread is forgotten: an entry recorded before a merge holds
+      // the collections as THIS device had them, and applying one afterwards
+      // would put them back over what was merged in.
+      this.#history.clear();
       this.#ui = { ...this.#ui, dirty: true };
       this.#emit('project');
       return { clean: true, project: this.#project, theirUpdatedAt };
@@ -519,6 +553,7 @@ export class PandemoniumStore extends EventTarget {
     const project = commitMergedProject(m.result);
     if (!project) return null;
     this.#project = model.normalizeDraftNames(project);
+    this.#history.clear();
     this.#ui = { ...this.#ui, merge: null, dirty: true };
     this.#emit('project');
     return { project: this.#project, theirUpdatedAt: m.theirUpdatedAt };

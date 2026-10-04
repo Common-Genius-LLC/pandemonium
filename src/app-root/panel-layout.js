@@ -5,6 +5,8 @@ import { StoreController } from '../state/store-controller.js';
 import { dispatch } from '../utils/events.js';
 import { clamp } from '../utils/format.js';
 import { withGlobalItems } from '../utils/context-menu.js';
+import { setActivePanel } from '../state/active-panel.js';
+import { scopeForPanel, scopeLabel } from '../state/history.js';
 import { fadeIn } from '../utils/motion.js';
 import {
   defaultLayout, setRatio, setLeafContent, splitLeaf, splitLeafAt, closeLeaf, absorbAcross, growAcross, pathTo,
@@ -163,7 +165,8 @@ export class PandemoniumPanelLayout extends LitElement {
   #leaf(node) {
     return html`
       <div class="leaf" data-leaf=${node.id}
-        @contextmenu=${(e) => this.#openLeafMenu(e, node)}
+        @pointerdown=${() => setActivePanel(node.content, node.id)}
+        @contextmenu=${(e) => { setActivePanel(node.content, node.id); this.#openLeafMenu(e, node); }}
         @pointermove=${(e) => this.#hoverCorner(e)}
         @pointerleave=${(e) => this.#hoverLeave(e)}
       >
@@ -197,6 +200,7 @@ export class PandemoniumPanelLayout extends LitElement {
     e.stopPropagation();
     const layout = this.#layout();
     const items = [
+      ...this.#historyMenuItems(node),
       ...this.#draftMenuItems(node),
       ...PANEL_TYPES.map((t) => ({
         label: PANEL_LABELS[t],
@@ -209,6 +213,32 @@ export class PandemoniumPanelLayout extends LitElement {
       ...(leafCount(layout) > 1 ? [{ label: 'Close pane', danger: true, fn: () => this.#close(node.id) }] : []),
     ];
     dispatch(this, 'pandemonium-open-menu', { x: e.clientX, y: e.clientY, items: withGlobalItems(this, items) });
+  }
+
+  // Undo and redo for this pane's own thread (state/history.js), at the top of
+  // its menu: the keystroke is the fast way, and this is the way that says
+  // which thread it is and whether there is anything on it. A script pane shows
+  // nothing here, because its undo is the editor's own and belongs to whatever
+  // the caret is in.
+  #historyMenuItems(node) {
+    const store = this._store.store;
+    const scope = scopeForPanel(node.content);
+    if (!scope || !store.project) return [];
+    const can = store.canUndoPanel(scope);
+    const canRedo = store.canRedoPanel(scope);
+    if (!can && !canRedo) return [];
+    const label = scopeLabel(scope);
+    const out = [];
+    if (can) out.push({ label: `Undo in ${label}`, fn: () => this.#undo(scope, 'undo') });
+    if (canRedo) out.push({ label: `Redo in ${label}`, fn: () => this.#undo(scope, 'redo') });
+    out.push({ divider: true });
+    return out;
+  }
+
+  #undo(scope, dir) {
+    const store = this._store.store;
+    const label = dir === 'redo' ? store.redoPanel(scope) : store.undoPanel(scope);
+    if (label) dispatch(this, 'pandemonium-toast', { message: `${label}: ${dir === 'redo' ? 'redone' : 'undone'}.` });
   }
 
   // Draft actions for a script pane showing a non-final draft, prepended to the

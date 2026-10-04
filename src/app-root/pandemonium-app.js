@@ -28,6 +28,8 @@ import '../components/ui/toast.js';
 import '../components/ui/dialog.js';
 import '../components/ui/menu.js';
 import '../components/ui/confirm-host.js';
+import { getActivePanel } from '../state/active-panel.js';
+import { scopeForPanel, scopeLabel } from '../state/history.js';
 import '../components/ui/logo.js';
 import '../components/ui/project-card.js';
 import '../components/linking/selection-toolbar.js';
@@ -341,6 +343,32 @@ export class PandemoniumApp extends LitElement {
     clearAutosavedProject().catch((err) => console.warn('Could not clear autosaved project:', err));
   }
 
+  // Cmd+Z belongs to the panel the writer last pressed in, and each panel has
+  // its own thread (state/history.js): sound, storyboards and references each
+  // step back through their own work, so undo in one never reaches into
+  // another. Two things are left strictly alone:
+  //
+  //   a text field or a contenteditable in the path, which owns its own undo
+  //   (the script editor, a note in a reference, a slideshow line);
+  //
+  //   an event something has already handled (defaultPrevented), which is how
+  //   CodeMirror's own history reports that it answered the press.
+  #undoRedo(e) {
+    if (e.defaultPrevented) return;
+    const path = e.composedPath();
+    if (path.some((n) => n && (n.isContentEditable || n.tagName === 'INPUT' || n.tagName === 'TEXTAREA'))) return;
+    const scope = scopeForPanel(getActivePanel().content);
+    if (!scope) return;
+    e.preventDefault();
+    const redo = e.shiftKey;
+    const label = redo ? this.store.redoPanel(scope) : this.store.undoPanel(scope);
+    dispatch(this, 'pandemonium-toast', {
+      message: label
+        ? `${label}: ${redo ? 'redone' : 'undone'}.`
+        : `Nothing to ${redo ? 'redo' : 'undo'} in ${scopeLabel(scope)}.`,
+    });
+  }
+
   #onKeydown = (e) => {
     const store = this.store;
     // Before the no-project guard: a tester needs to be able to report a bug
@@ -352,6 +380,7 @@ export class PandemoniumApp extends LitElement {
     }
     if (!store.project) return;
     const mod = e.metaKey || e.ctrlKey;
+    if (mod && e.key.toLowerCase() === 'z') { this.#undoRedo(e); return; }
     // Cmd/Ctrl-K puts the caret in the title bar's search field. There is no
     // separate search surface to open any more.
     if (mod && e.key.toLowerCase() === 'k') {
