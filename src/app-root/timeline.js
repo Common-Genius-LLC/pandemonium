@@ -5,14 +5,16 @@ import { StoreController } from '../state/store-controller.js';
 import { sectionsOf } from '../fountain/blocks.js';
 import { fmtT } from '../utils/format.js';
 import { dispatch } from '../utils/events.js';
-import { describeSlideshowGap, elementSeconds } from '../state/selectors.js';
+import { describeSlideshowGap, elementSeconds, boardSpans } from '../state/selectors.js';
+import { soundOnBoards } from '../data/audio-model.js';
+import { colorDot } from '../data/research-doc.js';
 import { panelStyles } from '../styles/shared.js';
 import { readFileAsDataURL, isBoardMediaFile } from '../utils/files.js';
 import '../components/ui/panel-picker.js';
 import '../components/ui/button.js';
 
-// Timeline (Figma node 100-208): a "torrent" coverage view. Two rows,
-// Storyboarded and Sourced, run the length of the written script. Every
+// Timeline (Figma node 100-208): a "torrent" coverage view. Three rows,
+// Storyboarded, Sourced and Sound, run the length of the written script. Every
 // paragraph element (a scene heading, an action line, a cue, a speech) is one
 // bar; its width is that element's estimated screen time (word count over a
 // reading pace). A bar is coloured where that specific element is linked (a
@@ -40,16 +42,20 @@ export class PandemoniumTimeline extends LitElement {
     .chrome .est b{color:var(--res);font-weight:500}
     .chrome .tools{align-self:center;padding-right:6px;display:flex;gap:4px}
 
-    /* overflow:hidden (panelStyles sets auto): the bars thin as the pane
-       shrinks instead of scrolling. Extra bottom padding leaves room for the
-       act labels that hang below the lower bar. */
-    .pbody{display:flex;flex-direction:column;padding:10px 10px 20px;overflow:hidden}
+    /* No horizontal scroll (panelStyles sets auto both ways): the bars thin as
+       the pane shrinks instead of scrolling. Vertically it may scroll, which
+       since the Sound row joined the other two is the difference between a
+       squeezed strip hiding a row and a squeezed strip you can reach into.
+       Extra bottom padding leaves room for the act labels that hang below the
+       bottom row. */
+    .pbody{display:flex;flex-direction:column;padding:10px 10px 16px;overflow-x:hidden;overflow-y:auto}
     .tlbody{flex:1;min-height:0;display:flex;align-items:center;gap:12px}
 
     .labels{flex:none;display:flex;flex-direction:column;gap:4px}
     .lab{font-size:11px;font-weight:500;white-space:nowrap}
     .lab.b{color:var(--board-ink)}
     .lab.r{color:var(--res)}
+    .lab.s{color:var(--sound)}
 
     .strip{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
     /* One bar per paragraph element, sized by its estimated seconds (flex-grow).
@@ -61,7 +67,7 @@ export class PandemoniumTimeline extends LitElement {
        That keeps the bars in the same family as the pane they sit in without
        turning a 22px bar into a pill (which would be 11px). overflow:hidden
        lets the first and last segment take the track's corners. */
-    .track{position:relative;height:22px;display:flex;gap:1px;background:var(--ph);overflow:hidden;border-radius:7.64px}
+    .track{position:relative;height:20px;display:flex;gap:1px;background:var(--ph);overflow:hidden;border-radius:7.64px}
     .seg{position:relative;min-width:2px;cursor:pointer;background:transparent}
     /* Final storyboard is solid green, reference-only is solid orange (the
        same green/orange split the editor highlight, minimap and script view
@@ -71,6 +77,13 @@ export class PandemoniumTimeline extends LitElement {
     .track.b .seg.on{background:var(--board-strong)}
     .track.b .seg.ref{background:var(--board-ref)}
     .track.r .seg.on{background:var(--res)}
+    /* Sound: the mixdown of every track. A bar takes the colour of whichever
+       clip covers most of its beat (--seg, set per bar from the clip's own
+       colour tag), so a project where music is blue and effects are pink reads
+       that way here too; untagged sound is the plain sound orange. A beat only
+       partly covered is drawn at the same strength: this row says whether a
+       beat has been taken into the sonic world, not how densely. */
+    .track.s .seg.on{background:var(--seg,var(--sound))}
     .seg:hover{outline:1px solid var(--ui);outline-offset:-1px;z-index:2}
     /* Click-to-jump flash: --ui rather than --act, which would vanish on a
        yellow reference bar. */
@@ -140,6 +153,26 @@ export class PandemoniumTimeline extends LitElement {
     }
     const sourced = new Set();
     for (const it of state.R.links) if (it.ok) (it.res || []).forEach((r) => r && sourced.add(r.bi));
+    // Sound is anchored to the storyboards (see data/audio-model.js), so it
+    // reaches a script element through the board that element is boarded as.
+    // An element with no board can carry no sound, which is the model being
+    // honest rather than this row being incomplete.
+    const soundByBi = new Map();
+    const project = this._store.project;
+    if ((project.clips || []).length) {
+      const spans = boardSpans(state.fparsed.blocks, state.R.boards);
+      const on = soundOnBoards(project, spans);
+      for (const it of state.R.boards) {
+        if (!it.ok) continue;
+        const hit = on.get(it.bd.id);
+        if (!hit) continue;
+        (it.res || []).forEach((r) => {
+          if (!r) return;
+          const prev = soundByBi.get(r.bi);
+          if (!prev || hit.secs > prev.secs) soundByBi.set(r.bi, hit);
+        });
+      }
+    }
     return state.fparsed.blocks
       .filter((b) => b.line != null && BAR_TYPES.has(b.type) && b.plain && b.plain.trim())
       .map((b) => ({
@@ -151,6 +184,7 @@ export class PandemoniumTimeline extends LitElement {
         boarded: finalSet.has(b.i),
         refOnly: !finalSet.has(b.i) && refSet.has(b.i),
         sourced: sourced.has(b.i),
+        sound: soundByBi.get(b.i) || null,
       }));
   }
 
@@ -240,20 +274,28 @@ export class PandemoniumTimeline extends LitElement {
       const pacing = el.paced ? ', measured pacing' : ', estimated from word count';
       return `${el.type} · ~${fmtT(el.secs)} · ${status}${pacing}`;
     }
+    if (kind === 's') {
+      if (!el.sound) {
+        return `${el.type} · ~${fmtT(el.secs)} · ${el.boarded || el.refOnly ? 'no sound on this beat yet' : 'storyboard this passage to lay sound on it'}`;
+      }
+      const how = el.sound.full ? 'sound across the whole beat' : `sound over ${fmtT(el.sound.secs)} of this beat`;
+      return `${el.type} · ~${fmtT(el.secs)} · ${how} (every track, muted or not)`;
+    }
     return `${el.type} · ~${fmtT(el.secs)} · ${el.sourced ? 'sourced' : 'not sourced yet'}`;
   }
 
   #track(kind, els, state) {
     return html`<div class="track ${kind}">
       ${els.map((el) => {
-        const on = kind === 'b' ? el.boarded : el.sourced;
+        const on = kind === 'b' ? el.boarded : kind === 's' ? !!el.sound : el.sourced;
+        const tint = kind === 's' && el.sound && el.sound.color ? colorDot(el.sound.color) : '';
         const refOnly = kind === 'b' && el.refOnly;
         const dragover = kind === 'b' && this._dragBi === el.bi;
         const paced = kind === 'b' && el.paced;
         return html`
         <div class="seg ${on ? 'on' : ''} ${refOnly ? 'ref' : ''} ${dragover ? 'dragover' : ''} ${paced ? 'paced' : ''}"
           data-bi=${el.bi}
-          style="flex-grow:${el.secs}"
+          style=${`flex-grow:${el.secs}` + (tint ? ';--seg:' + tint : '')}
           title=${this.#barTitle(el, kind)}
           @click=${(e) => this.#jump(el.bi, e.currentTarget)}
           @dragover=${(e) => this.#onSegDragOver(e, kind, el)}
@@ -290,13 +332,15 @@ export class PandemoniumTimeline extends LitElement {
             <div class="labels">
               <div class="lab b">Storyboarded</div>
               <div class="lab r">Sourced</div>
+              <div class="lab s">Sound</div>
             </div>
             <div class="strip" data-clarity-mask="true">
               ${!els.length
-                ? html`<div class="track"><div class="none"></div></div><div class="track"><div class="none"></div></div>`
+                ? html`<div class="track"><div class="none"></div></div><div class="track"><div class="none"></div></div><div class="track"><div class="none"></div></div>`
                 : html`
                   ${this.#track('b', els, state)}
                   ${this.#track('r', els, state)}
+                  ${this.#track('s', els, state)}
                   <div class="markers">
                     ${markers.map((m) => html`<div class="mark" style="left:${m.x}%"><span>${m.name}</span></div>`)}
                   </div>`}

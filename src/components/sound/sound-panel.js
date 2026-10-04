@@ -9,8 +9,10 @@ import { readFileAsDataURL, isAudioFile, AUDIO_ACCEPT } from '../../utils/files.
 import { boardSpans, spansPaced } from '../../state/selectors.js';
 import {
   orderedTracks, trackClips, clipStart, soundLength, playPlan, snapTime, anchorAt,
-  soundById, fmtClock, MIN_CLIP,
+  soundById, fmtClock, MIN_CLIP, clipColor,
 } from '../../data/audio-model.js';
+import { NOTE_COLORS, colorDot } from '../../data/research-doc.js';
+import { clamp } from '../../utils/format.js';
 import { soundEngine, measureDuration } from './audio-engine.js';
 import { icon } from './icons.js';
 import '../ui/button.js';
@@ -40,8 +42,12 @@ import '../ui/panel-picker.js';
 const HEAD = 132; // the track-name column
 const ROW = 56;
 const RULER = 34;
-const MIN_PPS = 4;
-const MAX_PPS = 240;
+// How far the zoom goes. The floor is a quarter of a pixel per second, which
+// puts two hours of sound in 1800px: the point of zooming out is to see the
+// whole thing at once, so the floor is set by that and not by what looks tidy.
+const MIN_PPS = 0.25;
+const MAX_PPS = 400;
+const ZOOM_STEP = 1.6;
 const SNAP_PX = 7;
 // Below this, the arrangement is still given room to drop something into.
 const MIN_SECONDS = 24;
@@ -67,7 +73,9 @@ export class PandemoniumSoundPanel extends LitElement {
     .clock{font-family:var(--mono);font-size:11px;color:var(--ink)}
     .scale{font-size:10px;color:var(--mut)}
     .scale.est{color:var(--act)}
-    .pbody{overflow:auto}
+    /* pan-x pan-y, so a two-finger pinch reaches #onTouchMove instead of
+       zooming the whole page, while one finger still scrolls the arrangement. */
+    .pbody{overflow:auto;touch-action:pan-x pan-y}
 
     .grid{position:relative;min-width:100%;box-sizing:border-box}
     .row{display:flex;align-items:stretch}
@@ -87,7 +95,16 @@ export class PandemoniumSoundPanel extends LitElement {
       background:transparent;color:var(--mut);font-family:var(--sans);font-size:10px;font-weight:500;line-height:1;
     }
     .head button:hover{background:var(--panel);color:var(--ink)}
-    .head button.on{background:var(--danger);color:#fff}
+    .head button.mute.on{background:var(--danger);color:#fff}
+    /* Solo is the yellow the app uses for "this one, attended to", the same
+       token the comment pill wears. */
+    .head button.solo.on{background:var(--act);color:var(--act-ink)}
+    /* The track's colour, where its name is: the whole point of a colour is to
+       be read at a glance, so it is on the lane's label and on its clips. */
+    .head .dot{
+      flex:none;width:8px;height:8px;border-radius:50%;background:var(--tint,var(--sound));
+      box-shadow:0 0 0 1px rgba(0,0,0,.12);
+    }
 
     /* The storyboard scale. One block per storyboard, as wide as it is long. */
     .ruler{height:34px;position:relative;cursor:pointer}
@@ -115,9 +132,9 @@ export class PandemoniumSoundPanel extends LitElement {
 
     .clip{
       position:absolute;top:7px;bottom:7px;box-sizing:border-box;
-      background:var(--sound);color:#fff;border-radius:7.64px;overflow:hidden;
+      background:var(--tint,var(--sound));color:#fff;border-radius:7.64px;overflow:hidden;
       display:flex;flex-direction:column;justify-content:center;gap:1px;padding:0 8px;
-      font-family:var(--sans);font-size:10px;line-height:1.25;cursor:grab;
+      font-family:var(--sans);font-size:10px;line-height:1.25;cursor:grab;touch-action:none;
       box-shadow:var(--elev-2);
     }
     .clip.sel{outline:2px solid var(--ink);outline-offset:1px}
@@ -206,6 +223,72 @@ export class PandemoniumSoundPanel extends LitElement {
 
   #x(secs) { return secs * this._pps; }
 
+  // ---- zoom ----
+  //
+  // Every zoom goes through here, so the time under a fixed point on screen
+  // stays under it: that point is the pointer for a wheel-pinch, the middle of
+  // the two fingers for a touch pinch, and the middle of the pane for the
+  // buttons. Without it, zooming out walks the arrangement off the left of the
+  // pane and the writer has to scroll back to find what they were looking at.
+  #zoomTo(pps, clientX) {
+    const body = this.renderRoot.querySelector('.pbody');
+    const next = clamp(pps, MIN_PPS, MAX_PPS);
+    if (!body || next === this._pps) return;
+    const box = body.getBoundingClientRect();
+    // Where to hold still, as an x inside the lanes (the names column is fixed).
+    const holdAt = clientX == null ? box.left + HEAD + (box.width - HEAD) / 2 : clientX;
+    const inLanes = Math.max(0, holdAt - box.left - HEAD + body.scrollLeft);
+    const t = inLanes / this._pps;
+    this._pps = next;
+    this.updateComplete.then(() => {
+      const keep = Math.max(0, holdAt - box.left - HEAD);
+      body.scrollLeft = Math.max(0, t * next - keep);
+    });
+  }
+
+  #zoomBy(factor, clientX) {
+    this.#zoomTo(this._pps * factor, clientX);
+  }
+
+  // Trackpad pinch arrives as a wheel event with ctrlKey set (every browser
+  // does this), so the same handler covers the gesture and Ctrl-wheel.
+  #onWheel(e) {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    // deltaY is in lines or pixels depending on the device; the exponent keeps
+    // either feeling the same and keeps the factor positive.
+    this.#zoomBy(Math.exp(-e.deltaY * 0.01), e.clientX);
+  }
+
+  // Two fingers on a touch screen: the distance between them scales the zoom,
+  // held about the point between them. A pinch starting mid-drag abandons the
+  // drag rather than doing both at once.
+  #onTouchDown(e) {
+    if (e.pointerType !== 'touch') return;
+    this._touches = this._touches || new Map();
+    this._touches.set(e.pointerId, e.clientX);
+    if (this._touches.size !== 2) return;
+    const [a, b] = [...this._touches.values()];
+    this._drag = null;
+    this._pinch = { dist: Math.max(1, Math.abs(a - b)), pps: this._pps };
+  }
+
+  #onTouchMove(e) {
+    if (e.pointerType !== 'touch' || !this._touches || !this._touches.has(e.pointerId)) return;
+    this._touches.set(e.pointerId, e.clientX);
+    if (!this._pinch || this._touches.size !== 2) return;
+    e.preventDefault();
+    const [a, b] = [...this._touches.values()];
+    const dist = Math.max(1, Math.abs(a - b));
+    this.#zoomTo(this._pinch.pps * (dist / this._pinch.dist), (a + b) / 2);
+  }
+
+  #onTouchUp(e) {
+    if (!this._touches) return;
+    this._touches.delete(e.pointerId);
+    if (this._touches.size < 2) this._pinch = null;
+  }
+
   #secsAt(clientX, laneEl) {
     const r = laneEl.getBoundingClientRect();
     return Math.max(0, (clientX - r.left) / this._pps);
@@ -222,6 +305,19 @@ export class PandemoniumSoundPanel extends LitElement {
       out.push(o.end);
     }
     return out;
+  }
+
+  // The zoom at which everything fits the pane, which is what zooming out is
+  // usually after. Never closer than the floor, and never past 1:1 of the
+  // widest useful scale.
+  #fit() {
+    const body = this.renderRoot.querySelector('.pbody');
+    const spans = this.#spans();
+    const len = this.#length(spans);
+    if (!body || !len) return;
+    const room = Math.max(120, body.clientWidth - HEAD - 16);
+    this.#zoomTo(room / len, body.getBoundingClientRect().left + HEAD);
+    this.updateComplete.then(() => { body.scrollLeft = 0; });
   }
 
   // ---- transport ----
@@ -478,6 +574,14 @@ export class PandemoniumSoundPanel extends LitElement {
     const spans = this.#spans();
     const tracks = orderedTracks(this._store.project).filter((t) => t.id !== clip.trackId);
     const items = [
+      // Colour first, as a swatch row: it is the choice where the word for it
+      // is worth less than the thing (see pd-menu's swatches, item 17). A
+      // clip's own colour overrules its track's; "Track's colour" is how it
+      // gives that back.
+      {
+        swatches: this.#swatches(clip.color, (key) => this._store.store.updateClip(clip.id, { color: key }), "Track's colour"),
+      },
+      { divider: true },
       { label: 'Cut here', fn: () => this.#cut(clip.id, at) },
       ...(tracks.length ? [{
         label: 'Move to track',
@@ -490,6 +594,18 @@ export class PandemoniumSoundPanel extends LitElement {
       { label: 'Delete clip', danger: true, fn: () => this.#deleteClip(clip.id) },
     ];
     dispatch(this, 'pandemonium-open-menu', { x: e.clientX, y: e.clientY, items: withGlobalItems(this, items) });
+  }
+
+  // The six project colours as a swatch row, with the no-colour entry drawn in
+  // the plain sound orange (which is what it renders as) rather than the grey
+  // "plain" dot, so the row shows what each choice will look like.
+  #swatches(current, fn, plainLabel) {
+    return NOTE_COLORS.map((c) => ({
+      label: c.key ? c.label : plainLabel,
+      color: c.key ? c.dot : 'var(--sound)',
+      selected: (current || null) === c.key,
+      fn: () => fn(c.key),
+    }));
   }
 
   #onKey(e) {
@@ -538,8 +654,11 @@ export class PandemoniumSoundPanel extends LitElement {
       ` : nothing}
       <pd-button icon title="Add a sound file" @click=${() => this.#pick()}>${icon('audioAdd')}</pd-button>
       <pd-button icon title="Add a track" @click=${() => this._store.store.addTrack({})}>${icon('trackAdd')}</pd-button>
-      <pd-button icon title="Zoom out" @click=${() => { this._pps = Math.max(MIN_PPS, this._pps / 1.5); }}>${icon('zoomOut')}</pd-button>
-      <pd-button icon title="Zoom in" @click=${() => { this._pps = Math.min(MAX_PPS, this._pps * 1.5); }}>${icon('zoomIn')}</pd-button>
+      <pd-button icon title="Zoom out (pinch, or Ctrl and the wheel)" ?disabled=${this._pps <= MIN_PPS}
+        @click=${() => this.#zoomBy(1 / ZOOM_STEP)}>${icon('zoomOut')}</pd-button>
+      <pd-button icon title="Zoom in (pinch, or Ctrl and the wheel)" ?disabled=${this._pps >= MAX_PPS}
+        @click=${() => this.#zoomBy(ZOOM_STEP)}>${icon('zoomIn')}</pd-button>
+      <pd-button title="Fit the whole arrangement in the pane" @click=${() => this.#fit()}>Fit</pd-button>
     `;
   }
 
@@ -569,10 +688,11 @@ export class PandemoniumSoundPanel extends LitElement {
     const start = d ? d.preAt : o.start;
     const dur = d ? d.preDur : clip.dur;
     const sound = soundById(this._store.project, clip.soundId);
+    const tint = clipColor(this._store.project, clip);
     const w = Math.max(6, this.#x(dur));
     return html`
       <div class="clip ${this._sel === clip.id ? 'sel' : ''} ${d ? 'ghost' : ''}"
-        style="left:${this.#x(start)}px;width:${w}px"
+        style=${`left:${this.#x(start)}px;width:${w}px` + (tint ? ';--tint:' + colorDot(tint) : '')}
         title=${`${sound ? sound.name : 'Sound'} · ${fmtClock(dur)}${sound && !sound.dur ? ' · length unknown' : ''}`}
         @pointerdown=${(e) => this.#grab(e, clip, 'move')}
         @contextmenu=${(e) => this.#clipMenu(e, clip)}
@@ -593,12 +713,16 @@ export class PandemoniumSoundPanel extends LitElement {
     const here = clips.filter((o) => !this._drag || this._drag.id !== o.clip.id || this._drag.mode !== 'move');
     return html`
       <div class="row trow">
-        <div class="head" data-clarity-mask="true">
+        <div class="head" data-clarity-mask="true" style=${track.color ? '--tint:' + colorDot(track.color) : ''}>
+          <span class="dot" title="This track's colour"></span>
           <input type="text" .value=${track.name} maxlength="40" title="Track name"
             @change=${(e) => store.updateTrack(track.id, { name: e.target.value.trim() || track.name })}
             @keydown=${(e) => { if (e.key === 'Enter') e.target.blur(); }}>
-          <button class=${track.mute ? 'on' : ''} title=${track.mute ? 'Unmute this track' : 'Mute this track'}
+          <button class="mute ${track.mute ? 'on' : ''}" title=${track.mute ? 'Unmute this track' : 'Mute this track'}
             @click=${() => store.updateTrack(track.id, { mute: !track.mute })}>M</button>
+          <button class="solo ${track.solo ? 'on' : ''}"
+            title=${track.solo ? 'Stop soloing: hear every track again' : 'Solo: hear only this track'}
+            @click=${() => store.updateTrack(track.id, { solo: !track.solo })}>S</button>
           <button title="Track options" @click=${(e) => this.#trackMenu(e, track)}>&#8943;</button>
         </div>
         <div class="lane ${this._over === track.id ? 'over' : ''}" data-track=${track.id} style="width:${width}px"
@@ -619,9 +743,12 @@ export class PandemoniumSoundPanel extends LitElement {
     dispatch(this, 'pandemonium-open-menu', {
       anchor: e.currentTarget,
       items: [
+        { swatches: this.#swatches(track.color, (key) => store.updateTrack(track.id, { color: key }), 'Plain') },
+        { divider: true },
         ...(i > 0 ? [{ label: 'Move up', fn: () => store.moveTrack(track.id, -1) }] : []),
         ...(i < order.length - 1 ? [{ label: 'Move down', fn: () => store.moveTrack(track.id, 1) }] : []),
         { label: track.mute ? 'Unmute' : 'Mute', fn: () => store.updateTrack(track.id, { mute: !track.mute }) },
+        { label: track.solo ? 'Stop soloing' : 'Solo', fn: () => store.updateTrack(track.id, { solo: !track.solo }) },
         { divider: true },
         { label: 'Delete track', danger: true, fn: () => store.deleteTrack(track.id) },
       ],
@@ -660,7 +787,12 @@ export class PandemoniumSoundPanel extends LitElement {
           </div>
           <div class="tools">${this.#tools(hasAny)}</div>
         </div>
-        <div class="pbody">
+        <div class="pbody"
+          @wheel=${(e) => this.#onWheel(e)}
+          @pointerdown=${(e) => this.#onTouchDown(e)}
+          @pointermove=${(e) => this.#onTouchMove(e)}
+          @pointerup=${(e) => this.#onTouchUp(e)}
+          @pointercancel=${(e) => this.#onTouchUp(e)}>
           ${!tracks.length && !hasAny ? this.#empty() : html`
             <div class="grid" style="width:${HEAD + width}px">
               ${this.#ruler(spans, width)}
