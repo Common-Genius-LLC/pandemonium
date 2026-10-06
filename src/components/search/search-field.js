@@ -1,6 +1,7 @@
 'use strict';
 
 import { LitElement, html, css, nothing } from 'lit';
+import { selectableStyles } from '../../styles/shared.js';
 import { StoreController } from '../../state/store-controller.js';
 import { getParsed } from '../../fountain/cache.js';
 import { docParas, docTitle, hostOf } from '../../data/research-doc.js';
@@ -18,7 +19,7 @@ const CAP = 8;
 export class PandemoniumSearchField extends LitElement {
   static properties = { _results: { state: true }, _idx: { state: true }, _query: { state: true }, _open: { state: true } };
 
-  static styles = css`
+  static styles = [selectableStyles, css`
     :host{position:relative;display:block;width:100%;font-family:var(--sans)}
     /* Tokenised, not white: this field sits on the title bar chrome, so in the
        dark theme it has to be a dark grey well with light text rather than a
@@ -58,7 +59,7 @@ export class PandemoniumSearchField extends LitElement {
     .l1 b{background:var(--act);font-weight:500;border-radius:1px}
     .l2{color:var(--mut);font-size:10px}
     .empty{color:var(--mut);padding:14px 10px;font-size:12px}
-  `;
+  `];
 
   constructor() {
     super();

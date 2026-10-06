@@ -8,11 +8,37 @@
 
 import { css } from 'lit';
 
+// Where text can be selected: the places the writer types.
+//
+// The app is a tool, not a document, so global.css makes everything inside
+// <pandemonium-app> unselectable (user-select: none), the way every tool of this
+// kind does: a double-click on a tab, a drag across a toolbar or a Select All
+// outside a field highlights nothing and starts no stray selection. That default
+// reaches every shadow root, because user-select resolves down the flat tree.
+//
+// What has to be switched back on is the writing. Not every browser forgives an
+// editable element that inherits "none": Safari and Firefox can refuse to select
+// text in it (and Safari to take a caret at all), so a field, a textarea and a
+// contenteditable each say "text" themselves rather than relying on the engine
+// making an exception. CodeMirror says it for the script (cm-theme.js .cm-content).
+//
+// This fragment is that one declaration, in the form shadow DOM needs: an ordinary
+// rule does not cross a shadow boundary, so every component that renders a field
+// has to carry it. formStyles and panelStyles include it, which covers the dialogs
+// and every panel; a component that styles its own fields spreads it directly.
+// styles/selection-policy.test.js fails the build if a component that renders an
+// editable element carries neither, so a new field cannot quietly be the one that
+// does not work.
+export const selectableStyles = css`
+  input,textarea,[contenteditable]:not([contenteditable="false"]){-webkit-user-select:text;user-select:text}
+`;
+
 // Fields wear the Button-Standard shell (white fill, #b8b8b8 border, 3px
 // radius) so a form reads as the same kit as the buttons under it, instead of
 // the uppercase-label-on-grey-well look the app carried over from before the
 // Figma components existed.
 export const formStyles = css`
+  ${selectableStyles}
   .lbl{font-size:11px;font-weight:500;color:var(--mut)}
   .field{display:block;min-width:0}
   .field label{display:block;margin-bottom:5px}
@@ -38,6 +64,7 @@ export const formStyles = css`
 //
 // `--pane-bg` is the working area's colour, set per panel.
 export const panelStyles = css`
+  ${selectableStyles}
   :host{display:flex;flex-direction:column;min-height:0;min-width:0}
   /* No shadow, flat solid fills (Figma node 101-1095): panes are set apart by
      even gaps rather than elevation. Rounded the same amount as the app's

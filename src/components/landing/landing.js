@@ -100,10 +100,12 @@ const MORE = [
 
 export class PandemoniumLanding extends LitElement {
   static styles = css`
+    /* A page to read, not a tool: its text is selectable, unlike the app's
+       interface (global.css makes everything under <pandemonium-app> not). */
     :host{
       position:fixed;inset:0;z-index:60;overflow:auto;
       background:var(--bg);color:var(--ink);font-family:var(--sans);
-      scroll-behavior:smooth;
+      scroll-behavior:smooth;-webkit-user-select:text;user-select:text;
     }
     @media (prefers-reduced-motion:reduce){:host{scroll-behavior:auto}}
     .wrap{width:min(1120px,100% - 48px);margin:0 auto}

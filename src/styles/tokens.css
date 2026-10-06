@@ -81,25 +81,28 @@
   --note-orange-dot:#e0702c;
   /* Chrome, from the Figma "Button-Standard-Component" (21:69),
      "panel-dropdown" (31:188) and "Title bar" (39:72) components. */
-  /* The script page. The writing surface has its own small palette: white
-     paper, black ink, and the link colours a writer reads while writing. It is
-     deliberately NOT the app palette: --board and --res still mean storyboard
-     and reference everywhere else (the timeline, the cards, the link pills), so
-     changing them here would have repainted half the app. These are declared
-     once and not re-declared for the dark theme, because they are literal
-     choices rather than a reading of the surface they sit on; the same page
-     shows after dark.
+  /* The script page. The writing surface has its own small palette: paper,
+     ink, and the link colours a writer reads while writing. It is deliberately
+     NOT the app palette: --board and --res still mean storyboard and reference
+     everywhere else (the timeline, the cards, the link pills), so changing them
+     here would have repainted half the app.
+
+     Light is the page a screenplay is actually printed on: white paper, black
+     ink. The dark theme re-declares the whole set (below) rather than leaving
+     the sheet white on a dark desk, which is a lamp in a dark room: the paper
+     goes a step lighter than the desk, the ink goes light, and each link colour
+     keeps its hue and is lifted so it still holds on a dark sheet.
 
      The values are plain hex, not color-mix, because the minimap paints them
      into a canvas and reads them off the computed style.
 
-     The sheet was a green one with blue ink at first, at the author's
-     direction, and is now the page a screenplay is actually printed on. What
-     carries meaning here is the ink's three steps back and the link colours;
-     a tinted sheet and coloured body text were reading as signals when they
-     were only a surface and a default. The sheet is told apart from the desk
-     by Material's resting-card shadow (--elev-2) and its corners, not by a
-     fill, which is what lets it be white on a white desk. */
+     What carries meaning here is the ink's three steps back and the link
+     colours; a tinted sheet and coloured body text were reading as signals when
+     they were only a surface and a default. In the light theme the sheet is
+     told apart from the desk by Material's resting-card shadow (--elev-2) and
+     its corners, not by a fill, which is what lets it be white on a white desk;
+     in the dark theme it is the fill that does it, a shadow being invisible on
+     a dark desk. */
   --pg-paper:#ffffff;      /* the sheet */
   --pg-ink:#111111;        /* script text */
   --pg-ui:#555555;         /* a step back from the ink: parenthetical, transition, lyric */
@@ -222,6 +225,21 @@
   --scrim-b:#101113;
   --chrome-panel:#1b1c1f;
   --tab-final-ink:#69aae4;
+  /* The script page after dark (see the light declaration above). The sheet is
+     a step lighter than the desk (--bg, #161719) so it still reads as paper and
+     not as a hole; at 1.2:1 that is the same step Material takes for a resting
+     surface on a dark theme. The ink is --ink's warm off-white rather than pure
+     white, which on a dark sheet glares. The steps back keep their contrast
+     against this sheet (4.5:1 or better), and the four link colours are the
+     light theme's hues, lifted until they hold on it. */
+  --pg-paper:#26282d;
+  --pg-ink:#e8e6e3;
+  --pg-ui:#b4b2af;
+  --pg-mut:#8e8f94;
+  --pg-board:#ff6a4d;
+  --pg-board-ref:#f0956f;
+  --pg-res:#2bc667;
+  --pg-comment:#d4a72c;
 }
 
 /* Motion off for anyone who has asked their system for less of it: every

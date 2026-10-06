@@ -124,7 +124,8 @@ onto `document.documentElement`.
 The page never goes to pure black (it flares against the script surface), the
 script surface stays a shade lighter than the page so it still reads as paper,
 and the action yellow is desaturated because at full chroma on a dark field it
-glares.
+glares. The script page has a palette of its own (`--pg-*`) and, since 9.2, its
+own dark reading of it.
 
 **Hardcoded colours that defeat the theme.** These must be tokenised in the same
 change or the dark theme is half-applied:
@@ -667,6 +668,148 @@ not by block index. A draft from a file written before the setting existed has n
 `format` key and reads as Fountain, which is what it is; defaulting those to
 plain text would silently restyle every screenplay already saved. An import is
 Fountain for the same reason.
+
+## 9. The selection, the dark page, and what can be selected
+
+Three things that were each "a small bug" and shared one theme: the page and its
+chrome had been built against the light theme and a code editor's assumptions,
+and neither is what a screenplay page is.
+
+### 9.1 The selection is drawn row by row
+
+`drawSelection()` was added so the caret would be one line tall (item 31), and it
+brought CodeMirror's own selection rectangles with it. Those are a code editor's:
+the first line from the selection's start to the right edge, every line between
+as one full-width band, the last line from the left edge to the selection's end.
+"Left edge" and "right edge" are measured from the content box, with the padding
+of the FIRST `.cm-line` in the DOM standing in for all of them (`measureRange`
+in `@codemirror/view`). On a script page that is wrong twice over. The page
+margins are the content box's own padding, and every element has its own indent
+(a cue 21 characters in, a speech 10), so the band began wherever the first
+rendered line's indent put it, cut through the first letters of an action line,
+and ran into the right margin. It was visible the moment a selection spanned an
+action line and a dialogue line.
+
+`components/editor/cm-selection.js` replaces the rectangles and keeps everything
+else. It draws what a word processor draws: each visual row of text from its
+first selected character to its last, a character wider on a row whose line
+break is selected (so a blank line inside a selection still shows), nothing in
+the margins, nothing across a page break.
+
+- **The rows come from the browser.** One DOM range per selected line
+  (`view.domAtPos`, start with side 1 and end with side -1 so both resolve into
+  the line and never past the page filler that closes the document), and
+  `getClientRects()` returns a rect per text run per visual row at the position it
+  is actually drawn. That stays true through word wrap, indents, concealed
+  markup and whatever is added next, because none of it is modelled.
+- **The only arithmetic is vertical.** `foldRows` (pure, tested) merges the runs
+  of a row and snaps every row to the line pitch on the first row's grid, so rows
+  tile with shared edges instead of leaving a hairline between them. A rect
+  taller than a line and a half is not text (a page-gap widget a range strayed
+  into) and is dropped.
+- **`drawSelection()` stays.** It owns the caret and hides the browser's own
+  selection and caret, and the facet that tells CodeMirror the native selection
+  is hidden is internal to the package and cannot be set from outside. Only its
+  rectangles are retired, by CSS (`.cm-selectionLayer .cm-selectionBackground`),
+  which also leaves the iOS selection handles it draws in the same layer.
+- **Order matters.** Layers stack in registration order, so the layer is
+  registered straight after `drawSelection()` and before the page sheets. Under
+  an opaque sheet the selection would not show at all.
+- **Cost.** One range measurement per rendered selected line, which is the
+  viewport and its margin. Select All in the middle of a 400-scene, 23,000-word
+  script rendered 59 lines, drew 96 rectangles and spent 0.3 ms in
+  `getClientRects`.
+- It dims (13% ink against 22%) when the editor loses focus, the way every editor
+  shows a selection that is still there but not live.
+
+**Why selected words went dark in the dark theme.** `global.css` carried
+`::selection{background:var(--act);color:var(--act-ink)}`, written when the app
+was one HTML file. Highlight pseudo-elements inherit down the flat tree, so after
+the move to shadow DOM its `color` reached every shadow root while its
+`background` (which is not inherited) reached none. Every selection in the app
+had near-black text, and on the dark page the selected words were dark on a dark
+wash (measured: `::selection` colour `rgb(22,23,25)` against `rgb(232,230,227)`
+for the same line once the rule is gone). The rule is deleted rather than fixed.
+What a selection looks like belongs where the text is: the page draws its own, and
+a field keeps the platform's.
+
+### 9.2 The page after dark
+
+The page palette (`--pg-*`, tokens.css) was declared once on `:root`, on the
+reasoning that the page is a literal choice and not a reading of its surface.
+That was right for the link colours' meaning and wrong for the sheet: a white
+sheet on a dark desk is a lamp in a dark room, and the writer's eye goes to it
+before anything else. The dark theme now re-declares the whole set.
+
+- **Paper** `#26282d`, a step lighter than the desk (`--bg`, `#161719`). The
+  contrast is 1.2:1, the same step Material takes for a resting surface on a dark
+  theme; in this theme it is the fill that separates the sheet from the desk
+  (a shadow is invisible on a dark desk), where in the light theme it is the
+  shadow and the corners.
+- **Ink** `#e8e6e3` (the app's own `--ink`: warm, because pure white on a dark
+  sheet glares). The two steps back are `#b4b2af` and `#8e8f94`, 7:1 and 4.6:1
+  against the sheet.
+- **Link colours keep their hue and are lifted until they hold**: storyboard
+  `#ff6a4d`, reference frame only `#f0956f`, reference `#2bc667`, comment
+  `#d4a72c`, each 5:1 or better against the sheet. A writer learns "red is
+  boarded, green is sourced" once, and must not have to relearn it after dark.
+- **Everything that draws the page reads the tokens**, so nothing else changed:
+  the sheet, the selection (a wash of the ink, so it inverts with it), the Add
+  page control, the page numbers. The minimap paints into a canvas and reads the
+  tokens off the computed style at draw time, which a theme change does not
+  trigger on its own, so it now listens to the theme module and redraws.
+
+### 9.3 What can be selected
+
+The app is a tool, not a document. A double-click on a tab, a drag across a
+toolbar, or Select All outside a field highlighted labels and word counts and
+started stray selections that fought drag and drop, resizing and scrubbing.
+
+**The rule** (`global.css`): `user-select: none` (and the `-webkit-` prefix Safari
+still needs) on the `<pandemonium-app>` element. `user-select` resolves down the
+flat tree, so that one declaration reaches every component and every shadow root.
+It is on the app element and not on `html` or `body` so that nothing the page does
+not own (the dev error overlay, an extension's UI) loses its text.
+
+**What is switched back on, and where.** The writing, which is the point of the
+app, and the public pages:
+
+- the script (`.cm-content` in `cm-theme.js`);
+- every `input`, `textarea` and `contenteditable`, by `selectableStyles`
+  (`styles/shared.js`);
+- the landing and sign-in pages, which are documents, on their own `:host`.
+
+**Why even editable elements say so.** Chromium exempts an editable element from
+an inherited `none`. Safari and Firefox have not always, and Safari has been
+known to refuse a caret in one, so each field says "text" itself instead of
+depending on the engine making an exception. A field that works in one browser and
+not in another is the worst way to get this wrong. Verified here only in
+Chromium; Safari and Firefox were not available to run.
+
+**Why a fragment and a test, not a base class or a script.** An ordinary rule does
+not cross a shadow boundary, so the declaration has to live in every shadow root
+that renders a field. `formStyles` and `panelStyles` include `selectableStyles`,
+which covers the dialogs and every panel, and the seven components that style
+their own fields spread it directly. `styles/selection-policy.test.js` reads the
+component sources and fails the build, naming the file, if one renders an
+editable element and carries neither the rule nor a fragment that does (one
+documented exception: a field whose template is written in `draft-chip.js` but
+renders inside `pd-dialog`). Considered and rejected:
+
+- **Opt-out per component** (`user-select: none` on each piece of chrome): most
+  of the 43 components are chrome, so it is the longer list, and the failure mode
+  of forgetting one is quiet and permanent clutter, where the failure mode of the
+  opt-in is loud and caught by the test.
+- **A `selectstart` handler on the document**: imperative, misses keyboard Select
+  All, and has to work out from `composedPath()` what counts as writing.
+- **A base class that adopts a shared stylesheet into every shadow root**: right
+  in the abstract, and a rewrite of every component's `extends` for a one-line
+  rule.
+
+Checked in a browser: of the text elements on screen in the default layout, the
+five-panel layout, the File menu and Settings, none of the interface text was
+selectable and every field and note was; the landing and sign-in pages stayed
+fully selectable.
 
 ## Build order and status
 

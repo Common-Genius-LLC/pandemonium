@@ -1,6 +1,7 @@
 'use strict';
 
 import { LitElement, html, css, nothing } from 'lit';
+import { selectableStyles } from '../../styles/shared.js';
 import '../ui/segmented.js';
 import { crossfade } from '../../utils/motion.js';
 import { StoreController } from '../../state/store-controller.js';
@@ -46,7 +47,7 @@ export class PandemoniumSlideshow extends LitElement {
   // room-lights-down surface, so the colours are literals here rather than the
   // page tokens (which are built for the light editor). --res is the one token
   // that carries through, as the progress fill.
-  static styles = css`
+  static styles = [selectableStyles, css`
     :host{position:fixed;inset:0;z-index:85;background:#000;display:none;flex-direction:column;font-family:var(--sans);--sink:#f2f2f2;--smut:#9a9a9a}
     :host([data-open]){display:flex}
     /* container-type:size so the placeholder frames below can be sized against
@@ -147,7 +148,7 @@ export class PandemoniumSlideshow extends LitElement {
     .l-synopsis{text-align:left;max-width:none;margin:0;text-transform:none;font-weight:400;font-style:italic;letter-spacing:normal;color:var(--smut)}
     .rightcol{flex:none;text-align:right;color:var(--smut);font-size:11px;display:flex;flex-direction:column;gap:4px}
     .rightcol .n{color:var(--sink);font-weight:500;font-size:12px}
-  `;
+  `];
 
   constructor() {
     super();

@@ -1,6 +1,7 @@
 'use strict';
 
 import { LitElement, html, css, svg, nothing } from 'lit';
+import { selectableStyles } from '../../styles/shared.js';
 import { CHIPCOLORS } from '../../utils/format.js';
 import './button.js';
 
@@ -97,7 +98,7 @@ export class PdProjectCard extends LitElement {
     _flipped: { state: true },
   };
 
-  static styles = css`
+  static styles = [selectableStyles, css`
     :host{display:block;font-family:var(--sans)}
     .wrap{position:relative;margin:0 auto;flex:none}
     /* drop-shadow, not box-shadow: it follows the actual silhouette, so the
@@ -342,7 +343,7 @@ export class PdProjectCard extends LitElement {
       font-size:11px;line-height:15.5px;font-weight:400;
     }
     textarea.desc::placeholder{color:currentColor;opacity:.45}
-  `;
+  `];
 
   constructor() {
     super();

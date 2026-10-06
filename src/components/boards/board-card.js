@@ -1,6 +1,7 @@
 'use strict';
 
 import { LitElement, html, css } from 'lit';
+import { selectableStyles } from '../../styles/shared.js';
 import { StoreController } from '../../state/store-controller.js';
 import { dispatch } from '../../utils/events.js';
 import { readFileAsDataURL, isVideoSrc, BOARD_MEDIA_ACCEPT } from '../../utils/files.js';
@@ -38,7 +39,7 @@ export class PandemoniumBoardCard extends LitElement {
     _dropfb: { state: true }, // showing the pink drop caption
   };
 
-  static styles = css`
+  static styles = [selectableStyles, css`
     /* Images only (per direction): the card is the frame and nothing else --
        no scene tag, caption, or meta text. Controls live on hover. Sharp
        corners to match the windowing design language (Figma 101-1095). */
@@ -116,7 +117,7 @@ export class PandemoniumBoardCard extends LitElement {
     .group{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:5px}
     .glabel{font-family:var(--sans);font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6)}
     .row{display:flex;gap:5px;flex-wrap:wrap;justify-content:center}
-  `;
+  `];
 
   constructor() {
     super();

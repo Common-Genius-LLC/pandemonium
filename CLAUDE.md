@@ -1131,6 +1131,55 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
     belongs to the caret); sound takes no part in the share projection; and a
     Markdown draft's headings are coloured rather than re-typeset.
 
+34. **The selection, the dark page, and what can be selected.** Full reasoning
+    in `docs/FEATURE_ARCHITECTURE.md` section 9.
+    **The selection is drawn row by row** (`cm-selection.js`). CodeMirror's own
+    selection rectangles are a code editor's: full-width bands measured from the
+    content box, with the FIRST line's padding standing in for every line's. On a
+    page (margins as the content box's padding, a different indent for every
+    element) the band began wherever the first rendered line's indent put it, cut
+    through the first letters of an action line and ran into the right margin.
+    The new layer takes each selected line's text rects from a DOM range, folds
+    them into one rect per visual row (`foldRows`, pure and tested), snaps rows to
+    the line pitch so they tile, and adds a character's width where a line break
+    is selected, so a blank line inside a selection shows. `drawSelection()` stays
+    for the caret and for hiding the browser's own selection (its internal facet
+    cannot be reproduced from outside); only its rectangles are hidden by CSS. The
+    layer is registered before the page sheets, because layers stack in
+    registration order and a selection under an opaque sheet does not show. The
+    selection dims when the editor loses focus.
+    **Root cause of "selected words go dark" in the dark theme**: `global.css` had
+    `::selection{background:var(--act);color:var(--act-ink)}`. Highlight
+    pseudo-elements inherit down the flat tree, so after the move to shadow DOM its
+    `color` reached every shadow root while its `background` (not inherited)
+    reached none: every selection in the app had near-black text. The rule is
+    deleted; the page draws its own selection and a field keeps the platform's.
+    **The page has a dark reading** (`--pg-*` re-declared under
+    `:root[data-theme="dark"]`, superseding item 31's "the same page shows after
+    dark" and item 32's "no dark-theme reading of its own"): paper `#26282d`, a
+    step lighter than the desk; ink `#e8e6e3`; the two steps back and the four
+    link colours lifted until each holds at 4.5:1 or better on the sheet, hues
+    unchanged. Everything that draws the page reads the tokens. The minimap paints
+    into a canvas from the computed style, so it now redraws on a theme change.
+    **What can be selected.** The interface is not text you can select:
+    `user-select: none` (with the `-webkit-` prefix) on `<pandemonium-app>` in
+    `global.css`, which reaches every shadow root because user-select resolves down
+    the flat tree, and is on the app element rather than `html` so nothing the page
+    does not own loses its text. Switched back on for the writing: `.cm-content`,
+    every `input`, `textarea` and `contenteditable` (`selectableStyles` in
+    `styles/shared.js`, included by `formStyles` and `panelStyles` and spread
+    directly by the seven components that style their own fields), and the landing
+    and sign-in pages, which are documents. Editable elements say "text"
+    explicitly rather than relying on the engine to exempt them, since Safari and
+    Firefox are not as forgiving as Chromium. `styles/selection-policy.test.js`
+    reads the component sources and fails, naming the file, if one renders an
+    editable element without carrying the rule: **a new component with a field
+    must spread `selectableStyles`**. Checked in a browser (Chromium): across the
+    default layout, a five-panel layout, the File menu and Settings no interface
+    text was selectable and every field and note was.
+    **Not done**: only Chromium was run, so Safari and Firefox behaviour of the
+    selection layer and of the policy is reasoned, not observed.
+
 ---
 
 ## Working context

@@ -20,6 +20,7 @@
 import { ViewPlugin, EditorView } from '@codemirror/view';
 import { pagesField } from './cm-pages.js';
 import { elementBox, wrapSegments, CPI } from '../../fountain/paginate.js';
+import { theme } from '../../state/theme.js';
 
 export const MINIMAP_WIDTH = 92; // px, the minimap column
 const PAD = 8;
@@ -76,6 +77,11 @@ export function scriptMinimap({ getHighlights }) {
       this.dom.addEventListener('pointerdown', this.onDown);
       window.addEventListener('pointermove', this.onMove);
       window.addEventListener('pointerup', this.onUp);
+      // The palette is read off the computed style at draw time (a canvas has no
+      // var()), so a theme change has to ask for a draw: nothing else about the
+      // editor changes when the writer flips to the dark page.
+      this.onTheme = () => this.schedule();
+      theme.addEventListener('change', this.onTheme);
       this.schedule();
     }
 
@@ -87,6 +93,7 @@ export function scriptMinimap({ getHighlights }) {
       if (this.ro) this.ro.disconnect();
       window.removeEventListener('pointermove', this.onMove);
       window.removeEventListener('pointerup', this.onUp);
+      theme.removeEventListener('change', this.onTheme);
       this.dom.remove();
     }
 
@@ -271,7 +278,7 @@ export const scriptMinimapTheme = EditorView.theme({
   '.cm-scroller': { paddingRight: MINIMAP_WIDTH + 'px' },
   '.cm-script-minimap': {
     position: 'absolute', top: '0', bottom: '0', right: '0', width: MINIMAP_WIDTH + 'px', zIndex: '3',
-    cursor: 'pointer', userSelect: 'none', touchAction: 'none',
+    cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none', touchAction: 'none',
   },
   '.cm-script-minimap canvas': { display: 'block' },
   // What the editor is showing: a soft band, firmer when the minimap is

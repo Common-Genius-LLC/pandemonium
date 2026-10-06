@@ -34,9 +34,11 @@ export class PandemoniumLogin extends LitElement {
   };
 
   static styles = css`
+    /* A page, not the tool: its words are selectable, unlike the app's
+       interface (global.css makes everything under <pandemonium-app> not). */
     :host{
       position:fixed;inset:0;z-index:60;background:var(--bg);color:var(--ink);font-family:var(--sans);
-      display:grid;grid-template-columns:1fr 1fr;
+      display:grid;grid-template-columns:1fr 1fr;-webkit-user-select:text;user-select:text;
     }
     .side{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:auto}
     .bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:22px 36px;flex:none}

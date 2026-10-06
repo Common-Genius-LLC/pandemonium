@@ -12,7 +12,32 @@ body{
   -webkit-font-smoothing:antialiased;
 }
 #app-mount{height:100%}
-::selection{background:var(--act);color:var(--act-ink)}
+/* There is deliberately no document-level ::selection rule. There used to be one
+   (the action yellow, with --act-ink text), written when the app was one HTML
+   file. Since the move to shadow DOM it did not do what it said: highlight
+   pseudo-elements inherit down the flat tree, so its `color` reached every
+   shadow root while its `background` (which is not inherited) reached none. The
+   result was a selection of near-black text on whatever the browser paints, and
+   in the dark theme the script's selected words went dark on a dark page. What a
+   selection looks like belongs where the text is: the script page draws its own
+   (components/editor/cm-selection.js), and a field keeps the platform's. */
+
+/* The interface is not text you can select. This is a tool, not a document: a
+   double-click on a tab, a drag across a toolbar, a click-and-drag that wanders
+   off a panel, or Select All outside a field would otherwise highlight labels
+   and counts and start a stray selection that fights drag and drop, resizing
+   and scrubbing. user-select resolves down the flat tree, so this one line on
+   the app element reaches every component and every shadow root. It is set here
+   and not on html or body so that anything the page does not own (the dev error
+   overlay, a browser extension's UI) keeps its text selectable. The prefix is
+   still needed by Safari.
+
+   What stays selectable is the writing: the script (CodeMirror), notes,
+   comments, and every field, switched back on where each lives
+   (selectableStyles in styles/shared.js, enforced by
+   styles/selection-policy.test.js), and the public pages (landing, sign-in),
+   which are documents. */
+pandemonium-app{-webkit-user-select:none;user-select:none}
 
 /* #printRoot lives as a direct child of <body>, a sibling of #app-mount, on
    purpose: print.js (src/components/print/print.js) writes plain HTML into

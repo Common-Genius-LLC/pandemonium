@@ -10,6 +10,7 @@ import { fountainDecorations } from './cm-fountain-plugin.js';
 import { sectionAffordances, hoverSectionField, pinnedSectionField, setPinnedSection } from './cm-sections.js';
 import { fountainTheme } from './cm-theme.js';
 import { scriptPages, setPageMetrics } from './cm-pages.js';
+import { scriptSelection } from './cm-selection.js';
 import { scriptFormat } from './cm-format.js';
 import { markdownDecorations } from './cm-markdown.js';
 import { formatOf, isFountain, isMarkdown, hasEmphasis } from '../../data/formats.js';
@@ -118,13 +119,18 @@ export class PandemoniumScriptEditor extends LitElement {
       // highlighting change". This hands the history the anchors as they
       // were before each edit, so it can give exactly those back.
       invertedEffects.of((tr) => (tr.docChanged && !this.#reconciling ? [restoreAnchors.of(this.#anchorSnapshot())] : [])),
-      // CodeMirror's own caret and selection, instead of the browser's.
-      // The native caret in a contenteditable takes its height from whatever
-      // box it lands next to, which beside a page-gap widget is most of a
-      // page: that is the "really long caret". This one is always exactly
-      // one line tall, and .cm-selectionBackground (already themed) becomes
-      // real rather than dead CSS.
+      // CodeMirror's own caret, instead of the browser's. The native caret in a
+      // contenteditable takes its height from whatever box it lands next to,
+      // which beside a page-gap widget is most of a page: that is the "really
+      // long caret". This one is always exactly one line tall. It also hides the
+      // browser's own selection. Its selection RECTANGLES are the full-width
+      // bands of a code editor, measured from the first line's padding, which is
+      // wrong on a page with margins and per-element indents; they are hidden
+      // (cm-theme.js) and scriptSelection draws the selection instead, one
+      // rectangle per row of text. It goes straight after this, so it stacks
+      // above the page sheets, which are registered further down.
       drawSelection(),
+      scriptSelection(),
       dropCursor(),
       // Before the element keymap: while the element menu is open it owns
       // Enter and the letter keys (element-menu.js sets its own precedence).

@@ -1,6 +1,7 @@
 'use strict';
 
 import { LitElement, html, css, nothing } from 'lit';
+import { selectableStyles } from '../../styles/shared.js';
 import { StoreController } from '../../state/store-controller.js';
 import { dispatch } from '../../utils/events.js';
 import { withGlobalItems } from '../../utils/context-menu.js';
@@ -29,7 +30,7 @@ export class PandemoniumFolderCard extends LitElement {
     _over: { state: true },
   };
 
-  static styles = css`
+  static styles = [selectableStyles, css`
     :host{display:block}
     .fcard{
       position:relative;display:flex;flex-direction:column;gap:6px;min-height:112px;padding:12px 12px 10px;box-sizing:border-box;
@@ -71,7 +72,7 @@ export class PandemoniumFolderCard extends LitElement {
       opacity:0;transition:opacity var(--dur-1);pointer-events:none;
     }
     .fcard:hover .more,.more:focus-visible{opacity:1;pointer-events:auto}
-  `;
+  `];
 
   constructor() {
     super();

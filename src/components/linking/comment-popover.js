@@ -1,6 +1,7 @@
 'use strict';
 
 import { LitElement, html, css, svg } from 'lit';
+import { selectableStyles } from '../../styles/shared.js';
 import { StoreController } from '../../state/store-controller.js';
 import { clamp } from '../../utils/format.js';
 
@@ -19,7 +20,7 @@ const SEND_ICON = svg`<svg viewBox="0 0 12 12" fill="none" aria-hidden="true">
 export class PandemoniumCommentPopover extends LitElement {
   static properties = { _open: { state: true }, _id: { state: true }, _x: { state: true }, _y: { state: true } };
 
-  static styles = css`
+  static styles = [selectableStyles, css`
     :host{position:fixed;inset:0;z-index:72;pointer-events:none}
     @keyframes pop-in{from{opacity:0;transform:translateY(-4px)}}
     .pop{
@@ -44,7 +45,7 @@ export class PandemoniumCommentPopover extends LitElement {
     }
     .send:hover{background:#000}
     .send svg{width:11px;height:11px;display:block}
-  `;
+  `];
 
   constructor() {
     super();

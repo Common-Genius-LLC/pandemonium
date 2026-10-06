@@ -1,6 +1,7 @@
 'use strict';
 
 import { LitElement, html, css, svg, nothing } from 'lit';
+import { selectableStyles } from '../../styles/shared.js';
 
 // The up-arrow on the comment note's round button, the same glyph as the comment card.
 const DONE_ICON = svg`<svg viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M6 10V2.4M6 2.4 2.7 5.7M6 2.4 9.3 5.7" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -31,7 +32,7 @@ import '../research/research-card.js';
 export class PandemoniumLinkPopover extends LitElement {
   static properties = { _open: { state: true }, _ids: { state: true }, _x: { state: true }, _y: { state: true } };
 
-  static styles = css`
+  static styles = [selectableStyles, css`
     :host{position:fixed;inset:0;z-index:70;pointer-events:none}
     @keyframes pop-in{from{opacity:0;transform:translateY(-4px)}}
     .pop{
@@ -79,7 +80,7 @@ export class PandemoniumLinkPopover extends LitElement {
     }
     .done:hover{background:#000}
     .done svg{width:11px;height:11px;display:block}
-  `;
+  `];
 
   constructor() {
     super();

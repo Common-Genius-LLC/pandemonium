@@ -143,6 +143,11 @@ export const fountainTheme = EditorView.theme({
     caretColor: 'var(--pg-ink)',
     overflow: 'hidden',
     isolation: 'isolate',
+    // The script is the one thing in the app that is meant to be selected and
+    // copied. The interface around it is not (global.css), and an editable
+    // element is not reliably exempt from that in every browser, so it says so.
+    userSelect: 'text',
+    WebkitUserSelect: 'text',
   },
   // A sheet: the typing surface's own fill, lying on the desk under Material's
   // resting-card shadow (--elev-2, three stacked layers, see tokens.css) with
@@ -165,7 +170,7 @@ export const fountainTheme = EditorView.theme({
   // must hang off the same box.
   '.cm-addpage-layer': {
     position: 'absolute', left: '0', top: '0',
-    pointerEvents: 'none', zIndex: '2', userSelect: 'none',
+    pointerEvents: 'none', zIndex: '2', userSelect: 'none', WebkitUserSelect: 'none',
   },
   '.cm-addpage': {
     position: 'absolute', pointerEvents: 'auto', cursor: 'pointer',
@@ -189,7 +194,7 @@ export const fountainTheme = EditorView.theme({
   '.cm-addpage.growing .cm-addpage-lbl': { opacity: '0' },
   // Decorative, and not a place to select from: the caret goes to the nearest
   // line instead (PageGap.ignoreEvent in cm-pages.js).
-  '.cm-page-gap': { position: 'relative', userSelect: 'none', cursor: 'text' },
+  '.cm-page-gap': { position: 'relative', userSelect: 'none', WebkitUserSelect: 'none', cursor: 'text' },
   // The page number, top right of its page, at the right margin, as printed.
   '.cm-page-num': {
     position: 'absolute', right: '0', color: 'var(--pg-mut)', fontFamily: 'var(--script)',
@@ -223,11 +228,16 @@ export const fountainTheme = EditorView.theme({
   },
   '&.cm-focused .cm-cursor': { borderLeftColor: 'var(--pg-ink)' },
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--pg-ink)' },
-  // A wash of the page's own ink, so a selection stays clearly different from
-  // a passage waiting to be linked, which is --pend (.hp below).
-  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
-    backgroundColor: 'color-mix(in srgb, var(--pg-ink) 22%, transparent) !important',
-  },
+  // The selection (cm-selection.js): a wash of the page's own ink, so it stays
+  // clearly different from a passage waiting to be linked, which is --pend
+  // (.hp below), and follows the page into the dark theme. One rectangle per
+  // row of text, as tall as the line pitch, so rows tile. It dims when the
+  // editor loses focus (a menu or a dialog took it) and is still there to be
+  // seen. drawSelection's own rectangles are the code-editor bands that were
+  // wrong on a page, so they are not shown; its caret is.
+  '.cm-selectionLayer .cm-selectionBackground': { display: 'none' },
+  '.cm-script-selection': { backgroundColor: 'color-mix(in srgb, var(--pg-ink) 22%, transparent)' },
+  '&:not(.cm-focused) .cm-script-selection': { backgroundColor: 'color-mix(in srgb, var(--pg-ink) 13%, transparent)' },
 
   // Standard screenplay formatting, applied live (cm-fountain-plugin.js).
   // Character cues and section titles are bold; scene headings / characters /

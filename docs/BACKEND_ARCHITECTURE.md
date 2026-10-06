@@ -11,7 +11,7 @@ It contains no em-dashes (Hard Rule 1).
 
 # Part 1: Architectural Blueprint and Recommendations
 
-## 0. Grounding facts (read the code before trusting the spec)
+## 0. Grounding facts (read the code before trusting the spec)  
 
 Three properties of the current codebase decide the whole design:
 
