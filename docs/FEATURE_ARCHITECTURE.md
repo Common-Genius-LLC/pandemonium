@@ -561,14 +561,59 @@ auditioned a track would be reporting the wrong thing.
 **The Storyboard row's key colours** (`utils/key-color.js`) make the row read as
 the film's palette. A bar is often two or three pixels wide, so a thumbnail
 would be a smear; the colour of the thumbnail is the part that survives at that
-size, and the frame itself is one hover away. The colour is an average of real
-pixels, taken twice: the second pass over only the pixels whose chroma beats the
-first pass's mean, which pulls the answer towards the colour the frame is ABOUT
-instead of the mud a flat average of a mostly-background frame gives. A frame
-with no chroma keeps its plain average, which is the honest answer for a
-black-and-white one. Read asynchronously, cached by the image's own data, and
-never stored in the project: it is derived from the frame and can always be
-derived again.
+size, and the frame itself is one hover away.
+
+The row has three states and nothing else. A beat drawn with a FINAL frame is
+solid in that frame's key colour. A beat whose storyboard holds only a
+REFERENCE frame is that frame's key colour hatched, because it is the beat as it
+was imagined and not as it will be shot; where a storyboard has both frames the
+final one wins, in colour and in solidity. A BLANK storyboard is a flat grey: a
+claim on the passage with no picture in it, which is why it is drawn at all and
+why it is still not boarded (hard rule 3). The hatch rather than a second hue is
+what carries final against reference, because both bars are now painted from
+their own frame and two frames of the same shot would otherwise be told apart by
+nothing. It is drawn per bar rather than once across the row, which is how it
+was drawn when every reference bar was the same orange.
+
+A colour on its way to a bar passes through `readableKeyColor`, which holds it
+at or below Oklab L .68 with its hue and relative chroma kept. A storyboard
+drawn in pencil on white paper has a near-white key colour: true of the frame,
+and useless on a pale track, where the bar would say nothing is there. It comes
+down to a plain grey instead, a step darker than the grey a blank storyboard
+takes, so a beat someone has drawn still reads darker than a beat someone has
+only claimed. Everything already readable passes through untouched, and solid
+never becomes hatched: solid means a final frame whatever colour it came out.
+
+**The Reference row** takes its colours from the sources themselves. A bar
+divides equally into one band per source backing that beat, each in that
+source's own colour, so a beat resting on three sources shows all three instead
+of hiding two behind one. A source with no colour of its own is the plain grey,
+which is also what a source deleted out from under its link reads as. The colour is one weighted average
+over every pixel of a 32x32 reading of the frame, where the weight is how much
+colour that pixel carries: `BASE + chroma * visible(lightness) * agrees(hue)`.
+Nothing is thresholded and nothing is discarded, so two frames that look alike
+cannot come out unalike. BASE is the vote every pixel has in the frame's level,
+so a frame with no colour in it (black, grey, a black-and-white still) comes out
+as its plain average. Chroma is Oklab's, which means the same thing at every
+lightness; RGB max-min does not, and a night frame could never win its own
+colour under it. `visible()` is Oklab L cubed, which undoes the cube root in L
+and gives back the light the pixel actually puts out, so a dark room cannot
+outvote the one lit thing in it by sheer pixel count; blown highlights are held
+back at the other end. `agrees()` damps the hue opposite the dominant one (found
+from a smoothed 24-bucket histogram of the same weight), so a red subject on a
+cyan wall cannot average into grey. The average is taken in Oklab and converted
+back, so the answer is always a real mixture of the frame's own colours.
+
+The read itself is deliberately careful, because a bar that cannot be read falls
+back to the plain storyboard green and says nothing about the frame: the
+downscale is done by halves (one 125:1 draw is free to sample, and a lit face a
+few pixels wide can fall between the samples), at most four frames decode at
+once (a project is dozens of photographs, and a browser that runs out of room
+starts refusing), a draw that produces nothing is tried again through
+`createImageBitmap`, and a frame that fails is given one more chance the next
+time it is asked for rather than being written off. Read asynchronously, cached
+by the image's own data, and never stored in the project: it is derived from the
+frame and can always be derived again.
 
 ## 7. Undo and redo, per panel
 

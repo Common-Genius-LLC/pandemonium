@@ -1083,6 +1083,7 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
     the colour the frame is about instead of the mud a flat average gives; read
     asynchronously, cached by image, never stored (it is derived and can be
     derived again). A video keeps the storyboard green, having no still to read.
+    (The two passes and their threshold are superseded by item 35.)
     **Undo and redo are per panel** (`state/history.js`). One stack for the app
     would mean Cmd+Z in the sound panel undoing the sentence typed two minutes
     ago in the script, so each panel steps through its own work: storyboards (and
@@ -1179,6 +1180,83 @@ decision live in `docs/FEATURE_ARCHITECTURE.md`. Build order and status:
     text was selectable and every field and note was.
     **Not done**: only Chromium was run, so Safari and Firefox behaviour of the
     selection layer and of the policy is reasoned, not observed.
+
+35. **The key colour of a frame** (`utils/key-color.js`, supersedes the two
+    passes described in item 33). A storyboard of hands lit in a dark room drew
+    its timeline bar the storyboard green, or the faint cool cast of the room,
+    rather than the dark beige the frame plainly is.
+    **The threshold was the bug.** The old reading averaged the frame twice, the
+    second time over only the pixels whose RGB chroma (max minus min) beat the
+    first pass's mean, and only if that mean cleared 6 out of 255. RGB chroma
+    does not mean the same thing at every lightness: an unlit room at
+    `rgb(4,12,14)` and a lit hand at `rgb(155,101,50)` measure 10 and 105, so a
+    frame that is mostly dark never cleared the gate and fell back to a flat
+    average, which for a mostly black frame is mud: black with a 4% beige
+    subject came out `#080604`. A frame a shade either side of the gate came out
+    unalike, which is what made the row look arbitrary.
+    **One weighted average now**, over every pixel, no threshold and nothing
+    discarded: `BASE + chroma * visible(lightness) * agrees(hue)`. Chroma is
+    Oklab's. `visible()` is Oklab L cubed, which undoes the cube root in L and
+    gives back the light the pixel actually puts out, so 85% of unlit room
+    cannot outvote the 15% that is lit. `agrees()` damps the hue opposite the
+    dominant one (a smoothed 24-bucket histogram), so a red subject on a cyan
+    wall cannot average into grey. BASE is every pixel's unconditional vote in
+    the frame's level, which is what makes a frame with no colour in it come out
+    as its own plain average: black is `#000000`, a grey is that grey, and one
+    speck of red in the dark keeps the frame dark. The average is taken in Oklab
+    and converted back, so the answer is still a real mixture of the frame's own
+    colours. The screenshot frame now reads `#4b311c`.
+    **The read is more careful too**, since a frame it cannot read shows the
+    plain green and says nothing: 32x32 rather than 16x16, downscaled by halves
+    (one 125:1 draw may sample, and a lit face a few pixels wide can fall
+    between the samples), at most four frames decoding at once (a project is
+    dozens of photographs, and a browser out of room starts refusing), a second
+    way in through `createImageBitmap` when a draw produces nothing, and one
+    more chance for a frame that failed instead of writing it off for the
+    session. `keyColorFromPixels` is pure and tested (`key-color.test.js`, 17
+    cases). Verified in a browser: the row reads as the frames.
+    **Not done**: the fallback is still the storyboard green, so a frame that
+    genuinely cannot be read is indistinguishable from one still being read; and
+    a video still has no still to read.
+
+36. **Both timeline rows say what is actually on the beat.**
+    **Storyboard row, three states.** A beat drawn with a FINAL frame is solid
+    in that frame's key colour. A beat whose storyboard holds only a REFERENCE
+    frame is that frame's own key colour HATCHED (45 degree stripes over a 24%
+    wash of the same colour), which brings back the hatch item 12 replaced with
+    a flat fill: now that both bars are painted from their own frame, the hatch
+    is what carries final against reference, since two frames of the same shot
+    would otherwise be told apart by nothing. Where a storyboard has both
+    frames the final one wins, in colour and in solidity. A BLANK storyboard
+    (no image in either frame) is a flat `--note-plain-dot` grey instead of
+    reading as unlinked: it is a claim on the passage, and it is still not
+    boarded (hard rule 3). The hatch is drawn per bar rather than once across
+    the row, because each bar now carries its own colour.
+    **A pale frame comes down to grey** (`readableKeyColor` in
+    `utils/key-color.js`, tested). A storyboard drawn in pencil on white paper
+    has a near-white key colour, which is true of the frame and useless on a
+    pale track: the bar would say nothing is there. A colour on its way to a
+    bar is held at or below Oklab L .68, hue and relative chroma kept, which
+    turns the sketch into a plain grey and leaves everything darker untouched.
+    It does NOT change solid to hatched: solid still means a final frame, so a
+    pencilled final board reads as boarded. L .68 is a step darker than
+    `--note-plain-dot` on purpose, so a beat someone has drawn still reads
+    darker than a beat someone has only claimed.
+    **Reference row takes the sources' own colours.** It was one flat pink for
+    everything. A bar now divides equally into one band per source backing that
+    beat, each in that source's colour, so a beat resting on three sources
+    shows all three rather than hiding two behind one; a source with no colour
+    of its own (or one deleted out from under its link) is the plain grey.
+    `#elements` gathers the bands per element, deduplicated by source, in link
+    order. The click-to-jump flash hides the bands for its moment rather than
+    being painted over by them.
+    Tooltips say which of the states a bar is in, and the hover peek now shows
+    a reference-only board's frame too (it had nothing to show before, since
+    the row only ever carried final frames). Verified in a browser in both
+    themes against all ten storyboard states and four reference states.
+    **Not done**: the hatch has no phase relationship between adjacent bars, so
+    two neighbouring reference beats do not read as one run; and sound still
+    has its own single colour per bar rather than bands.
 
 ---
 

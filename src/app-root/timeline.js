@@ -8,7 +8,7 @@ import { dispatch } from '../utils/events.js';
 import { describeSlideshowGap, elementSeconds, boardSpans } from '../state/selectors.js';
 import { soundOnBoards } from '../data/audio-model.js';
 import { colorDot } from '../data/research-doc.js';
-import { keyColor, knownKeyColor } from '../utils/key-color.js';
+import { keyColor, knownKeyColor, readableKeyColor } from '../utils/key-color.js';
 import { frameImg } from '../data/project-model.js';
 import { isVideoSrc } from '../utils/files.js';
 import { panelStyles } from '../styles/shared.js';
@@ -72,11 +72,29 @@ export class PandemoniumTimeline extends LitElement {
        lets the first and last segment take the track's corners. */
     .track{position:relative;height:20px;display:flex;gap:1px;background:var(--ph);overflow:hidden;border-radius:7.64px}
     .seg{position:relative;min-width:2px;cursor:pointer;background:transparent}
-    /* Reference-only is solid orange (the same green/orange split the editor
-       highlight, minimap and script view use). A beat with a final frame takes
-       that frame's own key colour instead, a few rules down. */
-    .track.b .seg.ref{background:var(--board-ref)}
-    .track.r .seg.on{background:var(--res)}
+    /* Storyboard row, three states and nothing else. A beat drawn with a FINAL
+       frame is solid in that frame's key colour; a beat whose storyboard holds
+       only a REFERENCE frame is the same key colour hatched, because it is the
+       beat as it was imagined and not as it will be shot; a BLANK storyboard
+       is a flat grey, a claim on the passage with no picture in it yet. The
+       hatch, not a second hue, is what carries final against reference now
+       that both bars are painted the colour of their own frame: two frames of
+       the same shot would otherwise be told apart by nothing. The hatch is
+       drawn per bar rather than once across the row (which is how it was
+       drawn when every reference bar was the same orange), since each bar
+       now carries its own colour. */
+    .track.b .seg.ref{
+      background-color:color-mix(in srgb, var(--seg, var(--board-ref)) 24%, transparent);
+      background-image:repeating-linear-gradient(45deg,
+        var(--seg, var(--board-ref)) 0 3px, transparent 3px 7px);
+    }
+    .track.b .seg.blank{background:var(--note-plain-dot)}
+    /* Reference row: one band per source backing the beat, equal widths, each
+       in that source's own colour (plain grey where it has none). The seg
+       itself stays transparent and the bands fill it, so one source looks like
+       a solid bar and several read as the sources they are. */
+    .track.r .seg{display:flex}
+    .track.r .seg i{flex:1;min-width:0}
     /* Sound: the mixdown of every track. A bar takes the colour of whichever
        clip covers most of its beat (--seg, set per bar from the clip's own
        colour tag), so a project where music is blue and effects are pink reads
@@ -88,6 +106,9 @@ export class PandemoniumTimeline extends LitElement {
     /* Click-to-jump flash: --ui rather than --act, which would vanish on a
        yellow reference bar. */
     .track .seg.flash{background:var(--ui)}
+    /* The click-to-jump flash paints the bar itself, which on the Reference
+       row is behind its bands: they step aside for it rather than hide it. */
+    .track.r .seg.flash i{opacity:0}
     /* Dragging a file over a specific element: a solid pink outline marks
        exactly which element the drop will attach to (see .dragcard below for
        the accompanying label, since the browser won't hand over the image's
@@ -155,7 +176,7 @@ export class PandemoniumTimeline extends LitElement {
   // each render; each answer that was not already known brings the row back to
   // paint that bar in it.
   #readKeyColors(els) {
-    const want = [...new Set(els.filter((el) => el.boarded && el.frame).map((el) => el.frame))]
+    const want = [...new Set(els.filter((el) => el.frame).map((el) => el.frame))]
       .filter((src) => knownKeyColor(src) == null);
     if (!want.length) return;
     Promise.all(want.map((src) => keyColor(src))).then((out) => {
@@ -176,41 +197,55 @@ export class PandemoniumTimeline extends LitElement {
   // Every drawable paragraph element as a bar, with its estimated seconds and
   // whether it is boarded / sourced (an anchor resolves onto its block index).
   #elements(state) {
-    // A storyboard with a final image draws green; one whose only image is the
-    // reference draws yellow. An element with a final image is "final" even if
-    // it also has a reference one, and a blank storyboard (no image in either
-    // frame) draws nothing: it is claimed, not drawn (hard rule 3).
-    const finalSet = new Set();
-    const refSet = new Set();
+    // How each beat is storyboarded, and which of the storyboard's two frames
+    // the row draws it from. A final frame outranks a reference one wherever a
+    // beat has both, because the final frame is the film and the reference is
+    // what it was drawn against; a storyboard with no image in either frame
+    // outranks nothing, and draws grey: it is a claim on the passage, not a
+    // picture, and it is not boarded (hard rule 3). The frame is kept for the
+    // bar's key colour and for the picture shown on hover.
+    const MODE_RANK = { final: 2, reference: 1, blank: 0 };
+    const boardByBi = new Map(); // bi -> { mode, frame }
     const durByBi = new Map(); // recorded pacing (board.dur) mapped onto the element it lands on
     for (const it of state.R.boards) {
       if (!it.ok) continue;
-      const hasFinal = !!it.bd.img;
-      if (!hasFinal && !it.bd.refImg) continue;
+      const img = frameImg(it.bd, 'final');
+      const refImg = frameImg(it.bd, 'reference');
+      const mode = img ? 'final' : refImg ? 'reference' : 'blank';
+      // Video has no still to read a colour from without decoding it, so it
+      // keeps the row's plain colour for its mode.
+      const shown = mode === 'final' ? img : mode === 'reference' ? refImg : null;
+      const frame = shown && !isVideoSrc(shown) ? shown : null;
       (it.res || []).forEach((r) => {
         if (!r) return;
-        (hasFinal ? finalSet : refSet).add(r.bi);
-        if (it.bd.dur) durByBi.set(r.bi, Math.max(durByBi.get(r.bi) || 0, it.bd.dur));
+        const prev = boardByBi.get(r.bi);
+        if (!prev || MODE_RANK[mode] > MODE_RANK[prev.mode]) boardByBi.set(r.bi, { mode, frame });
+        if (mode !== 'blank' && it.bd.dur) durByBi.set(r.bi, Math.max(durByBi.get(r.bi) || 0, it.bd.dur));
       });
     }
-    const sourced = new Set();
-    for (const it of state.R.links) if (it.ok) (it.res || []).forEach((r) => r && sourced.add(r.bi));
+    const project = this._store.project;
+    // The Reference row draws a beat in the colours of the sources backing it.
+    // A source carries one of the six project colours and a beat backed by
+    // several is divided equally between them, so no source it rests on is
+    // hidden behind another. A source with no colour of its own is the plain
+    // grey the swatch row calls Plain, which is also what a source that has
+    // since been deleted out from under its link reads as.
+    const colorOfRef = new Map((project.research || []).map((d) => [d.id, d.color || null]));
+    const refsByBi = new Map(); // bi -> Map(researchId -> colour key), one band each
+    for (const it of state.R.links) {
+      if (!it.ok) continue;
+      (it.res || []).forEach((r) => {
+        if (!r) return;
+        let seen = refsByBi.get(r.bi);
+        if (!seen) refsByBi.set(r.bi, (seen = new Map()));
+        if (!seen.has(it.lk.researchId)) seen.set(it.lk.researchId, colorOfRef.get(it.lk.researchId) || null);
+      });
+    }
     // Sound is anchored to the storyboards (see data/audio-model.js), so it
     // reaches a script element through the board that element is boarded as.
     // An element with no board can carry no sound, which is the model being
     // honest rather than this row being incomplete.
-    // The frame each beat is boarded with, for its key colour and for the
-    // picture shown on hover. The first final frame on an element wins, the
-    // same way durByBi takes one duration per element.
-    const frameByBi = new Map();
-    for (const it of state.R.boards) {
-      if (!it.ok) continue;
-      const img = frameImg(it.bd, 'final');
-      if (!img || isVideoSrc(img)) continue;
-      (it.res || []).forEach((r) => { if (r && !frameByBi.has(r.bi)) frameByBi.set(r.bi, img); });
-    }
     const soundByBi = new Map();
-    const project = this._store.project;
     if ((project.clips || []).length) {
       const spans = boardSpans(state.fparsed.blocks, state.R.boards);
       const on = soundOnBoards(project, spans);
@@ -227,18 +262,22 @@ export class PandemoniumTimeline extends LitElement {
     }
     return state.fparsed.blocks
       .filter((b) => b.line != null && BAR_TYPES.has(b.type) && b.plain && b.plain.trim())
-      .map((b) => ({
-        bi: b.i, type: b.type,
-        secs: durByBi.get(b.i) || elementSeconds(b),
-        paced: durByBi.has(b.i),
-        // Reference-only sits out of "boarded" too (see coverage() in
-        // selectors.js): refOnly below is what still lights the bar hatched.
-        boarded: finalSet.has(b.i),
-        refOnly: !finalSet.has(b.i) && refSet.has(b.i),
-        sourced: sourced.has(b.i),
-        sound: soundByBi.get(b.i) || null,
-        frame: frameByBi.get(b.i) || null,
-      }));
+      .map((b) => {
+        const bd = boardByBi.get(b.i) || null;
+        return {
+          bi: b.i, type: b.type,
+          secs: durByBi.get(b.i) || elementSeconds(b),
+          paced: durByBi.has(b.i),
+          // Reference-only and blank both sit out of "boarded" (see coverage()
+          // in selectors.js): only a final frame is a beat that is drawn.
+          boarded: !!bd && bd.mode === 'final',
+          refOnly: !!bd && bd.mode === 'reference',
+          blank: !!bd && bd.mode === 'blank',
+          frame: bd ? bd.frame : null,
+          sources: [...(refsByBi.get(b.i) || new Map()).values()],
+          sound: soundByBi.get(b.i) || null,
+        };
+      });
   }
 
   // Dropping a file on a specific element of the Storyboarded row attaches a
@@ -335,31 +374,49 @@ export class PandemoniumTimeline extends LitElement {
 
   #barTitle(el, kind) {
     if (kind === 'b') {
-      const status = el.refOnly ? 'reference only' : el.boarded ? 'storyboarded' : 'not storyboarded yet';
+      const status = el.boarded ? 'storyboarded'
+        : el.refOnly ? 'reference frame only, not drawn yet'
+          : el.blank ? 'blank storyboard, no frame in it yet'
+            : 'not storyboarded yet';
       const pacing = el.paced ? ', measured pacing' : ', estimated from word count';
       return `${el.type} · ~${fmtT(el.secs)} · ${status}${pacing}`;
     }
     if (kind === 's') {
+      const hasBoard = el.boarded || el.refOnly || el.blank;
       if (!el.sound) {
-        return `${el.type} · ~${fmtT(el.secs)} · ${el.boarded || el.refOnly ? 'no sound on this beat yet' : 'storyboard this passage to lay sound on it'}`;
+        return `${el.type} · ~${fmtT(el.secs)} · ${hasBoard ? 'no sound on this beat yet' : 'storyboard this passage to lay sound on it'}`;
       }
       const how = el.sound.full ? 'sound across the whole beat' : `sound over ${fmtT(el.sound.secs)} of this beat`;
       return `${el.type} · ~${fmtT(el.secs)} · ${how} (every track, muted or not)`;
     }
-    return `${el.type} · ~${fmtT(el.secs)} · ${el.sourced ? 'sourced' : 'not sourced yet'}`;
+    const n = el.sources.length;
+    const backing = !n ? 'not sourced yet' : n === 1 ? 'backed by one reference' : `backed by ${n} references`;
+    return `${el.type} · ~${fmtT(el.secs)} · ${backing}`;
+  }
+
+  // The colour a bar is painted in, or '' to leave it on its row's own colour.
+  // The Storyboard row takes it from the frame it is drawn from, whichever of
+  // the storyboard's two frames that is, held back from paper-white so a
+  // pencil drawing on white reads as the same grey a storyboard with no colour
+  // of its own gets (readableKeyColor).
+  #tint(kind, el) {
+    if (kind === 's') return el.sound && el.sound.color ? colorDot(el.sound.color) : '';
+    if (kind !== 'b' || !el.frame) return '';
+    const key = knownKeyColor(el.frame);
+    return key ? readableKeyColor(key) : '';
   }
 
   #track(kind, els, state) {
     return html`<div class="track ${kind}">
       ${els.map((el) => {
-        const on = kind === 'b' ? el.boarded : kind === 's' ? !!el.sound : el.sourced;
-        const tint = kind === 's' && el.sound && el.sound.color ? colorDot(el.sound.color)
-          : kind === 'b' && el.boarded && el.frame ? (knownKeyColor(el.frame) || '') : '';
+        const on = kind === 'b' ? el.boarded : kind === 's' ? !!el.sound : el.sources.length > 0;
+        const tint = this.#tint(kind, el);
         const refOnly = kind === 'b' && el.refOnly;
+        const blank = kind === 'b' && el.blank;
         const dragover = kind === 'b' && this._dragBi === el.bi;
         const paced = kind === 'b' && el.paced;
         return html`
-        <div class="seg ${on ? 'on' : ''} ${refOnly ? 'ref' : ''} ${dragover ? 'dragover' : ''} ${paced ? 'paced' : ''}"
+        <div class="seg ${on ? 'on' : ''} ${refOnly ? 'ref' : ''} ${blank ? 'blank' : ''} ${dragover ? 'dragover' : ''} ${paced ? 'paced' : ''}"
           data-bi=${el.bi}
           style=${`flex-grow:${el.secs}` + (tint ? ';--seg:' + tint : '')}
           title=${this.#barTitle(el, kind)}
@@ -368,7 +425,8 @@ export class PandemoniumTimeline extends LitElement {
           @mouseleave=${() => this.#peek(null, null, null)}
           @dragover=${(e) => this.#onSegDragOver(e, kind, el)}
           @dragleave=${(e) => this.#onSegDragLeave(e, kind)}
-          @drop=${(e) => this.#onSegDrop(e, kind, el, state)}></div>`;
+          @drop=${(e) => this.#onSegDrop(e, kind, el, state)}
+        >${kind === 'r' ? el.sources.map((c) => html`<i style="background:${colorDot(c)}"></i>`) : ''}</div>`;
       })}
     </div>`;
   }
